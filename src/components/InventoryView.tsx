@@ -492,6 +492,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   }, [onNotify]);
 
   // Derived available rows for Quick Search in Cart (only built when cart drawer is open)
+  // Menyertakan seluruh area (Warehouse, Blok F, Kolian, Aksesoris, Transit, Perbaikan, Anomali)
+  // agar user dapat memfilter sumber picking per area tertentu di dalam Keranjang Order.
   const availableRowsForCart = useMemo(() => {
     if (!isCartDrawerOpen) return [];
     const map = new Map<string, {
@@ -503,19 +505,27 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
     }>();
 
     for (const r of allAreaRows) {
-      if (r.area === 'Perbaikan' || r.area === 'Anomali') continue;
+      const normalizedRowArea = r.area === 'Koli' ? 'Kolian' : r.area;
+      const taggedLocations = (r.locations || [])
+        .filter((l) => l && l.lokasi && l.lokasi !== '-')
+        .map((l) => ({
+          lokasi: l.lokasi,
+          qty: Number(l.qty) || 0,
+          area: normalizedRowArea,
+        }));
+
       const existing = map.get(r.sku);
       if (!existing) {
         map.set(r.sku, {
           sku: r.sku,
           produk: r.produk,
           size: r.size,
-          qty: r.qty,
-          locations: [...r.locations],
+          qty: Number(r.qty) || 0,
+          locations: taggedLocations,
         });
       } else {
-        existing.qty += r.qty;
-        existing.locations.push(...r.locations);
+        existing.qty += Number(r.qty) || 0;
+        existing.locations.push(...taggedLocations);
       }
     }
     return Array.from(map.values());
@@ -524,10 +534,14 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const handleProceedToPicking = useCallback((details: InventoryOrderPickingDetails) => {
     if (cartItems.length === 0) return;
 
+    const activeSourceArea =
+      details.source_area && details.source_area !== 'ALL' ? details.source_area : undefined;
+    const areaNotePrefix = activeSourceArea ? `Area ${activeSourceArea} · ` : '';
+
     const draft: PengecekanSJDraft = {
       id: `PICK_CART_${Date.now()}`,
       no_sj: details.no_dokumen,
-      source: 'Gudang Pusat',
+      source: activeSourceArea ? `Gudang Pusat (${activeSourceArea})` : 'Gudang Pusat',
       destination: details.destinasi || details.tujuan,
       tanggal_sj: new Date().toISOString().slice(0, 10),
       tipe_import: 'Pengiriman',
@@ -539,7 +553,8 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
       })),
       scanQty: {},
       unexpected: {},
-      catatan: `[Order Picking Inventory - ${details.tujuan}] ${details.catatan || ''}`.trim(),
+      catatan: `[Order Picking Inventory - ${areaNotePrefix}${details.tujuan}] ${details.catatan || ''}`.trim(),
+      source_area: activeSourceArea,
       status: 'draft',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -1345,6 +1360,7 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
         onNotify={onNotify}
         productCatalog={productCatalog}
         availableRows={availableRowsForCart}
+        initialSourceArea={selectedArea === 'Koli' ? 'Kolian' : selectedArea}
         onProceedToPicking={handleProceedToPicking}
       />
 

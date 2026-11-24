@@ -5,7 +5,7 @@ import {
   CheckCircle2, AlertTriangle, FileText, ChevronRight, Layers
 } from 'lucide-react';
 import { PengecekanSJDraft, ProductItem, UserSession, ProductLocationInfo, StockRealtimeItem } from '../../types';
-import { createPickingSuratJalanSupabase, fetchStockForSkus, isPickingEligibleForPengecekan, isWarehouseLocation, getPickingPriority } from '../../services/supabase';
+import { createPickingSuratJalanSupabase, fetchStockForSkus, isPickingEligibleForPengecekan, isWarehouseLocation, getPickingPriority, getAreaFromLokasi } from '../../services/supabase';
 import { getWhatsAppWebUrl, getFonnteConfig, sendFonnteMessage, generateRefillPickingGroupMessage } from '../../services/whatsapp';
 import { playSaveSuccessChime, playSuccessBeep } from '../../services/audio';
 import { cleanProductName, extractCleanSizeToken } from '../../utils/sortUtils';
@@ -141,8 +141,25 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       });
   }, [isOpen, allDraftsSkusKey]);
 
+  // Helper: Cek apakah lokasi sesuai dengan area sumber picking spesifik (dari Keranjang Order)
+  // atau mengikuti aturan baku Pengecekan SJ (Priority 1 & 2 saja) bila sourceArea tidak diset.
+  const isLocationEligibleForDraft = (
+    loc: string,
+    area?: string,
+    sourceArea?: string
+  ): boolean => {
+    const cleanSource = String(sourceArea || '').trim();
+    if (!cleanSource || cleanSource.toUpperCase() === 'ALL') {
+      return isPickingEligibleForPengecekan(loc, area);
+    }
+    const normalizedTarget = cleanSource.toLowerCase() === 'koli' ? 'kolian' : cleanSource.toLowerCase();
+    const detectedArea = getAreaFromLokasi(loc, area).toLowerCase();
+    const normalizedDetected = detectedArea === 'koli' ? 'kolian' : detectedArea;
+    return normalizedDetected === normalizedTarget;
+  };
+
   // Helper: Extract all warehouse locations for a given item / SKU across realtime stock, master catalog, and draft items
-  const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
+  const getProductLocations = (sku: string, itemLokasi?: string, sourceArea?: string): ProductLocationInfo[] => {
     const cleanSku = String(sku || '').trim().toUpperCase();
     if (!cleanSku) return [];
     const map = new Map<string, ProductLocationInfo>();
@@ -154,7 +171,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       realtimeList.forEach((stk) => {
         const loc = String(stk.lokasi || '').trim().toUpperCase();
         const qty = Number(stk.sisa_stok) || 0;
-        if (loc && loc !== '-' && loc !== '--' && isPickingEligibleForPengecekan(loc, stk.area) && qty > 0) {
+        if (loc && loc !== '-' && loc !== '--' && isLocationEligibleForDraft(loc, stk.area, sourceArea) && qty > 0) {
           const existing = map.get(loc);
           if (existing) {
             existing.qty = (existing.qty || 0) + qty;
@@ -164,7 +181,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
               qty: qty,
               isPrimary: false,
               source: 'REALTIME_STOCK',
-              area: stk.area || 'Warehouse',
+              area: stk.area || getAreaFromLokasi(loc),
             });
           }
         }
@@ -196,24 +213,26 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
             const qty = Number(itemLoc.qty) || 0;
             const parts = rawLocStr.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
             parts.forEach((loc) => {
-              if (loc && isPickingEligibleForPengecekan(loc) && qty > 0 && !map.has(loc)) {
+              if (loc && isLocationEligibleForDraft(loc, undefined, sourceArea) && qty > 0 && !map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
                   qty: parts.length === 1 ? qty : 0,
                   isPrimary: false,
                   source: 'CATALOG',
+                  area: getAreaFromLokasi(loc),
                 });
               }
             });
           } else if (typeof itemLoc === 'string') {
             const parts = itemLoc.split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
             parts.forEach((loc) => {
-              if (loc && isPickingEligibleForPengecekan(loc) && !map.has(loc)) {
+              if (loc && isLocationEligibleForDraft(loc, undefined, sourceArea) && !map.has(loc)) {
                 map.set(loc, {
                   lokasi: loc,
                   qty: 0,
                   isPrimary: false,
                   source: 'CATALOG',
+                  area: getAreaFromLokasi(loc),
                 });
               }
             });
@@ -223,12 +242,13 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       if (catMatch.lokasi && map.size === 0) {
         const parts = String(catMatch.lokasi).split(/[,/;\n|]+/).map((s) => s.trim().toUpperCase()).filter(Boolean);
         parts.forEach((loc) => {
-          if (loc && isPickingEligibleForPengecekan(loc) && !map.has(loc)) {
+          if (loc && isLocationEligibleForDraft(loc, undefined, sourceArea) && !map.has(loc)) {
             map.set(loc, {
               lokasi: loc,
               qty: 0,
               isPrimary: false,
               source: 'CATALOG',
+              area: getAreaFromLokasi(loc),
             });
           }
         });
@@ -241,7 +261,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
       const parts = strItemLokasi
         .split(/[,/;\n|]+/)
         .map((s) => String(s || '').trim().toUpperCase())
-        .filter((loc) => loc && isPickingEligibleForPengecekan(loc));
+        .filter((loc) => loc && isLocationEligibleForDraft(loc, undefined, sourceArea));
       parts.forEach((loc) => {
         if (!map.has(loc)) {
           map.set(loc, {
@@ -249,12 +269,13 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
             qty: 0,
             isPrimary: false,
             source: 'SJ',
+            area: getAreaFromLokasi(loc),
           });
         }
       });
     }
 
-    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isPickingEligibleForPengecekan(l.lokasi, l.area));
+    const allLocs = Array.from(map.values()).filter((l) => l && l.lokasi && isLocationEligibleForDraft(l.lokasi, l.area, sourceArea));
     allLocs.sort((a, b) => {
       const pA = getPickingPriority(a.lokasi, a.area);
       const pB = getPickingPriority(b.lokasi, b.area);
@@ -270,7 +291,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
   };
 
   // Helper: Retrieve all recorded warehouse locations that currently have 0 stock
-  const getRecordedEmptyLocations = (sku: string): string[] => {
+  const getRecordedEmptyLocations = (sku: string, sourceArea?: string): string[] => {
     const cleanSku = String(sku || '').trim().toUpperCase();
     if (!cleanSku || !(cleanSku in realtimeSkuStocks)) return [];
     const list = realtimeSkuStocks[cleanSku] || [];
@@ -278,7 +299,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     list.forEach((stk) => {
       const loc = String(stk.lokasi || '').trim().toUpperCase();
       const qty = Number(stk.sisa_stok) || 0;
-      if (loc && isPickingEligibleForPengecekan(loc, stk.area) && qty <= 0) {
+      if (loc && isLocationEligibleForDraft(loc, stk.area, sourceArea) && qty <= 0) {
         if (!emptyLocs.includes(loc)) emptyLocs.push(loc);
       }
     });
@@ -312,9 +333,9 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
         const lookup = lookupProductBySku(cleanSku, productCatalog, it.nama_produk, (it as any).size);
         let size = lookup.found ? (lookup.size || '-') : '-';
 
-        const locs = getProductLocations(cleanSku, (it as any).lokasi);
+        const locs = getProductLocations(cleanSku, (it as any).lokasi, d.source_area);
         const locsWithStock = locs.filter((l) => (l.qty || 0) > 0);
-        const recordedEmpty = getRecordedEmptyLocations(cleanSku);
+        const recordedEmpty = getRecordedEmptyLocations(cleanSku, d.source_area);
         const isRealtimeChecked = cleanSku in realtimeSkuStocks;
 
         let lokasiDisplay = '-';
@@ -907,6 +928,12 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
                   {isBulkMode ? 'MODE MASSAL' : 'PENGIRIMAN'}
                 </span>
+                {primaryDraft?.source_area && (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                    <MapPin className="w-2.5 h-2.5 shrink-0" />
+                    <span>Area: {primaryDraft.source_area}</span>
+                  </span>
+                )}
               </div>
               {isBulkMode ? (
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">

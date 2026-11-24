@@ -1112,6 +1112,7 @@ export interface PengecekanSJDraft {
   scanQty: Record<string, number>;
   unexpected: Record<string, { nama?: string; qty: number; category?: string }>;
   catatan?: string;
+  source_area?: string; // Filter area sumber picking spesifik dari Keranjang Order (Warehouse, Blok F, Kolian, Aksesoris, Transit, Perbaikan, Anomali)
   status: 'draft' | 'pending' | 'selesai';
   created_at: string;
   updated_at: string;

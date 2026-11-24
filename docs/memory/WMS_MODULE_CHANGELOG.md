@@ -4,6 +4,15 @@
 
 ---
 
+## v2.29.2 — 24 November 2026
+**Modul**: Keranjang Order Picking & Distribusi Picking (`src/components/inventory/InventoryPickingCartDrawer.tsx`, `src/components/InventoryView.tsx`, `src/components/PesananSaya/DistribusiPickingModal.tsx`, `src/types.ts`)
+- **Filter Area Sumber Picking pada Keranjang Order**:
+  - Menambahkan pemilih **Area Sumber Picking** (`Semua Area Normal`, `Warehouse`, `Blok F`, `Kolian`, `Aksesoris`, `Transit`, `Perbaikan`, `Anomali`) beserta jumlah SKU aktif per area di bagian atas `InventoryPickingCartDrawer`.
+  - Saat area tertentu dipilih (mis. `Warehouse`, `Blok F`, atau `Perbaikan`), **Pencarian Cepat Produk**, **Impor CSV/Excel/Paste**, serta **Lokasi Rak & Qty item di Keranjang** otomatis hanya menampilkan produk, rak, dan stok dari area tersebut.
+  - Meneruskan `source_area` ke `PengecekanSJDraft` dan `DistribusiPickingModal` (`isLocationEligibleForDraft`) agar seluruh hasil picking (Preview, Tugas Picking App, Pesan WA Grup, & Cetak A4) ketat mengikuti lokasi area yang dipilih — sementara Pengecekan SJ Distribusi Store normal (tanpa `source_area`) tetap menjaga aturan baku `isPickingEligibleForPengecekan` (Priority 1 & 2).
+
+---
+
 ## v2.29.1 — 24 November 2026
 **Modul**: Optimasi PostgREST Egress Lintas Layanan (`gasTarikanMD.ts`, `settings.ts`, `supabase.ts`, `gasManualShipment.ts`, `DistribusiStoreTab.tsx`, `QcPengerjaanTab.tsx`, `PickingTasksView.tsx`, `DashboardView.tsx`, `useInventoryStock.ts`, `App.tsx`) + Upgrade Skill (`.agents/skills/wms-supabase-egress-guardrails/SKILL.md`)
 - **Audit & Perbaikan Kebocoran PostgREST Egress (`279.481 MB/hari`)**:

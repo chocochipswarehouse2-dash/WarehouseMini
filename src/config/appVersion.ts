@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.29.1",
-  "versionCode": 491,
+  "version": "v2.29.2",
+  "versionCode": 492,
   "buildDate": "24 November 2026",
-  "buildHash": "wms-261124-v491-0340",
-  "releaseTitle": "WMS v2.29.1 — Optimasi PostgREST Egress Lintas Layanan",
+  "buildHash": "wms-261124-v492-1049",
+  "releaseTitle": "WMS v2.29.2 — Filter Area Sumber Picking pada Keranjang Order",
   "releaseNotes": [
-    "Watermark delta sync pengecekan_sj & lazy-load QC Mutasi",
-    "Watermark gate wms_settings & recount_audit_results + probe ringan 60s PickingTasksView",
-    "Guard watermark penerimaan_produksi, manual_shipment, stok fisik, & skill egress guardrails"
+    "Tambah filter Area Sumber Picking di Keranjang Order (Warehouse, Blok F, Kolian, Aksesoris, Transit, Perbaikan, Anomali)",
+    "Pencarian produk, impor CSV/Excel, lokasi rak & stok di keranjang otomatis tersaring sesuai area terpilih",
+    "Teruskan filter source_area hingga ke Modal Distribusi Picking (Tugas App, Pesan WA Grup, & Cetak A4)"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.29.1",
+    "versionCode": 491,
+    "buildDate": "24 November 2026",
+    "buildHash": "wms-261124-v491-0340",
+    "releaseTitle": "WMS v2.29.1 — Optimasi PostgREST Egress Lintas Layanan",
+    "releaseNotes": [
+      "Watermark delta sync pengecekan_sj & lazy-load QC Mutasi",
+      "Watermark gate wms_settings & recount_audit_results + probe ringan 60s PickingTasksView",
+      "Guard watermark penerimaan_produksi, manual_shipment, stok fisik, & skill egress guardrails"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.29.0",
     "versionCode": 490,
@@ -113,19 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "buildDate": "22 November 2026",
     "buildHash": "wms-261122-v460-2343",
     "releaseTitle": "WMS v2.26.0 — Pembaruan Sistem & Optimasi Operasional",
-    "releaseNotes": [
-      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
-      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
-      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.25.0",
-    "versionCode": 450,
-    "buildDate": "22 November 2026",
-    "buildHash": "wms-261122-v450-1438",
-    "releaseTitle": "WMS v2.25.0 — Memori Permanen Global & Full-Coverage Asisten AI WMS",
     "releaseNotes": [
       "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
       "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",

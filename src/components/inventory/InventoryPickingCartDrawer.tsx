@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { NumberInput } from '../common/NumberInput';
 import {
   X,
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { ProductItem } from '../../types';
+import { getAreaFromLokasi } from '../../services/supabase';
 
 export interface InventoryCartItem {
   sku: string;
@@ -40,6 +41,7 @@ export interface InventoryOrderPickingDetails {
   destinasi: string;
   no_dokumen: string;
   catatan: string;
+  source_area?: string;
 }
 
 export interface InventoryPickingCartDrawerProps {
@@ -60,7 +62,33 @@ export interface InventoryPickingCartDrawerProps {
     qty: number;
     locations: Array<{ lokasi: string; qty: number; area?: string }>;
   }>;
+  initialSourceArea?: string;
   onProceedToPicking: (details: InventoryOrderPickingDetails) => void;
+}
+
+const SOURCE_AREA_OPTIONS = [
+  { id: 'ALL', label: 'Semua Area Normal', shortLabel: 'Semua Area', desc: 'Warehouse, Kolian, Aksesoris, Transit & Blok F' },
+  { id: 'Warehouse', label: 'Warehouse', shortLabel: 'Warehouse', desc: 'Hanya rak A/B/C/D' },
+  { id: 'Blok F', label: 'Blok F', shortLabel: 'Blok F', desc: 'TIKTOK, SHOPEE, STUDIO, IGLIVE' },
+  { id: 'Kolian', label: 'Kolian / Koli', shortLabel: 'Kolian', desc: 'Rak R0, V0, Z0 & KOLI' },
+  { id: 'Aksesoris', label: 'Aksesoris', shortLabel: 'Aksesoris', desc: 'BELT, CARD, GIFT, BOX' },
+  { id: 'Transit', label: 'Transit', shortLabel: 'Transit', desc: 'Area X / TRANSIT' },
+  { id: 'Perbaikan', label: 'Perbaikan', shortLabel: 'Perbaikan', desc: 'CC (Cuci), PMK (Permak), DF (Defect), SORTIR' },
+  { id: 'Anomali', label: 'Anomali', shortLabel: 'Anomali', desc: 'Lokasi non-standar / perlu verifikasi' },
+];
+
+function normalizeLocArea(loc: { lokasi: string; area?: string }): string {
+  const rawArea = String(loc.area || '').trim();
+  if (rawArea) {
+    if (rawArea.toLowerCase() === 'koli' || rawArea.toLowerCase() === 'kolian') return 'Kolian';
+    if (rawArea.toLowerCase() === 'warehouse') return 'Warehouse';
+    if (rawArea.toLowerCase() === 'blok f') return 'Blok F';
+    if (rawArea.toLowerCase() === 'aksesoris') return 'Aksesoris';
+    if (rawArea.toLowerCase() === 'transit') return 'Transit';
+    if (rawArea.toLowerCase() === 'perbaikan') return 'Perbaikan';
+    if (rawArea.toLowerCase() === 'anomali') return 'Anomali';
+  }
+  return getAreaFromLokasi(loc.lokasi, loc.area);
 }
 
 const TUJUAN_OPTIONS = [
@@ -99,8 +127,25 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
   onNotify,
   productCatalog = [],
   availableRows,
+  initialSourceArea,
   onProceedToPicking,
 }) => {
+  // Filter Area Sumber Picking
+  const [selectedSourceArea, setSelectedSourceArea] = useState<string>(() => {
+    const init = String(initialSourceArea || 'ALL').trim();
+    if (!init || init === 'ALL') return 'ALL';
+    return init === 'Koli' ? 'Kolian' : init;
+  });
+
+  useEffect(() => {
+    if (isOpen && initialSourceArea) {
+      const normalized = initialSourceArea === 'Koli' ? 'Kolian' : initialSourceArea;
+      if (SOURCE_AREA_OPTIONS.some((opt) => opt.id === normalized)) {
+        setSelectedSourceArea(normalized);
+      }
+    }
+  }, [isOpen, initialSourceArea]);
+
   // Quick Search & Autocomplete
   const [quickSearch, setQuickSearch] = useState('');
   const [quickQty, setQuickQty] = useState(1);
@@ -126,16 +171,84 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
   const [parsedImportRows, setParsedImportRows] = useState<ParsedImportRow[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Lookup map for fast SKU matching (case-insensitive)
+  // Hitung jumlah SKU aktif per area & susun daftar produk terfilter sesuai Area Sumber Picking
+  const { scopedAvailableRows, areaSkuCounts } = useMemo(() => {
+    const counts: Record<string, number> = {
+      ALL: 0,
+      Warehouse: 0,
+      'Blok F': 0,
+      Kolian: 0,
+      Aksesoris: 0,
+      Transit: 0,
+      Perbaikan: 0,
+      Anomali: 0,
+    };
+
+    const scoped: typeof availableRows = [];
+
+    for (const r of availableRows) {
+      if (!r || !r.sku) continue;
+      const validLocs = (r.locations || []).filter((l) => l && l.lokasi && l.lokasi !== '-' && (Number(l.qty) || 0) > 0);
+      if (validLocs.length === 0) continue;
+
+      const areasPresent = new Set<string>();
+      const matchedLocs: Array<{ lokasi: string; qty: number; area?: string }> = [];
+      let matchedQty = 0;
+      let hasNormalArea = false;
+
+      for (const l of validLocs) {
+        const locArea = normalizeLocArea(l);
+        const lQty = Number(l.qty) || 0;
+        areasPresent.add(locArea);
+        if (locArea !== 'Perbaikan' && locArea !== 'Anomali') {
+          hasNormalArea = true;
+        }
+
+        const isMatch =
+          selectedSourceArea === 'ALL'
+            ? locArea !== 'Perbaikan' && locArea !== 'Anomali'
+            : locArea === selectedSourceArea;
+
+        if (isMatch) {
+          matchedLocs.push({ lokasi: l.lokasi, qty: lQty, area: locArea });
+          matchedQty += lQty;
+        }
+      }
+
+      if (hasNormalArea) counts.ALL++;
+      areasPresent.forEach((a) => {
+        if (counts[a] !== undefined) counts[a]++;
+      });
+
+      if (matchedQty > 0 && matchedLocs.length > 0) {
+        scoped.push({
+          sku: r.sku,
+          produk: r.produk,
+          size: r.size,
+          qty: matchedQty,
+          locations: matchedLocs,
+        });
+      }
+    }
+
+    return { scopedAvailableRows: scoped, areaSkuCounts: counts };
+  }, [availableRows, selectedSourceArea]);
+
+  const activeAreaMeta = useMemo(
+    () => SOURCE_AREA_OPTIONS.find((a) => a.id === selectedSourceArea) || SOURCE_AREA_OPTIONS[0],
+    [selectedSourceArea]
+  );
+
+  // Lookup map for fast SKU matching (case-insensitive, terfilter sesuai Area Sumber Picking)
   const availableMap = useMemo(() => {
     const map = new Map<string, typeof availableRows[0]>();
-    for (const r of availableRows) {
+    for (const r of scopedAvailableRows) {
       if (r && r.sku) {
         map.set(r.sku.trim().toUpperCase(), r);
       }
     }
     return map;
-  }, [availableRows]);
+  }, [scopedAvailableRows]);
 
   // Catalog map fallback for product names
   const catalogMap = useMemo(() => {
@@ -147,7 +260,7 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
     return map;
   }, [productCatalog]);
 
-  // Autocomplete Suggestions
+  // Autocomplete Suggestions (hanya menampilkan produk yang berlokasi di Area terpilih!)
   const searchSuggestions = useMemo(() => {
     const q = quickSearch.trim().toUpperCase();
     if (!q || q.length < 2) return [];
@@ -155,19 +268,20 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
     const results: typeof availableRows = [];
     const seen = new Set<string>();
 
-    for (const r of availableRows) {
+    for (const r of scopedAvailableRows) {
       const skuUpper = (r.sku || '').toUpperCase();
       const prodUpper = (r.produk || '').toUpperCase();
-      if (skuUpper.includes(q) || prodUpper.includes(q)) {
+      const locMatch = (r.locations || []).some((l) => (l.lokasi || '').toUpperCase().includes(q));
+      if (skuUpper.includes(q) || prodUpper.includes(q) || locMatch) {
         if (!seen.has(skuUpper)) {
           seen.add(skuUpper);
           results.push(r);
-          if (results.length >= 10) break;
+          if (results.length >= 12) break;
         }
       }
     }
     return results;
-  }, [quickSearch, availableRows]);
+  }, [quickSearch, scopedAvailableRows]);
 
   // Handle immediate click on suggestion -> instantly add to cart!
   const handleSelectSuggestion = (item: typeof availableRows[0]) => {
@@ -397,6 +511,7 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
       destinasi: destinasi.trim() || tujuan,
       no_dokumen: noDokumen.trim() || defaultDocNo,
       catatan: catatan.trim(),
+      source_area: selectedSourceArea,
     });
   };
 
@@ -441,12 +556,62 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+          {/* Area Sumber Picking Selector */}
+          <div className="p-3 rounded-2xl bg-slate-50/90 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-extrabold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span>Area Sumber Picking</span>
+              </span>
+              <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 truncate">
+                {activeAreaMeta.desc}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+              {SOURCE_AREA_OPTIONS.map((opt) => {
+                const isActive = selectedSourceArea === opt.id;
+                const count = areaSkuCounts[opt.id] || 0;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedSourceArea(opt.id);
+                      setParsedImportRows([]);
+                    }}
+                    className={`shrink-0 whitespace-nowrap inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border transition-colors cursor-pointer ${
+                      isActive
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                  >
+                    <span>{opt.shortLabel}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[9.5px] font-mono tabular-nums ${
+                        isActive
+                          ? 'bg-white/20 text-white'
+                          : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* Quick Input Bar & Import CSV Trigger */}
           <div className="p-3.5 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/40 space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-[11px] font-extrabold text-indigo-950 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                <Search className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                <span>Pencarian Cepat Produk</span>
+            <div className="flex items-center justify-between gap-2">
+              <label className="text-[11px] font-extrabold text-indigo-950 dark:text-indigo-300 uppercase tracking-wider flex items-center gap-1.5 min-w-0">
+                <Search className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span className="truncate">
+                  {selectedSourceArea === 'ALL'
+                    ? 'Pencarian Cepat Produk'
+                    : `Cari Produk di Area ${activeAreaMeta.shortLabel}`}
+                </span>
               </label>
 
               <button
@@ -478,7 +643,11 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                         handleQuickAdd();
                       }
                     }}
-                    placeholder="Ketik nama baju atau SKU (klik langsung menambah)..."
+                    placeholder={
+                      selectedSourceArea === 'ALL'
+                        ? 'Ketik nama baju, SKU, atau rak (klik langsung menambah)...'
+                        : `Cari nama baju, SKU, atau rak di Area ${activeAreaMeta.shortLabel}...`
+                    }
                     className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-medium text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                   />
                   {quickSearch && (
@@ -538,9 +707,15 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                           <div className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
                             {sug.produk}
                           </div>
-                          <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5">
+                          <div className="text-[10px] font-mono text-slate-400 flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-indigo-600 dark:text-indigo-400">{sug.sku}</span>
                             <span>· Size {sug.size}</span>
+                            {sug.locations.length > 0 && (
+                              <span className="text-slate-500 dark:text-slate-300">
+                                · {sug.locations.slice(0, 3).map((l) => `${l.lokasi} (${l.qty})`).join(', ')}
+                                {sug.locations.length > 3 ? ` +${sug.locations.length - 3}` : ''}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="shrink-0 text-right">
@@ -760,13 +935,22 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
             ) : (
               <div className="space-y-2">
                 {cartItems.map((item) => {
-                  const availStock = Number(item.available_stock) || 0;
+                  const liveScopedMatch = availableMap.get(item.sku.trim().toUpperCase());
+                  const availStock = liveScopedMatch
+                    ? Number(liveScopedMatch.qty) || 0
+                    : selectedSourceArea === 'ALL'
+                      ? Number(item.available_stock) || 0
+                      : 0;
                   const itemQty = Number(item.qty) || 1;
                   const isStockWarning = availStock > 0 && itemQty > availStock;
                   const isZeroStock = availStock <= 0;
-                  const safeLocations = Array.isArray(item.locations)
-                    ? item.locations.filter((l) => l && l.lokasi && l.lokasi !== '-')
-                    : [];
+                  const safeLocations = liveScopedMatch
+                    ? liveScopedMatch.locations
+                    : selectedSourceArea === 'ALL'
+                      ? (Array.isArray(item.locations)
+                          ? item.locations.filter((l) => l && l.lokasi && l.lokasi !== '-')
+                          : [])
+                      : [];
 
                   return (
                     <div
@@ -799,24 +983,35 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                               </span>
                             ))
                           ) : (
-                            <span className="text-[10px] italic text-slate-400">Belum ada rak</span>
+                            <span className="text-[10px] italic text-slate-400">
+                              {selectedSourceArea === 'ALL'
+                                ? 'Belum ada rak'
+                                : `Tidak ada di Area ${activeAreaMeta.shortLabel}`}
+                            </span>
                           )}
                           <span className="text-[10px] text-slate-400 ml-1">
-                            · Total Fisik: <strong className="font-mono text-slate-700 dark:text-slate-300">{availStock}</strong> pcs
+                            · {selectedSourceArea === 'ALL' ? 'Total Fisik' : `Stok ${activeAreaMeta.shortLabel}`}:{' '}
+                            <strong className="font-mono text-slate-700 dark:text-slate-300">{availStock}</strong> pcs
                           </span>
                         </div>
 
                         {isZeroStock && (
                           <div className="flex items-center gap-1 text-[10.5px] font-bold text-rose-600 dark:text-rose-400 mt-1">
                             <AlertCircle className="w-3 h-3 shrink-0" />
-                            <span>Stok fisik gudang kosong (0 pcs)!</span>
+                            <span>
+                              {selectedSourceArea === 'ALL'
+                                ? 'Stok fisik gudang kosong (0 pcs)!'
+                                : `Stok di Area ${activeAreaMeta.shortLabel} kosong (0 pcs)!`}
+                            </span>
                           </div>
                         )}
 
                         {isStockWarning && (
                           <div className="flex items-center gap-1 text-[10.5px] font-bold text-amber-600 dark:text-amber-400 mt-1">
                             <AlertTriangle className="w-3 h-3 shrink-0" />
-                            <span>Qty order ({itemQty}) melebihi stok fisik rak ({availStock} pcs)!</span>
+                            <span>
+                              Qty order ({itemQty}) melebihi stok {selectedSourceArea === 'ALL' ? 'fisik rak' : `Area ${activeAreaMeta.shortLabel}`} ({availStock} pcs)!
+                            </span>
                           </div>
                         )}
                       </div>
