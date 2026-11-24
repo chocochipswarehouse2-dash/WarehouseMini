@@ -22,7 +22,7 @@ Sebelum memulai analisis, perencanaan, edit kode, atau perintah apa pun:
 
 ## 3. Post-Task: Memori Permanen, Bump Version, Build & Auto-Deploy
 Setelah modifikasi selesai, jalankan siklus rilis penuh:
-1. **Update Memori Permanen Global (WAJIB)**: Perbarui `docs/memory/WMS_FEATURE_REGISTRY.md` (jika ada modul/fitur/invarian baru) dan tambahkan ringkasan perubahan di paling atas `docs/memory/WMS_MODULE_CHANGELOG.md`.
+1. **Update Memori Permanen Global & Upgrade Skill (WAJIB)**: Perbarui skill terkait di `.agents/skills/` (atau buat skill guardrail baru setiap temuan bug/fitur baru agar semua agen memahami invarian terbarunya), perbarui `docs/memory/WMS_FEATURE_REGISTRY.md` (jika ada modul/fitur/invarian baru), dan tambahkan ringkasan perubahan di paling atas `docs/memory/WMS_MODULE_CHANGELOG.md`.
 2. **Semantic Versioning (`tools/bump_version.cjs`)**:
    - `--major` (`v3.0.0`): Perombakan arsitektur besar / breaking changes.
    - `--minor` (`v2.X.0`): **WAJIB** untuk penambahan fitur/modul baru.
@@ -48,6 +48,7 @@ Setelah modifikasi selesai, jalankan siklus rilis penuh:
 - **`log_produk` adalah Single Source of Truth (Append-Only)**: DILARANG auto-generate shadow `#IN`/`#OUT` saat operasi normal. Semua mutasi fisik wajib berasal dari scan operator (kecuali Approve SO).
 - **Explicit Picking Correlation**: Korelasi scan WA (`#OUT [invoice_picking]`) wajib menggunakan `invoice_picking` unik — DILARANG menebak dari `no_sj`, lokasi, atau timestamp.
 - **Human Accountability**: Sistem dilarang menutup anomali under-pick/over-pick otomatis; operator wajib menyelesaikan lewat scan fisik.
+- **Picking Completion & Continuation Guardrails**: Setiap perubahan `PickingTasksView`, `completePickingSuratJalanSupabase`, `reopenRemainingPickingSJSupabase`, atau outbox picking WAJIB mematuhi `.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md` (parallel chunk `PATCH` + SJ-wide sweep `status=neq.SELESAI`, regenerasi lokasi live `stok_real_fisik`, serta anti-double `#OUT` delta).
 
 ---
 
@@ -111,8 +112,9 @@ Patuhi skills di `.agents/skills/`:
    - GitHub (`origin/main`) adalah satu-satunya perantara kebenaran (*Single Source of Truth*) antara agen **AI Studio** dan **Antigravity**.
    - Semua berkas memori (`GEMINI.md`, `docs/memory/*`, `docs/PENDING_PLANS.md`, `docs/plans/*`) wajib memakai **relative path Markdown** (bukan `file:///d:/...`) agar terbaca konsisten di kedua lingkungan.
    - Setiap perpindahan kerja antar agen wajib mendokumentasikan status pending & checklist eksekusi di `docs/PENDING_PLANS.md` dan `docs/plans/PRD_PLAN_*.md`.
-2. **Memori Permanen Menyeluruh**: Setiap perubahan pada modul apa pun di WMS (bukan hanya AI) **WAJIB** memperbarui:
-   - `docs/memory/WMS_FEATURE_REGISTRY.md` (jika ada modul, tab, tool, tabel, atau invarian baru/berubah).
+2. **Memori Permanen Menyeluruh & Continuous Skill Upgrade**: Setiap temuan perbaikan bug atau penambahan fitur baru pada modul apa pun **WAJIB** memperbarui:
+   - Skill terkait di `.agents/skills/*/SKILL.md` (tanamkan pola/invarian/log bug baru agar seluruh agen coding memahami lesson-learned secara otomatis).
+   - `docs/memory/WMS_FEATURE_REGISTRY.md` (jika ada modul, tab, tool, tabel, skill, atau invarian baru/berubah).
    - `docs/memory/WMS_MODULE_CHANGELOG.md` (ringkasan perubahan terstruktur di entri teratas).
 3. **AI Self-Reporting Loop**:
    - Saat Asisten AI WMS menerima permintaan pengguna yang belum bisa dieksekusi, AI mencatat spesifikasi ke Supabase (`wms_system_docs` -> `wms_ai_capability_gaps_index`) melalui tool `report_ai_capability_gap`.

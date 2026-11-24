@@ -38,5 +38,13 @@ This confirms:
 
 ---
 
-### Step 3: Align Before Analysis
-Only proceed to research, analysis, planning, or code edits after both GitHub and GAS statuses have been confirmed synchronized and up to date.
+### Step 3: Pull AI Dev Backlog & Read Permanent Memory + Guardrail Skills
+Before analyzing or modifying any module, inspect the shared permanent memory and relevant `.agents/skills/*guardrails*`:
+- `docs/memory/WMS_FEATURE_REGISTRY.md` & `docs/memory/WMS_MODULE_CHANGELOG.md`
+- `docs/PENDING_PLANS.md`
+- Module-specific guardrail skills in `.agents/skills/` (e.g., `wms-picking-completion-sync-guardrails`, `wms-pengecekan-sj-pengiriman-guardrails`, `wms-live-chat-guardrails`).
+
+---
+
+### Step 4: Align Before Analysis
+Only proceed to research, analysis, planning, or code edits after GitHub, GAS status, permanent memory, and relevant guardrail skills have been reviewed.

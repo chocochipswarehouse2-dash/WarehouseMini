@@ -92,6 +92,8 @@ import {
   claimOrJoinPickingSJSupabase,
   leavePickingSJSupabase,
   cancelOrResetPickingSJSupabase,
+  reopenRemainingPickingSJSupabase,
+  fetchLoggedOutQtyBySkuForSj,
   invalidatePickingListCache,
   isSameOperatorIdentity,
 } from '../services/supabase';
@@ -392,6 +394,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
   // Modal Detail Rekap untuk SJ yang sudah selesai
   const [viewCompletedSJ, setViewCompletedSJ] = useState<PickingSuratJalanGroup | null>(null);
+  const [isReopeningSj, setIsReopeningSj] = useState<string | null>(null);
+  const [isRefreshingLiveLocs, setIsRefreshingLiveLocs] = useState(false);
 
   // Modal Buat SJ Baru
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -405,7 +409,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   // Broadcast helper for instant peer-to-peer multi-picker updates
   const broadcastPickingCollabEvent = useCallback(
     (
-      eventType: 'item_updated' | 'picker_joined' | 'picker_left' | 'sj_completed' | 'sj_cancelled',
+      eventType: 'item_updated' | 'picker_joined' | 'picker_left' | 'sj_completed' | 'sj_cancelled' | 'sj_reopened',
       payload: Record<string, any>
     ) => {
       try {
@@ -825,6 +829,22 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           if (!p || !p.no_sj || p.actor === currentUser) return;
           scheduleRealtimeSjRefresh(p.no_sj, 150);
         })
+        .on('broadcast', { event: 'sj_reopened' }, (msg: any) => {
+          const p = msg?.payload;
+          if (!p || !p.no_sj) return;
+          const targetSj = String(p.no_sj).toUpperCase().trim();
+          try {
+            const compStr = localStorage.getItem('wms_completed_sjs_set');
+            if (compStr) {
+              const compSet = new Set<string>(JSON.parse(compStr));
+              if (compSet.delete(targetSj)) {
+                localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
+              }
+            }
+          } catch {}
+          setDraftsRevision((r) => r + 1);
+          scheduleRealtimeSjRefresh(targetSj, 150);
+        })
         .on(
           'postgres_changes',
           { event: '*', schema: 'public', table: 'picking_list' },
@@ -1041,6 +1061,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               id: it.id,
               sku: it.sku,
               qty_picked: it.qty_picked,
+              prev_qty_picked: it.prev_qty_picked,
               qty_req: it.qty_req,
               lokasi: it.lokasi,
               lokasi_picked: it.lokasi_picked,
@@ -1570,7 +1591,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         return 0;
       });
 
-      const isCompletedLocally = Boolean(outboxEntry) || storedCompletedSJs.has(sjUpper);
+      const hasActiveRemoteItem = g.items.some((it) => (it.status || '').toUpperCase().trim() !== 'SELESAI');
+      const isCompletedLocally = Boolean(outboxEntry) || (storedCompletedSJs.has(sjUpper) && !hasActiveRemoteItem);
       const isAllDone =
         isCompletedLocally ||
         (g.items.length > 0 && g.items.every((it) => (it.status || '').toUpperCase().trim() === 'SELESAI'));
@@ -2317,6 +2339,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           ? Boolean(draftItem.is_kosong || draftItem.status === 'KOSONG')
           : Boolean(it.is_kosong || it.status === 'KOSONG' || draftItem?.is_kosong || draftItem?.status === 'KOSONG');
 
+        const prevPickedBaseline = Math.max(
+          0,
+          Number(draftItem?.prev_qty_picked ?? it.prev_qty_picked ?? 0) || 0
+        );
+
         return {
           ...it,
           sku: cleanSku,
@@ -2326,6 +2353,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           lokasi_picked: cleanLokasiPicked || undefined,
           qty_req: Math.max(1, Number(it.qty_req) || 1),
           qty_picked: qtyPicked,
+          prev_qty_picked: prevPickedBaseline > 0 ? Math.min(qtyPicked, prevPickedBaseline) : undefined,
           is_kosong: isKosong,
           status: isKosong
             ? ('KOSONG' as const)
@@ -2336,6 +2364,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           last_picked_by: it.last_picked_by || draftItem?.last_picked_by,
         };
       });
+
+    const hasDraftContinuation =
+      Boolean(sj.is_continuation) || itemsClone.some((it) => (Number(it.prev_qty_picked) || 0) > 0);
 
     const safeUnexpected = savedDraft && Array.isArray(savedDraft.unexpectedItems) && savedDraft.unexpectedItems.length > 0
       ? [...savedDraft.unexpectedItems]
@@ -2352,6 +2383,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       active_pickers: mergedPickers,
       items: itemsClone,
       unexpected_items: safeUnexpected,
+      is_continuation: hasDraftContinuation,
     });
     setActiveItems(itemsClone);
     setUnexpectedItems(safeUnexpected);
@@ -2373,19 +2405,41 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       })
     );
 
-    // Sync pending offline item progress FIRST, then collaborative claim/join to Supabase & broadcast to co-pickers
+    // Sync pending offline item progress FIRST, then collaborative claim/join to Supabase & hydrate any prior OUT baseline
     if (typeof navigator === 'undefined' || navigator.onLine) {
       syncPendingPickingItemsAndApply(false)
         .catch(() => {})
         .finally(() => {
-          claimOrJoinPickingSJSupabase(cleanNoSj, currentUser || 'Operator')
-            .then((res) => {
+          Promise.all([
+            claimOrJoinPickingSJSupabase(cleanNoSj, currentUser || 'Operator'),
+            fetchLoggedOutQtyBySkuForSj(cleanNoSj),
+          ])
+            .then(([res, loggedOutMap]) => {
               broadcastPickingCollabEvent('picker_joined', {
                 no_sj: cleanNoSj,
                 active_pickers: res.activePickers,
               });
               if (res.items.length > 0) {
                 applyRemoteSjRowsToState(cleanNoSj, res.items, true);
+              }
+              // If this SJ already has prior #OUT rows in log_produk (reopened continuation SJ),
+              // automatically hydrate prev_qty_picked baseline so co-pickers also see ONLY remaining qty!
+              if (loggedOutMap && loggedOutMap.size > 0) {
+                setActiveSJ((prevSj) =>
+                  prevSj && prevSj.no_sj.toUpperCase().trim() === cleanNoSj
+                    ? { ...prevSj, is_continuation: true }
+                    : prevSj
+                );
+                setActiveItems((prevItems) =>
+                  prevItems.map((it) => {
+                    const skuKey = String(it.sku || '').trim().toUpperCase();
+                    const alreadyOut = loggedOutMap.get(skuKey) || 0;
+                    if (alreadyOut <= 0) return it;
+                    const safeBaseline = Math.min(Math.max(0, Number(it.qty_picked) || 0), alreadyOut);
+                    const nextBaseline = Math.max(Number(it.prev_qty_picked) || 0, safeBaseline);
+                    return nextBaseline > 0 ? { ...it, prev_qty_picked: nextBaseline } : it;
+                  })
+                );
               }
             })
             .catch(() => {});
@@ -2407,6 +2461,181 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       );
     } else {
       onNotify(`Membuka Surat Jalan ${sj.no_sj}. Status aktif: Sedang Dikerjakan oleh ${formatOperatorWithPersonName(currentUser)}.`, 'info');
+    }
+  };
+
+  // Lanjutkan Sisa Picking dari SJ yang sudah berstatus SELESAI (SEBAGIAN / 0 PCS) — boleh diklik siapapun
+  // Otomatis memanggil ulang generated lokasi terupdate dari stok live & hanya menampilkan sisa yang belum terpicking!
+  const handleContinueRemainingSJ = async (sj: PickingSuratJalanGroup) => {
+    if (!sj) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      onNotify(
+        'Koneksi internet diperlukan untuk membuka ulang sisa picking & memperbarui lokasi stok rak terbaru.',
+        'warning'
+      );
+      return;
+    }
+
+    const cleanNoSj = sj.no_sj.toUpperCase().trim();
+    if (isReopeningSj) return;
+    setIsReopeningSj(cleanNoSj);
+    showGlobalLoading('Memuat Sisa Picking & Lokasi Rak Terbaru...');
+    markSjLocallyMutated(cleanNoSj, 6000);
+
+    try {
+      const res = await reopenRemainingPickingSJSupabase(cleanNoSj, currentUser || 'Operator');
+      if (!res.ok) {
+        onNotify(res.reason || 'Tidak ada item sisa untuk dilanjutkan pada SJ ini.', 'warning');
+        return;
+      }
+
+      // 1. Immediately hydrate realtimeSkuStocks with freshly fetched live warehouse stock (bypassing old locations)
+      setRealtimeSkuStocks((prev) => ({
+        ...prev,
+        ...res.freshStocksBySku,
+      }));
+
+      // 2. Build continuation workspace items:
+      //    - Already-fulfilled items keep prev_qty_picked = qty_picked & status = SELESAI (hidden from active list)
+      //    - Remaining items carry prev_qty_picked = prior qty_picked, fresh regenerated lokasi, cleared lokasi_picked & cleared KOSONG
+      const regularRows = res.items.filter((r) => (Number(r.qty_req) || 0) > 0 && !r.is_unexpected);
+      const itemsClone: PickingListItem[] = regularRows.map((it) => {
+        const cleanSku = String(it.sku || '').trim().toUpperCase();
+        const catMatch = fastFindCatalogProduct(cleanSku);
+        const catSize = catMatch?.s || (catMatch as any)?.size || (catMatch as any)?.variant;
+        const effectiveSize =
+          it.size && it.size !== '-'
+            ? it.size
+            : catSize && catSize !== '-'
+            ? catSize
+            : extractSizeFromSku(cleanSku);
+        const effectiveName =
+          it.nama_produk && it.nama_produk !== cleanSku
+            ? it.nama_produk
+            : catMatch?.p || (catMatch as any)?.nama_produk || catMatch?.n || it.nama_produk || cleanSku;
+        const reqQty = Math.max(1, Number(it.qty_req) || 1);
+        const priorPicked = Math.max(0, Number(it.prev_qty_picked ?? it.qty_picked ?? 0) || 0);
+        const isAlreadyFull = priorPicked >= reqQty;
+
+        return {
+          ...it,
+          sku: cleanSku,
+          size: effectiveSize,
+          nama_produk: effectiveName,
+          lokasi: it.lokasi || '-',
+          lokasi_picked: undefined,
+          qty_req: reqQty,
+          qty_picked: priorPicked,
+          prev_qty_picked: priorPicked,
+          is_kosong: false,
+          status: isAlreadyFull ? ('SELESAI' as const) : ('SEDANG PICKING' as const),
+          picker_name: it.picker_name || currentUser || 'Operator',
+          last_picked_by: isAlreadyFull ? it.last_picked_by : undefined,
+        };
+      });
+
+      // Sort by newly generated fresh rack location so walking route reflects latest warehouse stock
+      itemsClone.sort((a, b) => {
+        const locA = (a.lokasi || 'ZZZ').toUpperCase().trim();
+        const locB = (b.lokasi || 'ZZZ').toUpperCase().trim();
+        if (locA !== locB) return locA.localeCompare(locB, undefined, { numeric: true, sensitivity: 'base' });
+        return (a.nama_produk || a.sku || '').localeCompare(b.nama_produk || b.sku || '');
+      });
+
+      const mergedPickerStr = res.activePickers.join(', ') || currentUser || 'Operator';
+      const remainingPcsTotal = itemsClone.reduce(
+        (acc, it) => acc + Math.max(0, (Number(it.qty_req) || 0) - (Number(it.prev_qty_picked) || 0)),
+        0
+      );
+
+      removePickingSjDraft(cleanNoSj);
+      setViewCompletedSJ(null);
+      setHideCompleted(true);
+      setActiveSJ({
+        ...sj,
+        status: 'SEDANG PICKING',
+        picker_name: mergedPickerStr,
+        active_pickers: res.activePickers,
+        items: itemsClone,
+        unexpected_items: [],
+        is_continuation: true,
+      });
+      setActiveItems(itemsClone);
+      setUnexpectedItems([]);
+      setRekapCatatan(sj.catatan || '');
+      setActiveLocation('');
+      setIsMinimized(false);
+      setRecentScans([]);
+
+      // Update View 1 rawItems optimistically so SJ moves back to Belum Selesai immediately
+      setRawItems((prev) => {
+        const updatedBySku = new Map<string, PickingListItem>();
+        res.items.forEach((u) => updatedBySku.set(String(u.sku || '').trim().toUpperCase(), u));
+        const nextRaw = prev.map((item) => {
+          if ((item.no_sj || '').toUpperCase().trim() !== cleanNoSj) return item;
+          const match = updatedBySku.get(String(item.sku || '').trim().toUpperCase());
+          return match ? { ...item, ...match } : item;
+        });
+        try {
+          const activeOnly = nextRaw.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+          safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
+        } catch {}
+        return nextRaw;
+      });
+      setDraftsRevision((r) => r + 1);
+
+      broadcastPickingCollabEvent('sj_reopened', {
+        no_sj: cleanNoSj,
+        reopened_count: res.reopenedCount,
+      });
+
+      playCategoryBeep();
+      onNotify(
+        `🔄 Lanjutan Sisa Picking ${cleanNoSj} siap! Menampilkan ${res.reopenedCount} SKU sisa (${remainingPcsTotal} Pcs) dengan lokasi rak terbaru dari stok live.`,
+        'success'
+      );
+    } finally {
+      setIsReopeningSj(null);
+      hideGlobalLoading();
+    }
+  };
+
+  // Manual trigger inside View 2 to regenerate fresh live rack locations for remaining items
+  const handleRefreshActiveLiveLocations = async () => {
+    if (!activeSJ || isRefreshingLiveLocs) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      onNotify('Tidak dapat memperbarui lokasi rak saat offline.', 'warning');
+      return;
+    }
+    const skus = Array.from(
+      new Set(
+        activeItems
+          .filter((it) => (Number(it.qty_picked) || 0) < (Number(it.qty_req) || 1))
+          .map((it) => String(it.sku || '').trim().toUpperCase())
+          .filter(Boolean)
+      )
+    );
+    if (skus.length === 0) return;
+
+    setIsRefreshingLiveLocs(true);
+    try {
+      const stocks = await fetchStockForSkus(skus);
+      const grouped: Record<string, StockRealtimeItem[]> = {};
+      skus.forEach((s) => {
+        grouped[s] = [];
+      });
+      stocks.forEach((stk) => {
+        const key = String(stk.sku || '').trim().toUpperCase();
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(stk);
+      });
+      setRealtimeSkuStocks((prev) => ({ ...prev, ...grouped }));
+      playCategoryBeep();
+      onNotify(`📍 Lokasi rak stok live diperbarui untuk ${skus.length} SKU sisa.`, 'success');
+    } catch {
+      onNotify('Gagal memuat ulang lokasi rak live.', 'error');
+    } finally {
+      setIsRefreshingLiveLocs(false);
     }
   };
 
@@ -2829,11 +3058,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       nextItems[matchIdx] = updatedItem;
       setActiveItems(nextItems);
 
+      const prevBaseline = Math.max(0, Number(targetItem.prev_qty_picked) || 0);
+      const isContItem = Boolean(activeSJ?.is_continuation) || prevBaseline > 0;
+      const sessReq = isContItem ? Math.max(0, targetItem.qty_req - prevBaseline) : targetItem.qty_req;
+      const sessPicked = isContItem ? Math.max(0, newPicked - prevBaseline) : newPicked;
+
       if (newPicked > targetItem.qty_req) {
-        // Peringatan kelebihan barang (Over-pick) pada petugas terakhir
+        // Peringatan kelebihan barang (Over-pick / Double Pick) pada petugas terakhir
         playErrorBeep();
         vibrateDevice([250, 100, 250, 100, 250]);
         const lookup = lookupProductBySku(targetItem.sku, catalogMap, targetItem.nama_produk, targetItem.size);
+        const alreadyDonePrior = isContItem && prevBaseline >= targetItem.qty_req;
         setOverPickAlertModal({
           isOpen: true,
           sku: targetItem.sku,
@@ -2852,13 +3087,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             time: nowTime,
             type: 'SKU_OVER',
             text: barcode,
-            detail: `⚠️ LEBIH! ${targetItem.nama_produk} (${newPicked}/${targetItem.qty_req} Pcs)`,
+            detail: alreadyDonePrior
+              ? `⚠️ SUDAH LENGKAP SESI SEBELUMNYA! ${targetItem.nama_produk} (${newPicked}/${targetItem.qty_req} Pcs)`
+              : `⚠️ LEBIH! ${targetItem.nama_produk} (${sessPicked}/${sessReq} Pcs${isContItem ? ` · Total ${newPicked}/${targetItem.qty_req}` : ''})`,
             location: usedLocation,
           },
           ...prev.slice(0, 7),
         ]);
         onNotify(
-          `⚠️ PERINGATAN OVER-PICK: SKU ${targetItem.sku} sudah terambil ${newPicked}/${targetItem.qty_req} (Lebih +${newPicked - targetItem.qty_req} Pcs)!`,
+          alreadyDonePrior
+            ? `⚠️ DOUBLE PICK TERDETEKSI: SKU ${targetItem.sku} sudah selesai lengkap (${prevBaseline}/${targetItem.qty_req} Pcs) di sesi sebelumnya!`
+            : `⚠️ PERINGATAN OVER-PICK: SKU ${targetItem.sku} sudah terambil ${sessPicked}/${sessReq} (Lebih +${newPicked - targetItem.qty_req} Pcs)!`,
           'warning'
         );
       } else if (newPicked === targetItem.qty_req) {
@@ -2871,12 +3110,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             time: nowTime,
             type: 'SKU_MATCH',
             text: barcode,
-            detail: `✅ PAS LENGKAP! ${targetItem.nama_produk} (${newPicked}/${targetItem.qty_req} Pcs)`,
+            detail: isContItem && prevBaseline > 0
+              ? `✅ SISA PAS LENGKAP! ${targetItem.nama_produk} (${sessPicked}/${sessReq} sisa · Total ${newPicked}/${targetItem.qty_req})`
+              : `✅ PAS LENGKAP! ${targetItem.nama_produk} (${newPicked}/${targetItem.qty_req} Pcs)`,
             location: usedLocation,
           },
           ...prev.slice(0, 7),
         ]);
-        onNotify(`✅ PAS LENGKAP! SKU ${targetItem.sku} (${targetItem.nama_produk}) selesai (${newPicked}/${targetItem.qty_req}) dari Rak ${usedLocation}.`, 'success');
+        onNotify(
+          isContItem && prevBaseline > 0
+            ? `✅ SISA PAS LENGKAP! SKU ${targetItem.sku} selesai (${sessPicked}/${sessReq} sisa · Total SJ ${newPicked}/${targetItem.qty_req}) dari Rak ${usedLocation}.`
+            : `✅ PAS LENGKAP! SKU ${targetItem.sku} (${targetItem.nama_produk}) selesai (${newPicked}/${targetItem.qty_req}) dari Rak ${usedLocation}.`,
+          'success'
+        );
       } else {
         // Incremented
         playSuccessBeep();
@@ -2887,12 +3133,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             time: nowTime,
             type: 'SKU_MATCH',
             text: barcode,
-            detail: `📦 +1 ${targetItem.nama_produk} (${newPicked}/${targetItem.qty_req} Pcs)`,
+            detail: isContItem && prevBaseline > 0
+              ? `📦 +1 ${targetItem.nama_produk} (${sessPicked}/${sessReq} sisa · Total ${newPicked}/${targetItem.qty_req})`
+              : `📦 +1 ${targetItem.nama_produk} (${newPicked}/${targetItem.qty_req} Pcs)`,
             location: usedLocation,
           },
           ...prev.slice(0, 7),
         ]);
-        onNotify(`+1 SKU ${targetItem.sku} (${newPicked}/${targetItem.qty_req} Pcs) dari Rak ${usedLocation}`, 'info');
+        onNotify(
+          isContItem && prevBaseline > 0
+            ? `+1 SKU ${targetItem.sku} (${sessPicked}/${sessReq} sisa · Total ${newPicked}/${targetItem.qty_req}) dari Rak ${usedLocation}`
+            : `+1 SKU ${targetItem.sku} (${newPicked}/${targetItem.qty_req} Pcs) dari Rak ${usedLocation}`,
+          'info'
+        );
       }
 
       // Atomic realtime sync to Supabase (also catches simultaneous collision with User A)
@@ -2972,7 +3225,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const target = activeItems[index];
     if (!target) return;
     const prevPickedBy = target.last_picked_by || parsePickerNamesList(target.picker_name).slice(-1)[0] || currentUser;
-    const newQty = Math.max(0, target.qty_picked + delta);
+    const minBaseline = Math.max(0, Number(target.prev_qty_picked) || 0);
+    const newQty = Math.max(minBaseline, target.qty_picked + delta);
+    const effectiveDelta = newQty - target.qty_picked;
+    if (effectiveDelta === 0) return;
 
     const itemLocs = getProductLocations(target.sku, target.lokasi);
     const cleanActive = resolvePrimarySingleLocation(activeLocation || '');
@@ -3020,7 +3276,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     syncItemRealtimeAndCheckOverPick({
       itemIndex: index,
       targetItem: target,
-      delta,
+      delta: effectiveDelta,
       markKosong: false,
       usedLocation: resolvedLoc,
     });
@@ -3153,25 +3409,31 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     });
   };
 
-  // Quick Action: Reset picked to 0
+  // Quick Action: Reset picked to 0 (or prior completed baseline in continuation picking so Session 1 is never erased)
   const handleResetItemQty = (index: number) => {
     const target = activeItems[index];
     if (!target) return;
+    const minBaseline = Math.max(0, Number(target.prev_qty_picked) || 0);
     const resolvedLoc = resolveSingleItemLocation(target);
     const nextList = [...activeItems];
     nextList[index] = {
       ...target,
-      qty_picked: 0,
+      qty_picked: minBaseline,
       is_kosong: false,
-      status: 'SEDANG PICKING',
+      status: minBaseline >= target.qty_req ? 'SELESAI' : 'SEDANG PICKING',
     };
     setActiveItems(nextList);
-    onNotify(`↺ Qty SKU ${target.sku} di-reset ke 0`, 'info');
+    onNotify(
+      minBaseline > 0
+        ? `↺ Tambahan sesi lanjutan SKU ${target.sku} di-reset ke 0 (Tetap tersimpan ${minBaseline} Pcs dari sesi sebelumnya)`
+        : `↺ Qty SKU ${target.sku} di-reset ke 0`,
+      'info'
+    );
 
     syncItemRealtimeAndCheckOverPick({
       itemIndex: index,
       targetItem: target,
-      absoluteQty: 0,
+      absoluteQty: minBaseline,
       markKosong: false,
       usedLocation: resolvedLoc,
     });
@@ -3544,15 +3806,57 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     );
   };
 
-  // Calculate stats for current active SJ
+  // Calculate stats for current active SJ (including continuation-session remaining progress)
   const activeStats = React.useMemo(() => {
-    if (!activeSJ) return { totalReq: 0, totalPicked: 0, percentage: 0, statusType: 'SEMUA_PAS' as RekapStatusType, kosongCount: 0 };
+    if (!activeSJ) {
+      return {
+        totalReq: 0,
+        totalPicked: 0,
+        regularPicked: 0,
+        unexpectedPicked: 0,
+        percentage: 0,
+        statusType: 'SEMUA_PAS' as RekapStatusType,
+        hasKurang: false,
+        hasLebih: false,
+        hasSalah: false,
+        kosongCount: 0,
+        isContinuation: false,
+        prevTotalPicked: 0,
+        sessionReq: 0,
+        sessionPicked: 0,
+        sessionPercentage: 0,
+        sessionSkuTotal: 0,
+        sessionSkuDone: 0,
+      };
+    }
     const totalReq = activeItems.reduce((acc, it) => acc + (Number(it.qty_req) || 0), 0);
     const regularPicked = activeItems.reduce((acc, it) => acc + (Number(it.qty_picked) || 0), 0);
     const unexpectedPicked = unexpectedItems.reduce((acc, it) => acc + (Number(it.qty_picked) || 0), 0);
     const totalPicked = regularPicked + unexpectedPicked;
     const percentage = totalReq > 0 ? Math.min(100, Math.round((regularPicked / totalReq) * 100)) : 100;
     const kosongCount = activeItems.filter((it) => it.is_kosong || it.status === 'KOSONG').length;
+
+    const prevTotalPicked = activeItems.reduce((acc, it) => acc + Math.max(0, Number(it.prev_qty_picked) || 0), 0);
+    const isContinuation = Boolean(activeSJ.is_continuation) || prevTotalPicked > 0;
+    const sessionReq = isContinuation
+      ? activeItems.reduce(
+          (acc, it) => acc + Math.max(0, (Number(it.qty_req) || 0) - Math.max(0, Number(it.prev_qty_picked) || 0)),
+          0
+        )
+      : totalReq;
+    const sessionPicked = isContinuation
+      ? activeItems.reduce(
+          (acc, it) => acc + Math.max(0, (Number(it.qty_picked) || 0) - Math.max(0, Number(it.prev_qty_picked) || 0)),
+          0
+        )
+      : regularPicked;
+    const sessionPercentage =
+      sessionReq > 0 ? Math.min(100, Math.round((sessionPicked / sessionReq) * 100)) : 100;
+    const sessionItems = isContinuation
+      ? activeItems.filter((it) => (Number(it.qty_req) || 0) > Math.max(0, Number(it.prev_qty_picked) || 0))
+      : activeItems;
+    const sessionSkuTotal = sessionItems.length;
+    const sessionSkuDone = sessionItems.filter((it) => (Number(it.qty_picked) || 0) >= (Number(it.qty_req) || 1)).length;
 
     let hasKurang = false;
     let hasLebih = false;
@@ -3570,7 +3874,25 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     else if (hasLebih) statusType = 'ADA_LEBIH';
     else statusType = 'SEMUA_PAS';
 
-    return { totalReq, totalPicked, regularPicked, unexpectedPicked, percentage, statusType, hasKurang, hasLebih, hasSalah, kosongCount };
+    return {
+      totalReq,
+      totalPicked,
+      regularPicked,
+      unexpectedPicked,
+      percentage,
+      statusType,
+      hasKurang,
+      hasLebih,
+      hasSalah,
+      kosongCount,
+      isContinuation,
+      prevTotalPicked,
+      sessionReq,
+      sessionPicked,
+      sessionPercentage,
+      sessionSkuTotal,
+      sessionSkuDone,
+    };
   }, [activeSJ, activeItems, unexpectedItems]);
 
   // Open Rekap Modal (flush local offline items first, then sync latest remote state so freshest combined status is shown)
@@ -4034,10 +4356,25 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-primary-500/10 text-primary-500 border border-primary-500/20">
                     {activeSJ.status}
                   </span>
+                  {activeStats.isContinuation && (
+                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700">
+                      LANJUTAN SISA
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleRefreshActiveLiveLocations}
+                    disabled={isRefreshingLiveLocs}
+                    className="px-2.5 py-1 bg-white hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-[11px] rounded-lg flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                    title="Muat ulang lokasi rak terbaru dari stok fisik live Supabase"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 text-indigo-500 ${isRefreshingLiveLocs ? 'animate-spin' : ''}`} />
+                    <span>Refresh Lokasi</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => handleOpenEditSJModal(activeSJ)}
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] rounded-lg flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition-all active:scale-95 ml-1"
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-extrabold text-[11px] rounded-lg flex items-center gap-1 border border-slate-200 dark:border-slate-700 transition-all active:scale-95"
                     title="Ubah info SJ, tambah SKU baru atau ubah target SKU"
                   >
                     <FileEdit className="w-3.5 h-3.5 text-primary-500" />
@@ -4077,13 +4414,28 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
               {/* Rekap Status Badge (ENLARGED FOR MOBILE VISIBILITY) */}
               <div className="text-right bg-slate-50 dark:bg-slate-800/70 px-3.5 py-2 rounded-2xl border border-slate-200 dark:border-slate-700/80">
-                <div className="text-[10px] font-extrabold uppercase text-slate-400 mb-0.5">Total Terambil</div>
-                <div className="text-3xl sm:text-4xl font-black font-mono tabular-nums text-slate-800 dark:text-white flex items-baseline justify-end gap-1 leading-none">
-                  <span className={activeStats.percentage === 100 ? 'text-emerald-500' : 'text-primary-500'}>
-                    {activeStats.regularPicked}
-                  </span>
-                  <span className="text-base sm:text-lg text-slate-400 font-extrabold">/ {activeStats.totalReq} Pcs</span>
+                <div className="text-[10px] font-extrabold uppercase text-slate-400 mb-0.5">
+                  {activeStats.isContinuation ? 'Sisa Terambil (Sesi Ini)' : 'Total Terambil'}
                 </div>
+                <div className="text-3xl sm:text-4xl font-black font-mono tabular-nums text-slate-800 dark:text-white flex items-baseline justify-end gap-1 leading-none">
+                  <span
+                    className={
+                      (activeStats.isContinuation ? activeStats.sessionPercentage : activeStats.percentage) === 100
+                        ? 'text-emerald-500'
+                        : 'text-primary-500'
+                    }
+                  >
+                    {activeStats.isContinuation ? activeStats.sessionPicked : activeStats.regularPicked}
+                  </span>
+                  <span className="text-base sm:text-lg text-slate-400 font-extrabold">
+                    / {activeStats.isContinuation ? activeStats.sessionReq : activeStats.totalReq} Pcs
+                  </span>
+                </div>
+                {activeStats.isContinuation && (
+                  <div className="text-[10px] font-mono font-bold text-slate-500 dark:text-slate-400 mt-1">
+                    Total SJ: {activeStats.regularPicked}/{activeStats.totalReq} Pcs (Sesi lalu: {activeStats.prevTotalPicked})
+                  </div>
+                )}
               </div>
             </div>
 
@@ -4091,8 +4443,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             <div className="mt-2 pt-3 border-t border-slate-100 dark:border-slate-800/80">
               <div className="flex flex-wrap justify-between items-center text-xs font-bold mb-1.5 gap-1">
                 <span className="text-slate-600 dark:text-slate-400">
-                  {activeStats.percentage}% Selesai ({activeItems.filter((i) => i.qty_picked >= i.qty_req).length} dari {activeItems.length} SKU
-                  {activeStats.kosongCount > 0 ? ` • ${activeStats.kosongCount} Kosong` : ''})
+                  {activeStats.isContinuation ? (
+                    <>
+                      {activeStats.sessionPercentage}% Sisa Selesai ({activeStats.sessionSkuDone} dari {activeStats.sessionSkuTotal} SKU sisa
+                      {activeStats.kosongCount > 0 ? ` • ${activeStats.kosongCount} Kosong` : ''})
+                    </>
+                  ) : (
+                    <>
+                      {activeStats.percentage}% Selesai ({activeItems.filter((i) => i.qty_picked >= i.qty_req).length} dari {activeItems.length} SKU
+                      {activeStats.kosongCount > 0 ? ` • ${activeStats.kosongCount} Kosong` : ''})
+                    </>
+                  )}
                 </span>
                 <div className="flex items-center gap-2">
                   {activeStats.kosongCount > 0 && (
@@ -4120,9 +4481,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <div className="w-full h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
                 <div
                   className={`h-full transition-all duration-300 ${
-                    activeStats.percentage === 100 ? 'bg-emerald-500' : 'bg-primary-500'
+                    (activeStats.isContinuation ? activeStats.sessionPercentage : activeStats.percentage) === 100
+                      ? 'bg-emerald-500'
+                      : 'bg-primary-500'
                   }`}
-                  style={{ width: `${activeStats.percentage}%` }}
+                  style={{ width: `${activeStats.isContinuation ? activeStats.sessionPercentage : activeStats.percentage}%` }}
                 />
               </div>
             </div>
@@ -4139,7 +4502,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <div className="max-w-lg mx-auto">
                 <div className="flex items-center justify-between gap-2 mb-1.5 px-0.5">
                   <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
-                    Metode Pemindaian · <span className="font-mono text-slate-600 dark:text-slate-300">{activeSJ.no_sj} ({activeStats.regularPicked}/{activeStats.totalReq})</span>
+                    Metode Pemindaian ·{' '}
+                    <span className="font-mono text-slate-600 dark:text-slate-300">
+                      {activeSJ.no_sj} (
+                      {activeStats.isContinuation
+                        ? `Sisa ${activeStats.sessionPicked}/${activeStats.sessionReq}`
+                        : `${activeStats.regularPicked}/${activeStats.totalReq}`}
+                      )
+                    </span>
                   </span>
                   <button
                     type="button"
@@ -4509,7 +4879,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         <div className="space-y-2.5">
           <div className="flex flex-wrap justify-between items-center gap-2 px-1">
             <h2 className="text-xs font-black text-slate-600 dark:text-slate-400 uppercase tracking-wider">
-              Daftar Barang Surat Jalan ({activeItems.length} SKU)
+              {activeStats.isContinuation
+                ? `Daftar Sisa Barang Belum Terpicking (${activeStats.sessionSkuTotal} SKU · ${activeStats.sessionReq} Pcs)`
+                : `Daftar Barang Surat Jalan (${activeItems.length} SKU)`}
             </h2>
             <div className="flex items-center gap-2 flex-wrap">
               {(() => {
@@ -4545,10 +4917,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             if (!item) return null;
             const reqQty = Math.max(1, Number(item.qty_req) || 1);
             const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
+            const prevPicked = Math.max(0, Number(item.prev_qty_picked) || 0);
+            const isContinuationItem = activeStats.isContinuation || prevPicked > 0;
+            const isPriorCompleted = isContinuationItem && prevPicked >= reqQty;
+            const displayReqQty = isContinuationItem ? Math.max(0, reqQty - prevPicked) : reqQty;
+            const displayPickedQty = isContinuationItem ? Math.max(0, pickedQty - prevPicked) : pickedQty;
             const isKosong = Boolean(item.is_kosong || item.status === 'KOSONG');
             const isOver = pickedQty > reqQty;
             const isCompleted = pickedQty >= reqQty && !isOver;
-            // Auto-hide items that are exact-picked (isCompleted) or marked empty (isKosong) when hideCompleted is on.
+            // Auto-hide items that are exact-picked (isCompleted, including prior completed) or marked empty (isKosong) when hideCompleted is on.
             // Over-picked items (isOver) stay visible so operators can immediately spot and fix the excess!
             if (hideCompleted && (isCompleted || isKosong)) return null;
             const itemSku = String(item.sku || '').trim().toUpperCase();
@@ -4582,6 +4959,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <AlertOctagon className="w-3 h-3 shrink-0" /> LEBIH +{pickedQty - reqQty} PCS
                 </span>
               );
+            } else if (isPriorCompleted) {
+              cardBorder = 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-900/50 opacity-75';
+              statusBadge = (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border border-slate-300 dark:border-slate-700 inline-flex items-center gap-1 shrink-0">
+                  <CheckCircle2 className="w-3 h-3 shrink-0" /> Selesai Sesi Lalu ({prevPicked}/{reqQty})
+                </span>
+              );
             } else if (isCompleted) {
               cardBorder = 'border-emerald-300 dark:border-emerald-800/60 bg-emerald-50/20 dark:bg-emerald-950/10';
               statusBadge = (
@@ -4589,11 +4973,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   <CheckCircle2 className="w-3 h-3 shrink-0" /> Pas Selesai
                 </span>
               );
-            } else if (pickedQty > 0) {
+            } else if (displayPickedQty > 0) {
               cardBorder = 'border-amber-200 dark:border-amber-800/50 bg-amber-50/10 dark:bg-amber-950/10';
               statusBadge = (
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200 dark:border-amber-700 shrink-0">
-                  Kurang {reqQty - pickedQty}
+                  Kurang {Math.max(0, reqQty - pickedQty)}
                 </span>
               );
             }
@@ -4696,19 +5080,26 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         </button>
                       )}
                       <div
-                        className={`px-3 py-1 rounded-xl font-mono font-black text-sm tabular-nums ${
+                        className={`px-3 py-1 rounded-xl font-mono font-black text-sm tabular-nums text-right ${
                           isKosong
                             ? 'bg-rose-100 dark:bg-rose-950/80 text-rose-700 dark:text-rose-300 line-through'
                             : isOver
                             ? 'bg-rose-600 text-white'
                             : isCompleted
                             ? 'bg-emerald-600 text-white'
-                            : pickedQty > 0
+                            : displayPickedQty > 0
                             ? 'bg-indigo-600 text-white'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white'
                         }`}
                       >
-                        {pickedQty}/{reqQty} <span className="text-[10px] font-bold opacity-80">PCS</span>
+                        <div>
+                          {displayPickedQty}/{displayReqQty} <span className="text-[10px] font-bold opacity-80">PCS</span>
+                        </div>
+                        {prevPicked > 0 && !isPriorCompleted && (
+                          <div className="text-[9px] font-sans font-bold opacity-80 leading-none mt-0.5">
+                            Sesi lalu: {prevPicked}/{reqQty}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -4930,13 +5321,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         ? 'bg-emerald-600 text-white'
                         : 'bg-indigo-600 text-white'
                     }`}
-                    title={`Target yang harus diambil dari rak: ${reqQty} pcs`}
+                    title={
+                      prevPicked > 0
+                        ? `Target sisa yang harus diambil sekarang: ${displayReqQty} pcs (Order SJ: ${reqQty} pcs, sudah terambil sebelumnya: ${prevPicked} pcs)`
+                        : `Target yang harus diambil dari rak: ${reqQty} pcs`
+                    }
                   >
                     <span className="block text-[9.5px] font-extrabold uppercase tracking-wider opacity-85 leading-none">
-                      AMBIL
+                      {prevPicked > 0 && !isPriorCompleted ? 'AMBIL SISA' : 'AMBIL'}
                     </span>
                     <span className="block font-mono text-lg sm:text-xl font-black leading-tight tabular-nums mt-0.5">
-                      {reqQty} <span className="text-[11px] font-bold">PCS</span>
+                      {displayReqQty} <span className="text-[11px] font-bold">PCS</span>
                     </span>
                   </div>
                 </div>
@@ -4957,6 +5352,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           {item.sku}
                         </span>
                         {statusBadge}
+                        {prevPicked > 0 && !isPriorCompleted && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                            Order SJ: {reqQty} pcs · Sudah ambil lalu: {prevPicked} pcs
+                          </span>
+                        )}
                         {isKosong && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/50 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800">
                             <Ban className="w-3 h-3 shrink-0" />
@@ -5033,15 +5433,20 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </button>
                       <div className="px-1 min-w-[68px] text-center flex items-center justify-center gap-0.5">
                         <NumberInput
-                          value={item.qty_picked}
+                          value={displayPickedQty}
                           min={0}
                           max={99999}
                           selectOnFocus
                           commitOnBlurOnly
                           aria-label={`Qty diambil ${item.sku}`}
-                          title="Ketik langsung jumlah Qty yang diambil (Enter untuk simpan)"
-                          onValueChange={(newQty) => {
-                            const delta = newQty - item.qty_picked;
+                          title={
+                            prevPicked > 0
+                              ? `Ketik jumlah sisa yang diambil di sesi ini (Target sisa: ${displayReqQty} pcs)`
+                              : 'Ketik langsung jumlah Qty yang diambil (Enter untuk simpan)'
+                          }
+                          onValueChange={(newDisplayQty) => {
+                            const targetTotalQty = prevPicked + Math.max(0, newDisplayQty);
+                            const delta = targetTotalQty - item.qty_picked;
                             if (delta !== 0) handleAdjustQty(index, delta);
                           }}
                           onKeyDown={(e) => {
@@ -5058,7 +5463,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           }`}
                         />
                         <span className="text-xs font-bold font-mono text-slate-400">
-                          /{reqQty}
+                          /{displayReqQty}
                         </span>
                       </div>
                       <button
@@ -5084,12 +5489,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       {isCompleted ? (
                         <>
                           <CheckCircle2 className="w-4 h-4 shrink-0" />
-                          <span>Selesai ({reqQty})</span>
+                          <span>Selesai ({displayReqQty})</span>
                         </>
                       ) : (
                         <>
                           <Check className="w-4 h-4 shrink-0" />
-                          <span>Ambil Pas ({reqQty})</span>
+                          <span>Ambil Pas ({displayReqQty})</span>
                         </>
                       )}
                     </button>
@@ -5330,6 +5735,18 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
               {/* Modal Body */}
               <div className="p-2 sm:p-3 overflow-y-auto space-y-2">
+                {activeStats.isContinuation && (
+                  <div className="p-3 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl flex items-start gap-2.5">
+                    <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                    <div className="text-[11px] text-indigo-900 dark:text-indigo-200 leading-relaxed">
+                      <div className="font-black uppercase">Mode Sesi Lanjutan (Anti-Double Potong Stok)</div>
+                      Tambahan sesi ini: <b className="font-mono">+{activeStats.sessionPicked} Pcs</b> (Sesi sebelumnya:{' '}
+                      <b className="font-mono">{activeStats.prevTotalPicked} Pcs</b> · Total keseluruhan SJ:{' '}
+                      <b className="font-mono">{activeStats.regularPicked}/{activeStats.totalReq} Pcs</b>). Mutasi <code className="font-mono font-bold">#OUT</code> di <code className="font-mono">log_produk</code> otomatis hanya mencatat selisih tambahan yang baru dipicking.
+                    </div>
+                  </div>
+                )}
+
                 {/* Status Evaluation Banner */}
                 {activeStats.statusType === 'SEMUA_PAS' && (
                   <div className="p-3.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-2xl flex items-center gap-3">
@@ -5987,13 +6404,43 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       </button>
                     )}
                     {isDone && (
-                      <button
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); handlePrintHasilPicking(group); }}
-                        className="px-3 py-2 bg-blue-500/10 hover:bg-blue-500/20 text-blue-600 rounded-xl text-[10px] font-extrabold uppercase transition-all shadow-sm active:scale-95 flex items-center gap-1.5"
-                        title="Cetak Hasil Picking"
-                      >
-                        <Printer className="w-4 h-4" /> Cetak Hasil
-                      </button>
+                      <>
+                        {(() => {
+                          const remPcs = group.items.reduce(
+                            (sum, it) => sum + Math.max(0, (Number(it.qty_req) || 0) - (Number(it.qty_picked) || 0)),
+                            0
+                          );
+                          if (remPcs <= 0) return null;
+                          const isReopeningThis = isReopeningSj === sjUpper;
+                          return (
+                            <button
+                              type="button"
+                              disabled={Boolean(isReopeningSj)}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleContinueRemainingSJ(group);
+                              }}
+                              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all shadow-sm active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+                              title={`Lanjutkan sisa picking ${remPcs} pcs dengan lokasi rak stok terbaru`}
+                            >
+                              {isReopeningThis ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              )}
+                              <span>Lanjutkan Sisa ({remPcs})</span>
+                            </button>
+                          );
+                        })()}
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handlePrintHasilPicking(group); }}
+                          className="px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-extrabold uppercase transition-all shadow-2xs active:scale-95 flex items-center gap-1.5 cursor-pointer"
+                          title="Cetak Hasil Picking"
+                        >
+                          <Printer className="w-3.5 h-3.5" /> Cetak Hasil
+                        </button>
+                      </>
                     )}
                     {!isDone && (isCurrentUserInPickers || isCurrentlyMinimizedSj) && (
                       <button
@@ -6033,7 +6480,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       onClick={() => handleSelectSJ(group)}
                       className={`px-3 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer ${
                         isDone
-                          ? 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                          ? 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700'
                           : otherPickersWorking.length > 0 && !isCurrentUserInPickers
                           ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-500/20'
                           : 'bg-primary-500 hover:bg-primary-600 text-white shadow-primary-500/20'
@@ -6198,10 +6645,33 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               )}
             </div>
 
-            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] text-right">
+            <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex flex-wrap items-center justify-end gap-2">
+              {(() => {
+                const remPcs = viewCompletedSJ.items.reduce(
+                  (sum, it) => sum + Math.max(0, (Number(it.qty_req) || 0) - (Number(it.qty_picked) || 0)),
+                  0
+                );
+                if (remPcs <= 0) return null;
+                return (
+                  <button
+                    type="button"
+                    disabled={Boolean(isReopeningSj)}
+                    onClick={() => handleContinueRemainingSJ(viewCompletedSJ)}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl inline-flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-60"
+                  >
+                    {isReopeningSj === viewCompletedSJ.no_sj.toUpperCase().trim() ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="w-4 h-4" />
+                    )}
+                    <span>Lanjutkan Sisa Picking ({remPcs} Pcs)</span>
+                  </button>
+                );
+              })()}
               <button
+                type="button"
                 onClick={() => setViewCompletedSJ(null)}
-                className="px-5 py-2.5 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-white font-bold text-xs rounded-xl"
+                className="px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white font-bold text-xs rounded-xl cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700"
               >
                 Tutup
               </button>
@@ -6791,15 +7261,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       <span>Simpan Status Terakhir &amp; Keluar ({cancelPickingModal.pickedQty} Pcs)</span>
                     </button>
-                    <button
-                      type="button"
-                      disabled={isCancellingPicking}
-                      onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
-                      className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
-                    >
-                      <RotateCcw className="w-4 h-4" />
-                      <span>Batalkan Picking (Reset ke 0 Pcs / PENDING)</span>
-                    </button>
+                    {!activeStats.isContinuation && (
+                      <button
+                        type="button"
+                        disabled={isCancellingPicking}
+                        onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
+                        className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-4 h-4" />
+                        <span>Batalkan Picking (Reset ke 0 Pcs / PENDING)</span>
+                      </button>
+                    )}
                   </>
                 )}
               </div>

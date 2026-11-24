@@ -15,20 +15,59 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.27.0",
-  "versionCode": 470,
-  "buildDate": "23 November 2026",
-  "buildHash": "wms-261123-v470-0505",
-  "releaseTitle": "WMS v2.27.0 — Pembaruan Sistem & Optimasi Operasional",
+  "version": "v2.28.2",
+  "versionCode": 482,
+  "buildDate": "24 November 2026",
+  "buildHash": "wms-261124-v482-0015",
+  "releaseTitle": "WMS v2.28.2 — Fix Baris Picking Nyangkut & Upgrade Skill Guardrails",
   "releaseNotes": [
-    "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
-    "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
-    "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
+    "Perbaikan paralel completion + SJ-wide sweep agar 0 baris nyangkut",
+    "Pembersihan data TO.OMP.26.11.00356 di Supabase",
+    "Upgrade skill wms-picking-completion-sync-guardrails untuk seluruh agen"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.28.1",
+    "versionCode": 481,
+    "buildDate": "23 November 2026",
+    "buildHash": "wms-261123-v481-2253",
+    "releaseTitle": "WMS v2.28.1 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
+      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
+      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.28.0",
+    "versionCode": 480,
+    "buildDate": "23 November 2026",
+    "buildHash": "wms-261123-v480-1521",
+    "releaseTitle": "WMS v2.28.0 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
+      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
+      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.27.0",
+    "versionCode": 470,
+    "buildDate": "23 November 2026",
+    "buildHash": "wms-261123-v470-0505",
+    "releaseTitle": "WMS v2.27.0 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
+      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
+      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.26.0",
     "versionCode": 460,
@@ -89,45 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Pastikan B-LWS, B-PNK Panakkukang, QC, WH, MAP selalu tampil lengkap di CSV Barcode",
       "Tingkatkan pencarian outlet agar mengenali nama panjang Panakkukang & Living World",
       "Tambah filter cepat kategori Bazaar (B-) dan Gudang/QC WMS"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.6",
-    "versionCode": 446,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v446-1547",
-    "releaseTitle": "WMS v2.24.6 — Standardisasi Penamaan Entitas Bazaar Prefix B- & Integrasi Engine Cetak Teruji WMS",
-    "releaseNotes": [
-      "Standarisasi penamaan entitas bazaar prefix B- (B-EMP, B-LWS, B-PNK, B-SMS)",
-      "Adopsi styling & CSS cetak Quicksand + JetBrains Mono dari modul teruji WMS",
-      "Penyempurnaan @page dan layout thermal roll 50x20mm pada CSV Barcode & CSV Distribusi"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.5",
-    "versionCode": 445,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v445-1530",
-    "releaseTitle": "WMS v2.24.5 — Penyempurnaan Spasi Baris Label & Filtrasi Murni Store Fisik DealPOS",
-    "releaseNotes": [
-      "Filter ketat saluran non-store (BOOKED, PERMAK/CUCI, BARANG CACAT, dll) agar murni Store Fisik DealPOS",
-      "Perbaiki spasi baris label QR code yang renggang dan presisikan jarak baris teks",
-      "Tambahkan kontrol cepat orientasi Lanskap Potret & rotasi 90/270 derajat Xprinter XP-420B"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.4",
-    "versionCode": 444,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v444-1439",
-    "releaseTitle": "WMS v2.24.4 — Perbaikan Cetak Multi-Halaman & Kontrol Orientasi Rotasi Barcode 50x20mm",
-    "releaseNotes": [
-      "Perbaiki bug cetak hanya 1 lembar pembatas pada printer thermal roll",
-      "Tambah opsi orientasi Lanskap Potret & rotasi 0 90 180 270 derajat",
-      "Filter otomatis kolom summary TOTAL_STOK & TP dari daftar outlet"
     ],
     "minSupportedVersion": "v2.0.0"
   }

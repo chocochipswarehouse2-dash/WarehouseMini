@@ -28,6 +28,9 @@ import {
   ShoppingBag,
   Video,
   Warehouse,
+  User,
+  Copy,
+  Check,
 } from 'lucide-react';
 import {
   UserSession,
@@ -38,6 +41,7 @@ import {
   PickingListItem,
   PenerimaanProduksiItem,
   ManualShipmentOrder,
+  LogProdukItem,
 } from '../types';
 import {
   getSupabaseClient,
@@ -74,6 +78,10 @@ import {
 } from '../services/scannerOutboxService';
 import { InventoryAnomalyModal } from './InventoryAnomalyModal';
 import { DashboardWorkToolsGrid } from './DashboardWorkToolsGrid';
+import { AreaBadge } from './inventory/InventoryList';
+import { getLogSource } from './MutasiLogView';
+import { resolveProductName, resolveProductDisplaySize } from '../utils/sortUtils';
+import { formatOperatorWithPersonName } from '../utils/userResolver';
 
 export interface DashboardRecountQueueEntry {
   kode_produksi: string;
@@ -114,11 +122,15 @@ interface DashboardViewProps {
 interface RecentLogItem {
   id: number | string;
   type: string;
+  invoice?: string;
   sku: string;
   nama_produk: string;
+  size?: string;
+  area?: string;
   lokasi: string;
   qty: number;
   operator: string;
+  keterangan?: string;
   created_at: string;
 }
 
@@ -137,8 +149,67 @@ interface DashboardMetrics {
 
 const EMPTY_ORDER_STATS: OrderBreakdownStats = { baru: 0, diproses: 0, selesai: 0, total: 0 };
 
-const DASHBOARD_CACHE_KEY = 'wms_dashboard_lean_metrics_v4';
+const DASHBOARD_CACHE_KEY = 'wms_dashboard_lean_metrics_v5';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 Menit Stale-While-Revalidate
+
+function renderLogTypeStyle(type: string) {
+  switch (type) {
+    case 'IN':
+      return {
+        badge: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80',
+        dot: 'bg-emerald-500',
+        qty: 'text-emerald-700 dark:text-emerald-400',
+        cellBg: 'bg-emerald-50/40 dark:bg-emerald-950/20',
+        prefix: '+',
+      };
+    case 'OUT':
+      return {
+        badge: 'bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200/80 dark:border-rose-800/80',
+        dot: 'bg-rose-500',
+        qty: 'text-rose-600 dark:text-rose-400',
+        cellBg: 'bg-rose-50/40 dark:bg-rose-950/20',
+        prefix: '-',
+      };
+    case 'ADJ_IN':
+      return {
+        badge: 'bg-teal-50 text-teal-700 dark:bg-teal-950/60 dark:text-teal-300 border border-teal-200/80 dark:border-teal-800/80',
+        dot: 'bg-teal-500',
+        qty: 'text-teal-700 dark:text-teal-400',
+        cellBg: 'bg-teal-50/40 dark:bg-teal-950/20',
+        prefix: '+',
+      };
+    case 'ADJ_OUT':
+      return {
+        badge: 'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/80',
+        dot: 'bg-amber-500',
+        qty: 'text-amber-700 dark:text-amber-400',
+        cellBg: 'bg-amber-50/40 dark:bg-amber-950/20',
+        prefix: '-',
+      };
+    default:
+      return {
+        badge: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80',
+        dot: 'bg-indigo-500',
+        qty: 'text-indigo-600 dark:text-indigo-400',
+        cellBg: 'bg-indigo-50/35 dark:bg-indigo-950/20',
+        prefix: '',
+      };
+  }
+}
+
+function formatLogShortTime(iso?: string): string {
+  if (!iso) return '-';
+  try {
+    return new Date(iso).toLocaleString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '-';
+  }
+}
 
 function getSessionStoreName(session: UserSession | null | undefined): string {
   if (!session || isSuperadmin(session)) return '';
@@ -563,6 +634,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [timeAgoStr, setTimeAgoStr] = useState<string>('');
+  const [copiedLogInvoice, setCopiedLogInvoice] = useState<string | null>(null);
+
+  const handleCopyLogInvoice = useCallback(
+    (inv?: string) => {
+      if (!inv || inv === '-') return;
+      try {
+        navigator.clipboard.writeText(inv);
+        setCopiedLogInvoice(inv);
+        setTimeout(() => setCopiedLogInvoice(null), 1800);
+        if (onShowToast) onShowToast(`Nomor invoice ${inv} berhasil disalin.`, 'info');
+      } catch {}
+    },
+    [onShowToast]
+  );
 
   const refreshLocalDraftAndQueueState = useCallback(
     (overridePenerimaan?: PenerimaanProduksiItem[]) => {
@@ -676,7 +761,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             .limit(4),
           sb
             .from('log_produk')
-            .select('id, type, sku, nama_produk, lokasi, qty, operator, created_at')
+            .select('id, type, invoice, sku, nama_produk, size, area, lokasi, qty, operator, keterangan, created_at')
             .order('created_at', { ascending: false })
             .limit(12),
           fetchPenerimaanRecountQueueFromSupabase(),
@@ -934,6 +1019,34 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const totalMasterSkus = useMemo(() => productCatalog?.length || 0, [productCatalog]);
   const totalLocations = useMemo(() => currentLocations?.length || 0, [currentLocations]);
+
+  // O(1) Master Produk & Stok Fisik lookup untuk tabel Mutasi Stok Terkini (seragam Log Produk)
+  const dashboardCatalogMap = useMemo(() => {
+    const map = new Map<string, ProductItem>();
+    for (let i = 0; i < productCatalog.length; i++) {
+      const p = productCatalog[i];
+      if (p?.k) map.set(p.k.toUpperCase().trim(), p);
+    }
+    return map;
+  }, [productCatalog]);
+
+  const stockBySkuLocMap = useMemo(() => {
+    const map = new Map<string, number>();
+    for (let i = 0; i < stockRows.length; i++) {
+      const s = stockRows[i];
+      const skuKey = (s.sku || '').toUpperCase().trim();
+      const locKey = (s.lokasi || 'Warehouse').toUpperCase().trim();
+      const key = `${skuKey}__${locKey}`;
+      map.set(key, (map.get(key) || 0) + (Number(s.sisa_stok) || 0));
+    }
+    return map;
+  }, [stockRows]);
+
+  const recentDisplayLogs = useMemo(() => {
+    return (metrics.recentLogs || [])
+      .filter((l) => l && !String(l.type || '').startsWith('QC_'))
+      .slice(0, 10);
+  }, [metrics.recentLogs]);
 
   // Format today's date in Indonesian
   const formattedToday = useMemo(() => {
@@ -1782,10 +1895,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
       </div>
 
-      {/* 6. Jadwal Kerja, Proyek Berjalan & Mutasi Stok Terkini */}
+      {/* 6. Jadwal Kerja & Proyek Berjalan */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4">
-        {/* Jadwal Kerja & Drop Terdekat (4 cols) */}
-        <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+        {/* Jadwal Kerja & Drop Terdekat (6 cols) */}
+        <div className="lg:col-span-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
               <div className="flex items-center gap-2 min-w-0">
@@ -1860,8 +1973,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Proyek & Milestone Berjalan (4 cols) */}
-        <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
+        {/* Proyek & Milestone Berjalan (6 cols) */}
+        <div className="lg:col-span-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
           <div>
             <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
               <div className="flex items-center gap-2 min-w-0">
@@ -1931,95 +2044,378 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
         </div>
+      </div>
 
-        {/* Pergerakan Stok Terkini (4 cols) */}
-        <div className="lg:col-span-4 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs p-3.5 sm:p-5 flex flex-col justify-between space-y-3">
-          <div>
-            <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                  <Activity className="w-4 h-4" />
-                </div>
-                <div className="min-w-0">
-                  <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
-                    Mutasi Stok Terkini
-                  </h2>
-                  <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                    5 transaksi scan fisik terakhir
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleAction('mutasi_log')}
-                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-0.5 cursor-pointer shrink-0"
-              >
-                Semua Log <ArrowRight className="w-3 h-3" />
-              </button>
+      {/* 6B. Mutasi Stok Terkini — Tampilan Tabel Seragam Log Produk (Mobile 4-Kolom Compact & Desktop 7-Kolom Penuh) */}
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xs overflow-hidden">
+        <div className="flex items-center justify-between gap-2 px-3.5 py-3 sm:px-5 sm:py-3.5 border-b border-slate-200 dark:border-slate-800">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 shrink-0">
+              <Activity className="w-4 h-4" />
             </div>
-
-            <div className="mt-3 space-y-2">
-              {metrics.recentLogs && metrics.recentLogs.length > 0 ? (
-                metrics.recentLogs.slice(0, 5).map((log, idx) => {
-                  const isOut = log.type === 'OUT' || log.type === 'ADJ_OUT';
-                  const isSo = log.type === 'SO';
-                  const isLocAnomaly = getAreaFromLokasi(log.lokasi || '') === 'Anomali';
-                  const typeColor = isOut
-                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300'
-                    : isSo
-                    ? 'bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300'
-                    : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300';
-
-                  return (
-                    <div
-                      key={log.id || idx}
-                      className="flex items-center justify-between gap-2 p-2 rounded-xl bg-slate-50/70 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-xs"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-black shrink-0 ${typeColor}`}>
-                          #{log.type}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="font-mono font-bold text-slate-800 dark:text-slate-200 truncate text-[11px]">
-                            {log.sku}
-                          </p>
-                          <p className="text-[9.5px] text-slate-500 dark:text-slate-400 truncate">
-                            Rak{' '}
-                            <span
-                              className={`font-mono font-bold ${
-                                isLocAnomaly ? 'text-rose-600 dark:text-rose-400' : 'text-slate-700 dark:text-slate-300'
-                              }`}
-                            >
-                              {log.lokasi || '-'}
-                            </span>
-                            {isLocAnomaly && ' (Anomali)'}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="text-right shrink-0">
-                        <span
-                          className={`font-mono font-black text-xs ${
-                            isOut ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'
-                          }`}
-                        >
-                          {isOut ? `-${log.qty}` : `+${log.qty}`}
-                        </span>
-                        <p className="text-[9px] text-slate-400 dark:text-slate-500">
-                          {formatRelativeTime(log.created_at)}
-                        </p>
-                      </div>
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="py-6 text-center text-xs text-slate-400">
-                  Belum ada log transaksi yang dimuat.
-                </div>
-              )}
+            <div className="min-w-0">
+              <h2 className="text-xs sm:text-sm font-black text-slate-900 dark:text-white truncate">
+                Mutasi Stok Terkini
+              </h2>
+              <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                {recentDisplayLogs.length > 0
+                  ? `${recentDisplayLogs.length} transaksi scan fisik terakhir`
+                  : 'Riwayat transaksi scan fisik terakhir'}
+              </p>
             </div>
           </div>
+          <button
+            type="button"
+            onClick={() => handleAction('mutasi_log')}
+            className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer shrink-0 min-h-[32px] px-1"
+          >
+            Semua Log <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
+
+        {recentDisplayLogs.length === 0 ? (
+          <div className="py-8 text-center text-xs text-slate-400">
+            Belum ada log transaksi yang dimuat.
+          </div>
+        ) : (
+          <>
+            {/* MOBILE TABLE (< md): Identik dengan Log Produk (4 Kolom Proporsional, Zero Horizontal Scroll) */}
+            <div className="block md:hidden w-full">
+              <table className="w-full table-fixed border-collapse text-left">
+                <thead className="bg-slate-100/95 dark:bg-[#121824]/95 text-slate-600 dark:text-slate-300 text-[10px] font-extrabold uppercase border-b border-slate-300 dark:border-slate-700">
+                  <tr>
+                    <th className="py-2 pl-2.5 pr-1.5 w-[48%] border-r border-slate-200/90 dark:border-slate-700/80">
+                      Produk
+                    </th>
+                    <th className="py-2 px-1 w-[13%] text-center border-r border-slate-200/90 dark:border-slate-700/80">
+                      Qty
+                    </th>
+                    <th className="py-2 px-1 w-[13%] text-center bg-slate-200/40 dark:bg-slate-800/60 border-r border-slate-200/90 dark:border-slate-700/80">
+                      Stok
+                    </th>
+                    <th className="py-2 pl-1.5 pr-2.5 w-[26%]">
+                      Lokasi
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200/90 dark:divide-slate-800">
+                  {recentDisplayLogs.map((item, idx) => {
+                    const style = renderLogTypeStyle(item.type);
+                    const skuKey = (item.sku || '').toUpperCase().trim();
+                    const locKey = (item.lokasi || 'Warehouse').toUpperCase().trim();
+                    const itemCat = dashboardCatalogMap.get(skuKey);
+                    const displayName = resolveProductName(item.sku, item.nama_produk, itemCat);
+                    const displaySize = resolveProductDisplaySize(item.sku, item.size, itemCat?.s);
+                    const resolvedArea = getAreaFromLokasi(item.lokasi || '', item.area);
+                    const isLocAnomaly = resolvedArea === 'Anomali';
+                    const stokRak = stockBySkuLocMap.get(`${skuKey}__${locKey}`);
+
+                    return (
+                      <tr
+                        key={`dm_${item.id || `${item.invoice}_${item.sku}_${idx}`}`}
+                        onClick={() => handleAction('mutasi_log')}
+                        className="bg-white dark:bg-[#0E1420] active:bg-slate-50 dark:active:bg-slate-800/60 transition-colors cursor-pointer"
+                      >
+                        {/* Col 1: Produk + Size | SKU | Tipe & Waktu | Operator */}
+                        <td className="py-2 pl-2.5 pr-1.5 align-top border-r border-slate-200/80 dark:border-slate-800">
+                          <div className="min-w-0">
+                            <div className="text-[12px] font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">
+                              <span>{displayName}</span>
+                              {displaySize && (
+                                <span className="ml-1 inline-block px-1 py-0.2 rounded font-mono text-[10px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200/90 dark:border-slate-700 align-middle leading-tight">
+                                  {displaySize}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="font-mono text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                              {item.sku}
+                            </div>
+
+                            <div className="flex items-center gap-1 mt-1 flex-wrap">
+                              <span
+                                className={`px-1 py-0.2 rounded text-[8.5px] font-extrabold uppercase leading-tight ${style.badge}`}
+                              >
+                                {item.type}
+                              </span>
+                              <span className="font-mono text-[9.5px] text-slate-400 tabular-nums">
+                                {formatLogShortTime(item.created_at)}
+                              </span>
+                            </div>
+
+                            {item.operator && (
+                              <div className="flex items-center gap-1 mt-0.5 text-[10px] font-medium text-slate-600 dark:text-slate-300 min-w-0">
+                                <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                <span className="truncate" title={formatOperatorWithPersonName(item.operator)}>
+                                  {formatOperatorWithPersonName(item.operator)}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Col 2: Qty */}
+                        <td
+                          className={`py-2 px-1 align-middle text-center font-mono tabular-nums border-r border-slate-200/80 dark:border-slate-800 ${style.cellBg}`}
+                        >
+                          <span className={`text-[12.5px] font-black ${style.qty}`}>
+                            {style.prefix}
+                            {item.qty}
+                          </span>
+                        </td>
+
+                        {/* Col 3: Stok Rak Terkini */}
+                        <td className="py-2 px-1 align-middle text-center font-mono tabular-nums bg-slate-50/60 dark:bg-slate-800/30 border-r border-slate-200/80 dark:border-slate-800">
+                          {stokRak !== undefined ? (
+                            <span
+                              className={`text-[12.5px] font-black ${
+                                stokRak < 0
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : stokRak === 0
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-slate-900 dark:text-slate-100'
+                              }`}
+                            >
+                              {stokRak}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold text-slate-400">-</span>
+                          )}
+                        </td>
+
+                        {/* Col 4: Area + Rak + Invoice */}
+                        <td className="py-2 pl-1.5 pr-2.5 align-middle">
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-1">
+                              {isLocAnomaly ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[9px] font-bold uppercase leading-none bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800">
+                                  Anomali
+                                </span>
+                              ) : (
+                                <AreaBadge area={resolvedArea} compact />
+                              )}
+                            </div>
+
+                            <div>
+                              <span
+                                className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border leading-none max-w-full truncate ${
+                                  isLocAnomaly
+                                    ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200/90 dark:border-slate-700'
+                                }`}
+                              >
+                                {item.lokasi || '-'}
+                              </span>
+                            </div>
+
+                            {item.invoice && item.invoice !== '-' && (
+                              <div className="font-mono text-[9.5px] text-slate-400 truncate" title={item.invoice}>
+                                {item.invoice}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* DESKTOP STRUCTURED TABLE (>= md): Identik dengan Tabel Log Produk */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse lg:table-fixed">
+                <thead className="bg-slate-100 dark:bg-[#121824] text-slate-600 dark:text-slate-300 text-[10.5px] font-extrabold uppercase tracking-wider border-b-2 border-slate-300 dark:border-slate-600">
+                  <tr>
+                    <th className="py-2.5 px-3 w-[28%] border-r border-slate-300/80 dark:border-slate-700">
+                      Produk &amp; SKU
+                    </th>
+                    <th className="py-2.5 px-2.5 w-[13%] border-r border-slate-300/80 dark:border-slate-700">
+                      Tipe &amp; Waktu
+                    </th>
+                    <th className="py-2.5 px-2.5 w-[16%] border-r border-slate-300/80 dark:border-slate-700">
+                      Invoice
+                    </th>
+                    <th className="py-2.5 px-2.5 w-[14%] border-r border-slate-300/80 dark:border-slate-700">
+                      Area &amp; Lokasi
+                    </th>
+                    <th className="py-2.5 px-2 w-[7%] text-center border-r border-slate-300/80 dark:border-slate-700">
+                      Qty
+                    </th>
+                    <th className="py-2.5 px-2 w-[7%] text-center bg-slate-200/45 dark:bg-slate-800/50 border-r border-slate-300/80 dark:border-slate-700">
+                      Stok
+                    </th>
+                    <th className="py-2.5 px-2.5 w-[15%]">
+                      Operator
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                  {recentDisplayLogs.map((item, idx) => {
+                    const style = renderLogTypeStyle(item.type);
+                    const skuKey = (item.sku || '').toUpperCase().trim();
+                    const locKey = (item.lokasi || 'Warehouse').toUpperCase().trim();
+                    const itemCat = dashboardCatalogMap.get(skuKey);
+                    const displayName = resolveProductName(item.sku, item.nama_produk, itemCat);
+                    const displaySize = resolveProductDisplaySize(item.sku, item.size, itemCat?.s);
+                    const resolvedArea = getAreaFromLokasi(item.lokasi || '', item.area);
+                    const isLocAnomaly = resolvedArea === 'Anomali';
+                    const src = getLogSource(item as unknown as LogProdukItem);
+                    const stokRak = stockBySkuLocMap.get(`${skuKey}__${locKey}`);
+
+                    return (
+                      <tr
+                        key={`dd_${item.id || `${item.invoice}_${item.sku}_${idx}`}`}
+                        onClick={() => handleAction('mutasi_log')}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors cursor-pointer"
+                      >
+                        {/* Produk + Size | SKU */}
+                        <td className="py-2.5 px-3 border-r border-slate-200 dark:border-slate-800">
+                          <div className="flex items-start justify-between gap-2 min-w-0">
+                            <span
+                              className="font-bold text-[12.5px] text-slate-900 dark:text-slate-100 leading-snug line-clamp-2"
+                              title={displayName}
+                            >
+                              {displayName}
+                            </span>
+                            {displaySize && (
+                              <span className="px-1.5 py-0.5 rounded font-mono text-[11px] font-extrabold bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 shrink-0 leading-none">
+                                {displaySize}
+                              </span>
+                            )}
+                          </div>
+                          <div className="font-mono text-[10.5px] font-medium text-slate-500 dark:text-slate-400 truncate mt-0.5 select-all">
+                            {item.sku}
+                          </div>
+                        </td>
+
+                        {/* Tipe & Waktu */}
+                        <td className="py-2.5 px-2.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-800">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider ${style.badge}`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                            {item.type}
+                          </span>
+                          <div className="text-[10px] text-slate-400 mt-1 font-mono tabular-nums">
+                            {formatLogShortTime(item.created_at)}
+                          </div>
+                        </td>
+
+                        {/* Invoice */}
+                        <td className="py-2.5 px-2.5 border-r border-slate-200 dark:border-slate-800">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span
+                              className="font-mono font-semibold text-slate-800 dark:text-slate-100 text-[11px] truncate select-all"
+                              title={item.invoice || '-'}
+                            >
+                              {item.invoice || '-'}
+                            </span>
+                            {item.invoice && item.invoice !== '-' && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCopyLogInvoice(item.invoice);
+                                }}
+                                title="Salin invoice"
+                                className="p-0.5 text-slate-400 hover:text-indigo-600 transition-colors rounded cursor-pointer shrink-0"
+                              >
+                                {copiedLogInvoice === item.invoice ? (
+                                  <Check className="w-3 h-3 text-emerald-500" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5 text-[10px] text-slate-400">
+                            <span>{src === 'WA' ? 'WhatsApp' : src === 'WEB' ? 'Web App' : 'System'}</span>
+                          </div>
+                        </td>
+
+                        {/* Area & Lokasi */}
+                        <td className="py-2.5 px-2.5 whitespace-nowrap border-r border-slate-200 dark:border-slate-800">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono font-bold border ${
+                                isLocAnomaly
+                                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                                  : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                              }`}
+                            >
+                              {item.lokasi || '-'}
+                            </span>
+                          </div>
+                          <div className="mt-1">
+                            {isLocAnomaly ? (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded border text-[9.5px] font-bold uppercase leading-none bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800">
+                                Anomali
+                              </span>
+                            ) : (
+                              <AreaBadge area={resolvedArea} compact />
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Qty */}
+                        <td
+                          className={`py-2.5 px-2 text-center whitespace-nowrap font-mono tabular-nums border-r border-slate-200 dark:border-slate-800 ${style.cellBg}`}
+                        >
+                          <span className={`font-black text-[13px] ${style.qty}`}>
+                            {style.prefix}
+                            {item.qty}
+                          </span>
+                        </td>
+
+                        {/* Stok Rak Terkini */}
+                        <td
+                          className="py-2.5 px-2 text-center whitespace-nowrap font-mono tabular-nums bg-slate-50/70 dark:bg-slate-800/35 border-r border-slate-200 dark:border-slate-800"
+                          title={
+                            stokRak !== undefined
+                              ? `Sisa stok saat ini di ${item.lokasi || 'rak'}: ${stokRak} pcs`
+                              : 'Data stok rak belum tersedia'
+                          }
+                        >
+                          {stokRak !== undefined ? (
+                            <span
+                              className={`font-black text-[13px] ${
+                                stokRak < 0
+                                  ? 'text-rose-600 dark:text-rose-400'
+                                  : stokRak === 0
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-slate-900 dark:text-slate-100'
+                              }`}
+                            >
+                              {stokRak}
+                            </span>
+                          ) : (
+                            <span className="font-bold text-slate-400">-</span>
+                          )}
+                        </td>
+
+                        {/* Operator & Catatan */}
+                        <td className="py-2.5 px-2.5">
+                          <div className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-200 text-[11px] min-w-0">
+                            <User className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="truncate" title={formatOperatorWithPersonName(item.operator)}>
+                              {formatOperatorWithPersonName(item.operator)}
+                            </span>
+                          </div>
+                          {item.keterangan && (
+                            <div className="text-[10px] text-slate-400 truncate italic mt-0.5" title={item.keterangan}>
+                              &ldquo;{item.keterangan}&rdquo;
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* 7. Pusat Alat Operasional & Popup Cepat (1x Saja — Tanpa Duplikasi!) */}

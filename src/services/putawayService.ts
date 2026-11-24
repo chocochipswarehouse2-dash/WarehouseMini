@@ -221,7 +221,7 @@ export async function fetchPutawayTasks(forceRefresh = false): Promise<PutawayTa
   }
 
   try {
-    const docs = await getSystemDocs();
+    const docs = await getSystemDocs(PUTAWAY_DOCS_SECTION);
     const target = docs.find((d) => d.section_id === PUTAWAY_DOCS_SECTION);
     if (target && target.content) {
       const parsed = JSON.parse(target.content);

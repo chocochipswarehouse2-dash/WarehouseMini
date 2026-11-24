@@ -17,12 +17,20 @@ Trigger this workflow automatically at the conclusion of every task that modifie
 
 ## Standard Execution Procedure
 
+### Step 0: Upgrade Guardrail Skills & Permanent Memory (MANDATORY ON EVERY BUG FIX OR FEATURE)
+Before bumping version and committing:
+1. Update or create the matching `.agents/skills/<module>-guardrails/SKILL.md` with any newly discovered root cause, invariant, or bug log entry so all coding agents share the lesson permanently.
+2. Update `docs/memory/WMS_FEATURE_REGISTRY.md` (if invariants/modules changed) and prepend a structured summary at the top of `docs/memory/WMS_MODULE_CHANGELOG.md`.
+
+---
+
 ### Step 1: Bump App Version & Sync Release Notes (If Frontend `src/` Changed)
 Whenever frontend code, UI, or client logic in `src/` was modified, automatically bump the application version and update the release notes before building:
 ```bash
 node tools/bump_version.cjs --title "<Concise Release Title>" --notes "<Highlight 1>|<Highlight 2>"
+node tools/bump_version.cjs verify-release
 ```
-This atomically updates `package.json`, `src/config/appVersion.ts` (including `VERSION_HISTORY`), and `public/version.json`.
+This atomically updates `package.json`, `src/config/appVersion.ts` (including `VERSION_HISTORY`), and `public/version.json`, and verifies permanent memory synchronization (`passed: true`).
 
 ---
 

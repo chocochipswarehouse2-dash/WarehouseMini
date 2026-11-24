@@ -4,6 +4,39 @@
 
 ---
 
+## v2.28.2 — 23 November 2026
+**Modul**: Tugas Picking Completion & Outbox Sync (`src/services/supabase.ts`, `src/services/scannerOutboxService.ts`) + Upgrade Skill & SOP Agen (`.agents/skills/`, `GEMINI.md`, `docs/memory/`)
+- **Fix Bug Baris Terakhir Nyangkut `SEDANG PICKING` saat Selesai SJ (`TO.OMP.26.11.00356`)**:
+  - Memperbaiki `completePickingSuratJalanSupabase` dan `syncAllPickingOutboxBatches` agar update per-item ke `picking_list` tidak lagi berjalan serial 1-per-1 yang lambat dan rentan terputus di item terakhir: kini memakai **bounded parallel chunks (`CONCURRENCY = 8`) + retry 1x** serta **mandatory SJ-wide safety sweep (`no_sj=ilike.<SJ>&status=neq.SELESAI` → `SELESAI`)** sehingga mustahil ada baris tertinggal/terduplikasi nyangkut.
+  - Membersihkan 1 baris nyangkut pada `TO.OMP.26.11.00356` (`id=1795437550660065`, SKU `F26ITO811BN`, `qty_picked=0`) di Supabase menjadi `SELESAI` (total 66/66 baris kini konsisten `SELESAI`, `78 / 80 pcs`, dan sisa `2 pcs` siap diambil melalui fitur `Lanjutkan Sisa`).
+- **Continuous Skill Upgrade untuk Seluruh Agen Coding**:
+  - Menanamkan skill guardrail baru `.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md` (invarian completion SJ-wide sweep, Lanjutkan Sisa Picking, live `stok_real_fisik` regeneration, & anti-double `#OUT` delta).
+  - Menyelaraskan `.agents/skills/pre-task-sync/SKILL.md`, `.agents/skills/auto-deploy/SKILL.md`, `GEMINI.md` (`§3`, `§5`, `§14`), dan `docs/memory/WMS_FEATURE_REGISTRY.md` agar setiap temuan perbaikan bug maupun fitur baru wajib memperbarui skill & memori permanen sebelum rilis.
+
+---
+
+## v2.28.1 — 23 November 2026
+**Modul**: Supabase Core (`supabase.ts`), Kapasitas Rak (`rackCapacityService.ts`), Putaway (`putawayService.ts`), Denah 3D (`Warehouse3DVisualTab.tsx`), Alur Sistem (`SystemWorkflow.tsx`)
+- **Fix `Error fetching system docs: TypeError: Failed to fetch` & Optimasi Egress `wms_system_docs`**:
+  - Mengubah `getSystemDocs(sectionId?)` agar mendukung filter langsung per `section_id` (`section_id=eq.<key>&limit=1`) dengan SWR cache memori 60 detik serta fallback non-fatal (`console.warn`) saat jaringan terganggu.
+  - Memperbarui seluruh pemanggil (`fetchRackCapacityConfig`, `fetchPutawayTasks`, `Warehouse3DVisualTab`, `SystemWorkflow`) agar hanya mengambil 1 dokumen targetnya masing-masing (tidak lagi menarik seluruh 100 dokumen besar `wms_system_docs` termasuk arsip Live Chat & audit recount setiap kali Dashboard dibuka).
+
+---
+
+## v2.28.0 — 23 November 2026
+**Modul**: Tugas Picking (`PickingTasksView.tsx`, `supabase.ts`, `scannerOutboxService.ts`, `types.ts`) & Dashboard Utama (`DashboardView.tsx`)
+- **Fitur Lanjutkan Sisa Picking (`Lanjutkan Sisa`) + Regenerasi Lokasi Live + Anti-Double `#OUT`**:
+  - Menambahkan tombol **"Lanjutkan Sisa (N)"** pada kartu SJ berstatus `SELESAI (SEBAGIAN)` / `SELESAI (0 PCS)` (dan di footer modal `Detail Rekap`) yang dapat diklik oleh siapa pun yang memiliki akses Tugas Picking.
+  - **Mode Sisa-Saja (Zero Double Picking)**: Saat sesi lanjutan dibuka, item yang sudah 100% terambil di sesi awal otomatis disembunyikan dan item parsial hanya menampilkan sisa kekurangannya (`0 / Sisa Pcs`, hero badge `AMBIL SISA N PCS`, dengan proteksi floor `prev_qty_picked` sehingga hasil sesi awal tidak bisa terhapus/ter-reset ke 0).
+  - **Regenerasi Lokasi Rak Live Terupdate**: Menambahkan `reopenRemainingPickingSJSupabase` & `pickPrimaryFreshWarehouseLocation` di `src/services/supabase.ts` yang otomatis memanggil `fetchStockForSkus` langsung dari `stok_real_fisik` untuk memperbarui lokasi rak terbaru (tidak memakai lokasi lama yang berpotensi basi), ditambah tombol **Refresh Lokasi** on-demand di header sesi picking aktif.
+  - **Proteksi Anti-Double Deduction `log_produk`**: Menambahkan `fetchLoggedOutQtyBySkuForSj` di `src/services/supabase.ts` dan menyelaraskan `completePickingSuratJalanSupabase` serta `syncAllPickingOutboxBatches` (`scannerOutboxService.ts`) agar penyelesaian sesi lanjutan hanya mencatat selisih tambahan (`delta OUT`) yang baru terambil ke `log_produk`.
+  - Menambahkan broadcast realtime `sj_reopened` dan pembersihan otomatis `wms_completed_sjs_set` agar SJ lanjutan langsung sinkron lintas perangkat tanpa kembali ke status `SELESAI`.
+- **Penyelarasan Tabel "Mutasi Stok Terkini" di Dashboard Utama (`DashboardView.tsx`)**:
+  - Memindahkan kartu **Mutasi Stok Terkini** menjadi panel lebar penuh di bawah baris 2-kolom `Jadwal & Agenda` + `Proyek Berjalan`, dengan tampilan tabel seragam persis `MutasiLogView.tsx` (Desktop 7 kolom: `Produk & SKU`, `Tipe & Waktu`, `Invoice` + tombol salin + sumber WA/Web, `Area & Lokasi` + `AreaBadge`, `Qty`, live `Stok` rak, `Operator`; Mobile 4 kolom compact pas layar tanpa horizontal scroll).
+  - Menggunakan lookup Master Produk (`resolveProductName` & `resolveProductDisplaySize` dengan `O(1)` `dashboardCatalogMap`) dan live `stockBySkuLocMap` sambil menjaga egress minimal (`limit=12`, menampilkan 10 log mutasi fisik terakhir).
+
+---
+
 ## v2.27.0 — 22 November 2026
 **Modul**: Manual Shipment & Alteration (`BulkUpdateSjModal.tsx`, `RekapToolbar.tsx`, `ManualShipmentTab.tsx`, `gasManualShipment.ts`, `orderChatNotificationService.ts`, `initialStoreFaq.ts`)
 - **Fitur Input No. SJ DealPOS Massal (`SJ Massal`) untuk Produk Fulfillment Marketplace / Gudang**:

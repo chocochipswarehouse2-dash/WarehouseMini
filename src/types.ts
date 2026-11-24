@@ -826,6 +826,7 @@ export interface PickingListItem {
   size?: string;
   qty_req: number;
   qty_picked: number;
+  prev_qty_picked?: number;
   lokasi: string;
   lokasi_picked?: string;
   status: PickingStatus;
@@ -853,6 +854,7 @@ export interface PickingSuratJalanGroup {
   items: PickingListItem[];
   unexpected_items: PickingListItem[];
   rekap_status?: RekapStatusType;
+  is_continuation?: boolean;
 }
 
 export interface ToastMessage {

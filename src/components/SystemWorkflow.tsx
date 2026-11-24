@@ -148,7 +148,7 @@ export default function SystemWorkflow({ session, onShowToast }: any) {
   const fetchFlows = async () => {
     setLoading(true);
     try {
-      const docs = await getSystemDocs();
+      const docs = await getSystemDocs('dynamic_workflow_v1');
       const target = docs.find(d => d.section_id === 'dynamic_workflow_v1');
       if (target && target.content) {
         setFlows(JSON.parse(target.content));

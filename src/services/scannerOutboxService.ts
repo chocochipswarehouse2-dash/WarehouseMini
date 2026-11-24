@@ -1164,24 +1164,29 @@ export async function syncAllPickingOutboxBatches(): Promise<{
               `select=sku,lokasi,qty&invoice=eq.${encodeURIComponent(cleanNoSj)}&type=eq.OUT`
             );
 
-            const existingCounts = new Map<string, number>();
+            const existingOutBySku = new Map<string, number>();
             (existingRows || []).forEach((row) => {
-              const key = `${String(row.sku || '').toUpperCase()}|${String(row.lokasi || '').toUpperCase()}|${Number(row.qty)}`;
-              existingCounts.set(key, (existingCounts.get(key) || 0) + 1);
+              const skuKey = String(row.sku || '').toUpperCase().trim();
+              if (!skuKey) return;
+              existingOutBySku.set(skuKey, (existingOutBySku.get(skuKey) || 0) + (Number(row.qty) || 0));
             });
 
             const logsOut: LogProdukItem[] = [];
             for (const it of allPicked) {
+              const skuKey = String(it.sku || '').toUpperCase().trim();
+              const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
+              if (!skuKey || pickedQty <= 0) continue;
+
+              const alreadyOut = existingOutBySku.get(skuKey) || 0;
+              const deltaQty = Math.max(0, pickedQty - alreadyOut);
+              existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
+              if (deltaQty <= 0) continue;
+
               const actualLocation =
                 resolvePrimarySingleLocation(it.lokasi_picked || '') ||
                 resolvePrimarySingleLocation(it.lokasi || '') ||
                 'Warehouse';
-              const key = `${String(it.sku || '').toUpperCase()}|${String(actualLocation).toUpperCase()}|${Number(it.qty_picked)}`;
-              const count = existingCounts.get(key) || 0;
-              if (count > 0) {
-                existingCounts.set(key, count - 1);
-                continue;
-              }
+              const lanjutanTag = alreadyOut > 0 ? ' (Lanjutan)' : '';
               logsOut.push({
                 type: 'OUT',
                 invoice: cleanNoSj,
@@ -1190,9 +1195,9 @@ export async function syncAllPickingOutboxBatches(): Promise<{
                 size: it.size || '',
                 area: getAreaFromLokasi(actualLocation),
                 lokasi: actualLocation,
-                qty: it.qty_picked,
+                qty: deltaQty,
                 operator: batch.pickerName || 'Picker',
-                keterangan: `[#OUT PICKING] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${batch.catatan ? `- ${batch.catatan}` : ''}`.trim(),
+                keterangan: `[#OUT PICKING${lanjutanTag}] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${batch.catatan ? `- ${batch.catatan}` : ''}`.trim(),
                 created_at: batch.createdAtIso || new Date().toISOString()
               });
             }
@@ -1210,38 +1215,59 @@ export async function syncAllPickingOutboxBatches(): Promise<{
           batch.logsSynced = true;
         }
 
-        // Step 2: Patch picking_list rows as SELESAI
+        // Step 2: Patch picking_list rows as SELESAI (bounded parallel chunks + SJ-wide orphan sweep)
         if (!batch.itemsSynced) {
-          for (const item of batch.items || []) {
-            const condition =
-              item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
-                ? `id=eq.${item.id}`
-                : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
+          const batchItems = batch.items || [];
+          const PATCH_CONCURRENCY = 8;
+          for (let c = 0; c < batchItems.length; c += PATCH_CONCURRENCY) {
+            const chunk = batchItems.slice(c, c + PATCH_CONCURRENCY);
+            await Promise.all(
+              chunk.map(async (item) => {
+                const condition =
+                  item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
+                    ? `id=eq.${item.id}`
+                    : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
-            try {
-              const payload: Record<string, any> = {
-                qty_picked: item.qty_picked,
-                status: 'SELESAI',
-                picker_name: batch.pickerName
-              };
-              if (batch.catatan) {
-                payload.catatan = batch.catatan;
-              }
-              await supabaseFetch('picking_list', 'PATCH', payload, condition);
-            } catch (patchErr: any) {
-              const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
-              if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
-                const minimalPayload = {
-                  qty_picked: item.qty_picked,
-                  status: 'SELESAI',
-                  picker_name: batch.pickerName
-                };
-                await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
-              } else {
-                throw patchErr;
-              }
-            }
+                try {
+                  const payload: Record<string, any> = {
+                    qty_picked: item.qty_picked,
+                    status: 'SELESAI',
+                    picker_name: batch.pickerName
+                  };
+                  if (batch.catatan) {
+                    payload.catatan = batch.catatan;
+                  }
+                  await supabaseFetch('picking_list', 'PATCH', payload, condition);
+                } catch (patchErr: any) {
+                  const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
+                  if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
+                    const minimalPayload = {
+                      qty_picked: item.qty_picked,
+                      status: 'SELESAI',
+                      picker_name: batch.pickerName
+                    };
+                    await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
+                  } else {
+                    throw patchErr;
+                  }
+                }
+              })
+            );
           }
+
+          // SJ-wide orphan sweep to ensure zero rows remain stuck in PENDING / SEDANG PICKING
+          const sweepCond = `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&status=neq.SELESAI`;
+          try {
+            await supabaseFetch(
+              'picking_list',
+              'PATCH',
+              { status: 'SELESAI', picker_name: batch.pickerName },
+              sweepCond
+            );
+          } catch {
+            await supabaseFetch('picking_list', 'PATCH', { status: 'SELESAI' }, sweepCond);
+          }
+
           batch.itemsSynced = true;
           savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
         }

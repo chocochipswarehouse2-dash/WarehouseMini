@@ -6063,6 +6063,275 @@ export async function cancelOrResetPickingSJSupabase(no_sj: string): Promise<boo
   }
 }
 
+/**
+ * Fetch total #OUT qty already recorded in `log_produk` per SKU for a given Picking SJ.
+ * Used as the authoritative baseline to prevent double #OUT deductions on continuation picking.
+ */
+export async function fetchLoggedOutQtyBySkuForSj(no_sj: string): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj) return map;
+  try {
+    const rows = await supabaseFetch<Array<{ sku?: string; qty?: number }>>(
+      'log_produk',
+      'GET',
+      null,
+      `select=sku,qty&invoice=ilike.${encodeURIComponent(cleanNoSj)}&type=eq.OUT&limit=2000`
+    );
+    if (Array.isArray(rows)) {
+      for (const r of rows) {
+        const skuKey = String(r.sku || '').trim().toUpperCase();
+        const qty = Number(r.qty) || 0;
+        if (skuKey && qty > 0) {
+          map.set(skuKey, (map.get(skuKey) || 0) + qty);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[PickingContinue] Gagal cek riwayat OUT log_produk:', err);
+  }
+  return map;
+}
+
+function pickPrimaryFreshWarehouseLocation(stocks: StockRealtimeItem[]): string {
+  if (!Array.isArray(stocks) || stocks.length === 0) return '-';
+  const locMap = new Map<string, { lokasi: string; qty: number; area: string }>();
+  for (const stk of stocks) {
+    const loc = String(stk.lokasi || '').trim().toUpperCase();
+    const qty = Number(stk.sisa_stok) || 0;
+    const area = getAreaFromLokasi(loc, stk.area);
+    if (
+      loc &&
+      !/[,/;\n|]/.test(loc) &&
+      loc !== '-' &&
+      loc !== '--' &&
+      loc !== 'KOSONG' &&
+      qty > 0 &&
+      isWarehouseLocation(loc, area)
+    ) {
+      const prev = locMap.get(loc);
+      if (prev) prev.qty += qty;
+      else locMap.set(loc, { lokasi: loc, qty, area });
+    }
+  }
+  const sorted = Array.from(locMap.values()).sort((a, b) => {
+    const pA = getPickingPriority(a.lokasi, a.area);
+    const pB = getPickingPriority(b.lokasi, b.area);
+    if (pA !== pB) return pA - pB;
+    if (b.qty !== a.qty) return b.qty - a.qty;
+    return a.lokasi.localeCompare(b.lokasi, undefined, { numeric: true, sensitivity: 'base' });
+  });
+  return sorted.length > 0 ? sorted[0].lokasi : '-';
+}
+
+/**
+ * Reopen ONLY the unpicked/short-picked items of a completed Picking SJ for continuation picking.
+ * - Preserves already-fulfilled rows as `SELESAI` so they are never double-picked.
+ * - Regenerates fresh rack locations from live `stok_real_fisik` (never relying on stale initial locations).
+ * - Preserves prior `qty_picked` baseline so `completePickingSuratJalanSupabase` only logs newly picked delta #OUT.
+ */
+export async function reopenRemainingPickingSJSupabase(
+  no_sj: string,
+  username: string
+): Promise<{
+  ok: boolean;
+  reason?: string;
+  items: PickingListItem[];
+  freshStocksBySku: Record<string, StockRealtimeItem[]>;
+  activePickers: string[];
+  reopenedCount: number;
+  priorPickedBySku: Record<string, number>;
+}> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  const cleanUser = String(username || 'Operator').trim();
+  if (!cleanNoSj) {
+    return { ok: false, reason: 'Nomor Surat Jalan tidak valid.', items: [], freshStocksBySku: {}, activePickers: [], reopenedCount: 0, priorPickedBySku: {} };
+  }
+
+  try {
+    // 1. Remove from persistent completed set so it stays active across reloads
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const compStr = localStorage.getItem('wms_completed_sjs_set');
+        if (compStr) {
+          const compSet = new Set<string>(JSON.parse(compStr));
+          compSet.delete(cleanNoSj);
+          localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
+        }
+      }
+    } catch {}
+
+    // 2. Fetch authoritative live rows for this SJ
+    const currentRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
+    if (currentRows.length === 0) {
+      return { ok: false, reason: 'Data Surat Jalan tidak ditemukan di database.', items: [], freshStocksBySku: {}, activePickers: [], reopenedCount: 0, priorPickedBySku: {} };
+    }
+
+    // 3. Identify ONLY regular rows that still have remaining qty (qty_picked < qty_req)
+    const remainingRows = currentRows.filter((r) => {
+      const req = Number(r.qty_req) || 0;
+      const picked = Math.max(0, Number(r.qty_picked) || 0);
+      return req > 0 && !r.is_unexpected && picked < req;
+    });
+
+    if (remainingRows.length === 0) {
+      return {
+        ok: false,
+        reason: 'Semua item pada Surat Jalan ini sudah terpicking 100% lengkap.',
+        items: currentRows,
+        freshStocksBySku: {},
+        activePickers: [],
+        reopenedCount: 0,
+        priorPickedBySku: {},
+      };
+    }
+
+    // 4. Regenerate FRESH live warehouse rack locations for every remaining SKU
+    const remainingSkus = Array.from(
+      new Set(remainingRows.map((r) => String(r.sku || '').trim().toUpperCase()).filter(Boolean))
+    );
+    const freshStocksList = await fetchStockForSkus(remainingSkus);
+    const freshStocksBySku: Record<string, StockRealtimeItem[]> = {};
+    remainingSkus.forEach((s) => {
+      freshStocksBySku[s] = [];
+    });
+    freshStocksList.forEach((stk) => {
+      const key = String(stk.sku || '').trim().toUpperCase();
+      if (!freshStocksBySku[key]) freshStocksBySku[key] = [];
+      freshStocksBySku[key].push(stk);
+    });
+
+    const remainingIdOrSkuSet = new Set<string>();
+    remainingRows.forEach((r) => {
+      if (r.id && !String(r.id).startsWith('pick_')) remainingIdOrSkuSet.add(`id:${r.id}`);
+      remainingIdOrSkuSet.add(`sku:${String(r.sku || '').trim().toUpperCase()}`);
+    });
+
+    const priorPickedBySku: Record<string, number> = {};
+    const updatedRows: PickingListItem[] = [];
+    const patchPromises: Promise<any>[] = [];
+
+    for (const row of currentRows) {
+      const skuKey = String(row.sku || '').trim().toUpperCase();
+      const priorPicked = Math.max(0, Number(row.qty_picked) || 0);
+      if (skuKey) {
+        priorPickedBySku[skuKey] = Math.max(priorPickedBySku[skuKey] || 0, priorPicked);
+      }
+
+      const isRemaining =
+        (row.id && !String(row.id).startsWith('pick_') && remainingIdOrSkuSet.has(`id:${row.id}`)) ||
+        (Number(row.qty_req) > 0 && !row.is_unexpected && priorPicked < Number(row.qty_req));
+
+      if (!isRemaining) {
+        // Keep already-fulfilled or unexpected rows locked as SELESAI
+        updatedRows.push({
+          ...row,
+          prev_qty_picked: priorPicked,
+          status: 'SELESAI',
+        });
+        continue;
+      }
+
+      const isWarehouseTujuan = /manual\s*shipment|alter|marketplace|gudang|warehouse|retur/i.test(row.tujuan || '');
+      const isStoreOnly = !isWarehouseTujuan && /store|toko|outlet/i.test(row.tujuan || '');
+      const freshLokasi = isStoreOnly
+        ? (row.lokasi && row.lokasi !== '-' && row.lokasi !== 'KOSONG' ? row.lokasi : (row.tujuan || 'STORE'))
+        : pickPrimaryFreshWarehouseLocation(freshStocksBySku[skuKey] || []);
+
+      const nextPickerField = mergePickerNamesWithLastActor(row.picker_name, cleanUser);
+      const updatedRow: PickingListItem = {
+        ...row,
+        lokasi: freshLokasi,
+        lokasi_picked: undefined,
+        qty_picked: priorPicked,
+        prev_qty_picked: priorPicked,
+        is_kosong: false,
+        status: 'SEDANG PICKING',
+        picker_name: nextPickerField,
+      };
+      updatedRows.push(updatedRow);
+
+      const cond =
+        row.id && !String(row.id).startsWith('pick_')
+          ? `id=eq.${encodeURIComponent(String(row.id))}`
+          : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(skuKey)}`;
+
+      patchPromises.push(
+        supabaseFetch(
+          'picking_list',
+          'PATCH',
+          {
+            status: 'SEDANG PICKING',
+            picker_name: nextPickerField,
+            lokasi: freshLokasi,
+          },
+          cond
+        )
+      );
+    }
+
+    if (patchPromises.length > 0) {
+      await Promise.all(patchPromises);
+    }
+
+    // 5. Update local picking caches immediately
+    const updateCache = (storageKey: string) => {
+      try {
+        const rawStr = localStorage.getItem(storageKey);
+        if (!rawStr) return;
+        const cached: PickingListItem[] = JSON.parse(rawStr);
+        if (!Array.isArray(cached)) return;
+        const updatedBySku = new Map<string, PickingListItem>();
+        updatedRows.forEach((u) => updatedBySku.set(String(u.sku || '').trim().toUpperCase(), u));
+        const nextCached = cached.map((c) => {
+          if ((c.no_sj || '').toUpperCase().trim() !== cleanNoSj) return c;
+          const match = updatedBySku.get(String(c.sku || '').trim().toUpperCase());
+          return match ? { ...c, ...match } : c;
+        });
+        localStorage.setItem(storageKey, JSON.stringify(nextCached));
+      } catch {}
+    };
+    updateCache('wms_picking_cache');
+    updateCache('wms_raw_picking_list_cache');
+
+    invalidatePickingListCache();
+
+    const activePickers: string[] = [];
+    updatedRows.forEach((r) => {
+      if (r.status !== 'SELESAI') {
+        parsePickerNamesList(r.picker_name).forEach((p) => {
+          if (!activePickers.some((ex) => isSameOperatorIdentity(ex, p))) {
+            activePickers.push(p);
+          }
+        });
+      }
+    });
+    if (!activePickers.some((ex) => isSameOperatorIdentity(ex, cleanUser))) {
+      activePickers.push(cleanUser);
+    }
+
+    return {
+      ok: true,
+      items: updatedRows,
+      freshStocksBySku,
+      activePickers,
+      reopenedCount: remainingRows.length,
+      priorPickedBySku,
+    };
+  } catch (err) {
+    console.warn('Failed to reopen remaining picking SJ:', err);
+    return {
+      ok: false,
+      reason: 'Gagal membuka ulang sisa picking ke server. Periksa koneksi internet Anda.',
+      items: [],
+      freshStocksBySku: {},
+      activePickers: [],
+      reopenedCount: 0,
+      priorPickedBySku: {},
+    };
+  }
+}
+
 
 export async function syncSinglePickingItemRealtimeSupabase(params: {
   id?: string | number;
@@ -6210,8 +6479,9 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
 
   const itemsMap = new Map<string, PickingListItem>();
 
-  // Retrieve persistent set of completed Surat Jalan so they never bounce back to PENDING
+  // Retrieve persistent set of completed Surat Jalan & offline outbox SJs
   const storedCompletedSJs = new Set<string>();
+  const pendingOutboxSJs = new Set<string>();
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       const cStr = localStorage.getItem('wms_completed_sjs_set');
@@ -6219,6 +6489,15 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
         const arr = JSON.parse(cStr);
         if (Array.isArray(arr)) {
           arr.forEach((s) => storedCompletedSJs.add(String(s).toUpperCase().trim()));
+        }
+      }
+      const outboxStr = localStorage.getItem('wms_picking_outbox_v1');
+      if (outboxStr) {
+        const outboxArr = JSON.parse(outboxStr);
+        if (Array.isArray(outboxArr)) {
+          outboxArr.forEach((b: any) => {
+            if (b?.no_sj) pendingOutboxSJs.add(String(b.no_sj).toUpperCase().trim());
+          });
         }
       }
     }
@@ -6246,6 +6525,25 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
     combinedRows.push(...activeRes.value);
   }
 
+  // If Supabase explicitly reports an SJ as active (reopened for continuation picking) and it is NOT
+  // queued in our local offline outbox, prune it from storedCompletedSJs so reopened SJs stay active across devices.
+  const reopenedRemoteSJs = new Set<string>();
+  for (const r of combinedRows) {
+    const sjKey = String(r?.no_sj || '').toUpperCase().trim();
+    const st = String(r?.status || '').toUpperCase().trim();
+    if (sjKey && st && st !== 'SELESAI' && storedCompletedSJs.has(sjKey) && !pendingOutboxSJs.has(sjKey)) {
+      reopenedRemoteSJs.add(sjKey);
+    }
+  }
+  if (reopenedRemoteSJs.size > 0) {
+    reopenedRemoteSJs.forEach((sjKey) => storedCompletedSJs.delete(sjKey));
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(storedCompletedSJs)));
+      }
+    } catch {}
+  }
+
   const getStatusRank = (st?: string): number => {
     const s = String(st || '').toUpperCase().trim();
     if (s === 'SELESAI') return 3;
@@ -6257,7 +6555,7 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
     const item = extractPickingItemFromRow(r);
     if (!item) continue;
     const sjKey = (item.no_sj || '').toUpperCase().trim();
-    if (storedCompletedSJs.has(sjKey)) {
+    if (pendingOutboxSJs.has(sjKey)) {
       item.status = 'SELESAI';
     }
     const mapKey = `${sjKey}__${(item.sku || '').toUpperCase().trim()}`;
@@ -6445,16 +6743,28 @@ export async function completePickingSuratJalanSupabase(
     }
   } catch {}
 
-  // 2. Sync to log_produk (OUT) automatically for picking fulfillment (only once per SJ)
+  // 2. Sync to log_produk (OUT) automatically using SKU-level delta check against existing OUT logs
+  //    so continuation picking ONLY deducts newly picked qty and NEVER double-deducts prior sessions!
   if (syncOutToLog && !alreadyCompletedRemotely) {
     try {
+      const existingOutBySku = await fetchLoggedOutQtyBySkuForSj(cleanNoSj);
       const logsOut: LogProdukItem[] = [];
-      const allPicked = [...items, ...unexpectedItems].filter((x) => x.qty_picked > 0);
+      const allPicked = [...items, ...unexpectedItems].filter((x) => (Number(x.qty_picked) || 0) > 0);
       for (const it of allPicked) {
+        const skuKey = String(it.sku || '').trim().toUpperCase();
+        const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
+        if (!skuKey || pickedQty <= 0) continue;
+
+        const alreadyOut = existingOutBySku.get(skuKey) || 0;
+        const deltaQty = Math.max(0, pickedQty - alreadyOut);
+        existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
+        if (deltaQty <= 0) continue;
+
         const actualLocation =
           resolvePrimarySingleLocation(it.lokasi_picked || '') ||
           resolvePrimarySingleLocation(it.lokasi || '') ||
           'Warehouse';
+        const lanjutanTag = alreadyOut > 0 ? ' (Lanjutan)' : '';
         logsOut.push({
           type: 'OUT',
           invoice: cleanNoSj,
@@ -6463,9 +6773,9 @@ export async function completePickingSuratJalanSupabase(
           size: it.size || '',
           area: getAreaFromLokasi(actualLocation),
           lokasi: actualLocation,
-          qty: it.qty_picked,
+          qty: deltaQty,
           operator: finalPickerName,
-          keterangan: `[#OUT PICKING] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${catatan ? `- ${catatan}` : ''}`.trim(),
+          keterangan: `[#OUT PICKING${lanjutanTag}] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${catatan ? `- ${catatan}` : ''}`.trim(),
           created_at: nowIso,
         });
       }
@@ -6478,40 +6788,84 @@ export async function completePickingSuratJalanSupabase(
     }
   }
 
-  // 3. Update Supabase picking_list table
+  // 3. Update Supabase picking_list table (bounded parallel chunks + retry + SJ-wide orphan sweep)
   try {
-    for (const item of items) {
-      const condition = item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
-        ? `id=eq.${item.id}`
-        : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
+    const patchSingleItemToSelesai = async (item: PickingListItem): Promise<boolean> => {
+      const condition =
+        item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
+          ? `id=eq.${item.id}`
+          : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
-      // Try updating with standard columns
-      try {
-        const payload: Record<string, any> = {
-          qty_picked: item.qty_picked,
-          status: 'SELESAI',
-          picker_name: finalPickerName,
-        };
-        if (catatan) {
-          payload.catatan = catatan;
-        }
-        await supabaseFetch('picking_list', 'PATCH', payload, condition);
-      } catch (patchErr: any) {
-        const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
-        if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
-          try {
-            const minimalPayload = {
-              qty_picked: item.qty_picked,
-              status: 'SELESAI',
-              picker_name: finalPickerName,
-            };
-            await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
-          } catch (innerErr) {
-            console.warn(`Supabase patch failed for item ${item.sku}:`, innerErr);
-            hasRemoteFailure = true;
+      const attemptPatch = async (): Promise<boolean> => {
+        try {
+          const payload: Record<string, any> = {
+            qty_picked: item.qty_picked,
+            status: 'SELESAI',
+            picker_name: finalPickerName,
+          };
+          if (catatan) {
+            payload.catatan = catatan;
           }
-        } else {
+          await supabaseFetch('picking_list', 'PATCH', payload, condition);
+          return true;
+        } catch (patchErr: any) {
+          const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
+          if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
+            try {
+              await supabaseFetch(
+                'picking_list',
+                'PATCH',
+                {
+                  qty_picked: item.qty_picked,
+                  status: 'SELESAI',
+                  picker_name: finalPickerName,
+                },
+                condition
+              );
+              return true;
+            } catch (innerErr) {
+              console.warn(`Supabase patch failed for item ${item.sku}:`, innerErr);
+              return false;
+            }
+          }
           console.warn(`Supabase patch failed for item ${item.sku}:`, patchErr);
+          return false;
+        }
+      };
+
+      const okFirst = await attemptPatch();
+      if (okFirst) return true;
+      return attemptPatch();
+    };
+
+    const PATCH_CONCURRENCY = 8;
+    for (let i = 0; i < items.length; i += PATCH_CONCURRENCY) {
+      const chunk = items.slice(i, i + PATCH_CONCURRENCY);
+      const results = await Promise.all(chunk.map((item) => patchSingleItemToSelesai(item)));
+      if (results.some((ok) => !ok)) {
+        hasRemoteFailure = true;
+      }
+    }
+
+    // Mandatory SJ-wide safety sweep: prevents straggler/deduplicated rows (e.g. last item on 66-item SJ)
+    // from getting left behind in PENDING / SEDANG PICKING when all per-item patches succeeded.
+    if (!hasRemoteFailure) {
+      const sweepCond = `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&status=neq.SELESAI`;
+      try {
+        await supabaseFetch(
+          'picking_list',
+          'PATCH',
+          {
+            status: 'SELESAI',
+            picker_name: finalPickerName,
+          },
+          sweepCond
+        );
+      } catch (sweepErr: any) {
+        try {
+          await supabaseFetch('picking_list', 'PATCH', { status: 'SELESAI' }, sweepCond);
+        } catch (fallbackSweepErr) {
+          console.warn(`SJ-wide SELESAI sweep warning for ${cleanNoSj}:`, fallbackSweepErr || sweepErr);
           hasRemoteFailure = true;
         }
       }
@@ -11766,19 +12120,41 @@ export async function deleteRoadmap(id: string): Promise<void> {
   }
 }
 
-export async function getSystemDocs(): Promise<SystemDoc[]> {
+const systemDocMemoryCache = new Map<string, { data: SystemDoc[]; ts: number }>();
+const SYSTEM_DOC_CACHE_TTL_MS = 60 * 1000;
+
+export async function getSystemDocs(sectionId?: string, forceRefresh = false): Promise<SystemDoc[]> {
+  const cacheKey = sectionId ? `id:${sectionId}` : '__ALL__';
+  const cached = systemDocMemoryCache.get(cacheKey);
+  if (!forceRefresh && cached && Date.now() - cached.ts < SYSTEM_DOC_CACHE_TTL_MS) {
+    return cached.data;
+  }
+
   try {
-    const data = await supabaseFetch<SystemDoc[]>('wms_system_docs', 'GET', null, 'limit=100');
-    return data || [];
+    const query = sectionId
+      ? `select=section_id,content,updated_by,updated_at&section_id=eq.${encodeURIComponent(sectionId)}&limit=1`
+      : 'select=section_id,content,updated_by,updated_at&limit=100';
+    const data = await supabaseFetch<SystemDoc[]>('wms_system_docs', 'GET', null, query);
+    const rows = Array.isArray(data) ? data : [];
+    systemDocMemoryCache.set(cacheKey, { data: rows, ts: Date.now() });
+    return rows;
   } catch (err) {
-    console.error('Error fetching system docs:', err);
-    return [];
+    // Graceful fallback for transient network/offline failures without polluting console.error
+    console.warn(`[Supabase] Fallback cache/empty saat mengambil wms_system_docs (${sectionId || 'all'}):`, (err as any)?.message || err);
+    return cached ? cached.data : [];
   }
 }
 
 export async function saveSystemDoc(doc: SystemDoc): Promise<void> {
   try {
     await supabaseFetch('wms_system_docs', 'POST', [doc], 'on_conflict=section_id', true);
+    if (doc.section_id) {
+      systemDocMemoryCache.set(`id:${doc.section_id}`, {
+        data: [{ ...doc, updated_at: doc.updated_at || new Date().toISOString() }],
+        ts: Date.now(),
+      });
+    }
+    systemDocMemoryCache.delete('__ALL__');
   } catch (err) {
     console.error('Error saving system doc:', err);
     throw err;

@@ -1070,7 +1070,7 @@ export const Warehouse3DVisualTab: React.FC<Warehouse3DVisualTabProps> = ({
       if (data.type === 'WMS_3D_READY') {
         syncCapacityToIframe();
         // Also check if there is a saved layout in Supabase wms_system_docs
-        getSystemDocs()
+        getSystemDocs(WAREHOUSE_3D_DOC_KEY)
           .then((docs) => {
             const found = Array.isArray(docs) ? docs.find((d) => d.section_id === WAREHOUSE_3D_DOC_KEY) : null;
             let remoteLayout: any = null;

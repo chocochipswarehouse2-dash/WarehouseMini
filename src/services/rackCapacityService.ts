@@ -613,7 +613,7 @@ export function saveLocalRackCapacityConfig(config: RackCapacityConfig): void {
 export async function fetchRackCapacityConfig(): Promise<RackCapacityConfig> {
   const local = loadLocalRackCapacityConfig();
   try {
-    const docs = await getSystemDocs();
+    const docs = await getSystemDocs(RACK_CAPACITY_DOC_ID);
     const target = docs.find((d) => d.section_id === RACK_CAPACITY_DOC_ID);
     if (target && target.content) {
       const remote = JSON.parse(target.content) as RackCapacityConfig;
