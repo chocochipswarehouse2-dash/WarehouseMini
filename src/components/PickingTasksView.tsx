@@ -74,6 +74,7 @@ import {
   StockRealtimeItem,
 } from '../types';
 import {
+  supabaseFetch,
   fetchPickingListFromSupabase,
   completePickingSuratJalanSupabase,
   createPickingSuratJalanSupabase,
@@ -863,8 +864,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     }
 
     // Throttled fallback polling (Realtime broadcast + postgres_changes handle instant updates;
-    // keep local outbox flush responsive without hammering PostgREST every 3.5s)
+    // probe a ~200B active+latest signature before running full 800-row fallback fetch)
     let tickCount = 0;
+    let lastPollSignature: string | null = null;
     const pollInterval = setInterval(async () => {
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
       if (typeof document !== 'undefined' && document.hidden) return;
@@ -876,6 +878,39 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       if (currentActive && currentActive.no_sj) {
         scheduleRealtimeSjRefresh(currentActive.no_sj, 50);
       } else if (tickCount % 4 === 0) {
+        try {
+          const [activeProbe, latestProbe] = await Promise.all([
+            supabaseFetch<Array<{ id: string; status?: string; qty_picked?: number; picker_name?: string }>>(
+              'picking_list',
+              'GET',
+              null,
+              'select=id,status,qty_picked,picker_name&status=neq.SELESAI&order=created_at.desc&limit=50'
+            ).catch(() => null),
+            supabaseFetch<Array<{ id: string; created_at?: string }>>(
+              'picking_list',
+              'GET',
+              null,
+              'select=id,created_at&order=created_at.desc&limit=1'
+            ).catch(() => null),
+          ]);
+          const nextSig =
+            activeProbe !== null && latestProbe !== null
+              ? `${latestProbe[0]?.id || ''}:${latestProbe[0]?.created_at || ''}|${activeProbe
+                  .map((r) => `${r.id}:${r.status || ''}:${r.qty_picked || 0}:${r.picker_name || ''}`)
+                  .join(',')}`
+              : null;
+          if (nextSig !== null) {
+            if (lastPollSignature === null) {
+              lastPollSignature = nextSig;
+              return;
+            }
+            if (lastPollSignature === nextSig) {
+              return;
+            }
+            lastPollSignature = nextSig;
+          }
+        } catch {}
+
         fetchPickingListFromSupabase(true)
           .then((data) => {
             if (Array.isArray(data) && data.length > 0) {

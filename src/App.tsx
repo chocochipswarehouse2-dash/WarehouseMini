@@ -3130,13 +3130,16 @@ export default function App() {
       if (k3) notifiedOrderIdsRef.current.add(k3);
     };
 
+    let lastDeltaCheckAt = 0;
     const checkNewStoreOrdersDelta = async () => {
       if (!isSeeded) return;
+      const nowMs = Date.now();
+      if (nowMs - lastDeltaCheckAt < 15000) return;
+      lastDeltaCheckAt = nowMs;
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
         void triggerServiceWorkerCheckNow();
       }
       try {
-        const nowMs = Date.now();
         const MAX_AGE_MS = 12 * 60 * 60 * 1000;
         const prevCheck = getLastOrderCheckTimestamp();
         const deltaSinceIso = prevCheck && prevCheck > 0 && Math.abs(nowMs - prevCheck) <= MAX_AGE_MS

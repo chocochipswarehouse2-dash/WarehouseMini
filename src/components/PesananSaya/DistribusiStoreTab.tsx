@@ -459,6 +459,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   const [isOnline, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [pendingOfflineCount, setPendingOfflineCount] = useState<number>(() => getPendingOfflinePengecekanSJ().length);
   const [isSyncingOffline, setIsSyncingOffline] = useState(false);
+  const lastRecordsFetchAtRef = useRef<number>(0);
 
   useEffect(() => {
     const handleOnline = () => {
@@ -1322,8 +1323,14 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
   // ==========================================
   // RIWAYAT PENGECEKAN ACTIONS
   // ==========================================
-  const loadRecords = async (options?: boolean | React.MouseEvent) => {
+  const loadRecords = async (options?: boolean | React.MouseEvent, forceRefresh = false) => {
+    const isManualClick = Boolean(options && typeof options === 'object');
     const showLoadingSpinner = typeof options === 'boolean' ? options : true;
+    const now = Date.now();
+    if (!forceRefresh && !isManualClick && lastRecordsFetchAtRef.current > 0 && now - lastRecordsFetchAtRef.current < 60000) {
+      return;
+    }
+
     // 1. Instantly populate from IndexedDB / localStorage cache if available
     if (records.length === 0) {
       const cached = await getCachedPengecekanSJListAsync();
@@ -1339,7 +1346,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
 
     if (showLoadingSpinner) setLoadingRecords(true);
     try {
-      const data = await fetchTarikanMDRecords();
+      const data = await fetchTarikanMDRecords(0, forceRefresh);
+      lastRecordsFetchAtRef.current = Date.now();
       const sorted = [...data].sort((a, b) => {
         const timeA = new Date(a.created_at || a.tanggal_sj || 0).getTime();
         const timeB = new Date(b.created_at || b.tanggal_sj || 0).getTime();
@@ -1362,7 +1370,8 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
       await clearDeltaSyncCache('Tarikan MD');
       await clearPengecekanSJRecordsCache();
       localStorage.removeItem('wms_cached_tarikanmd');
-      await loadRecords(true);
+      lastRecordsFetchAtRef.current = 0;
+      await loadRecords(true, true);
       onShowToast('Muat ulang penuh selesai.', 'success');
     } catch {
       onShowToast('Gagal memuat ulang penuh.', 'error');

@@ -1,6 +1,7 @@
 import { ManualShipmentOrder, ManualShipmentHistoryLog, ManualShipmentItem, ProductItem } from '../types';
 import {
   supabaseFetch,
+  fetchSupabaseWatermark,
   createPickingSuratJalanSupabase,
   fetchStockForSkus,
   isWarehouseLocation,
@@ -950,12 +951,16 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
 
 let memoryManualShipmentsCache: ManualShipmentOrder[] | null = null;
 let memoryManualShipmentsLastFetch = 0;
+let memoryManualShipmentsWatermark = '';
+let memoryManualShipmentsRawCount = 0;
 let inflightManualShipmentsPromise: Promise<ManualShipmentOrder[]> | null = null;
-const MANUAL_SHIPMENTS_SWR_TTL_MS = 30 * 1000;
+const MANUAL_SHIPMENTS_SWR_TTL_MS = 2 * 60 * 1000;
 
 export function invalidateManualShipmentsCache(): void {
   memoryManualShipmentsCache = null;
   memoryManualShipmentsLastFetch = 0;
+  memoryManualShipmentsWatermark = '';
+  memoryManualShipmentsRawCount = 0;
 }
 
 export async function fetchManualShipments(forceRefresh = false): Promise<ManualShipmentOrder[]> {
@@ -972,8 +977,34 @@ export async function fetchManualShipments(forceRefresh = false): Promise<Manual
 
   const runFetch = async (): Promise<ManualShipmentOrder[]> => {
     try {
+      let checkedWm: { latestMarker: string; totalCount: number } | null = null;
+      if (
+        !forceRefresh &&
+        memoryManualShipmentsCache &&
+        memoryManualShipmentsWatermark &&
+        memoryManualShipmentsRawCount > 0
+      ) {
+        checkedWm = await fetchSupabaseWatermark('manual_shipment', 'updated_at');
+        if (
+          checkedWm &&
+          checkedWm.totalCount === memoryManualShipmentsRawCount &&
+          checkedWm.latestMarker === memoryManualShipmentsWatermark
+        ) {
+          memoryManualShipmentsLastFetch = Date.now();
+          return memoryManualShipmentsCache;
+        }
+      }
+
       const data = await supabaseFetch<any[]>('manual_shipment', 'GET', null, 'select=*&order=created_at.desc&limit=1500');
       if (!data) return memoryManualShipmentsCache || [];
+
+      let maxUpdatedAt = '';
+      for (const row of data) {
+        const ts = row?.updated_at ? String(row.updated_at) : '';
+        if (ts && (!maxUpdatedAt || ts > maxUpdatedAt)) maxUpdatedAt = ts;
+      }
+      memoryManualShipmentsRawCount = data.length;
+      memoryManualShipmentsWatermark = checkedWm?.latestMarker || maxUpdatedAt;
     
     const nonReturData = data.filter(item => {
       const noPesanan = String(item.no_pesanan || '').toUpperCase().trim();

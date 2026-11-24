@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search,
   Filter,
@@ -71,15 +71,15 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
   const [filterKategori, setFilterKategori] = useState<string>('Semua');
   const [beritaAcaraJob, setBeritaAcaraJob] = useState<QcPengerjaanJob | null>(null);
   
-  // Mutasi records from Pengecekan Surat Jalan
+  // Mutasi records from Pengecekan Surat Jalan (lazy-loaded only when MUTASI mode is opened)
   const [mutasiRecords, setMutasiRecords] = useState<PengecekanSJRecord[]>(() => getCachedPengecekanSJList());
   const [loadingMutasi, setLoadingMutasi] = useState<boolean>(false);
+  const hasAutoLoadedMutasiRef = useRef<boolean>(false);
 
-  // Load Pengecekan SJ records on mount and refresh
-  const loadMutasiSJ = async () => {
+  const loadMutasiSJ = async (forceRefresh = false) => {
     setLoadingMutasi(true);
     try {
-      const data = await fetchTarikanMDRecords();
+      const data = await fetchTarikanMDRecords(0, forceRefresh);
       setMutasiRecords(data);
     } catch {
       // silent fallback to cached
@@ -89,8 +89,11 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
   };
 
   useEffect(() => {
-    loadMutasiSJ();
-  }, []);
+    if (qcMode === 'MUTASI' && !hasAutoLoadedMutasiRef.current) {
+      hasAutoLoadedMutasiRef.current = true;
+      void loadMutasiSJ(false);
+    }
+  }, [qcMode]);
 
   // 1. Group items for QC PRODUKSI (dari Form Penerimaan Produksi)
   const produksiJobs: QcPengerjaanJob[] = useMemo(() => {
@@ -360,7 +363,7 @@ export const QcPengerjaanTab: React.FC<QcPengerjaanTabProps> = ({
             {qcMode === 'MUTASI' && (
               <button
                 type="button"
-                onClick={loadMutasiSJ}
+                onClick={() => void loadMutasiSJ(true)}
                 disabled={loadingMutasi}
                 className="inline-flex items-center gap-1.5 px-2.5 min-h-[34px] text-[11px] font-semibold text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 rounded-lg transition cursor-pointer border border-slate-200 dark:border-slate-700 shrink-0"
               >

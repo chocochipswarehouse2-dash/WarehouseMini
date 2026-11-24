@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.29.0",
-  "versionCode": 490,
+  "version": "v2.29.1",
+  "versionCode": 491,
   "buildDate": "24 November 2026",
-  "buildHash": "wms-261124-v490-0955",
-  "releaseTitle": "WMS v2.29.0 — Renovasi Total Rekap Tagihan JNE (GSheet JNEMember 2-Way & AI Vision)",
+  "buildHash": "wms-261124-v491-0340",
+  "releaseTitle": "WMS v2.29.1 — Optimasi PostgREST Egress Lintas Layanan",
   "releaseNotes": [
-    "Sinkronisasi live 2 arah dengan GSheet JNEMember (Kolom D Deskripsi Pengiriman bisa diisi dari WMS maupun GSheet)",
-    "Import multi-sumber: Excel, CSV, Lampiran Gambar/Screenshot (Ctrl+V via Gemini Vision AI), PDF, & Input Manual dengan Tabel Pratinjau",
-    "Fitur Edit Lengkap seluruh kolom & Hapus Baris GSheet khusus Admin dan Warehouse dalam tampilan 2-Mode (Tabel & Kartu)"
+    "Watermark delta sync pengecekan_sj & lazy-load QC Mutasi",
+    "Watermark gate wms_settings & recount_audit_results + probe ringan 60s PickingTasksView",
+    "Guard watermark penerimaan_produksi, manual_shipment, stok fisik, & skill egress guardrails"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.29.0",
+    "versionCode": 490,
+    "buildDate": "24 November 2026",
+    "buildHash": "wms-261124-v490-0955",
+    "releaseTitle": "WMS v2.29.0 — Renovasi Total Rekap Tagihan JNE (GSheet JNEMember 2-Way & AI Vision)",
+    "releaseNotes": [
+      "Sinkronisasi live 2 arah dengan GSheet JNEMember (Kolom D Deskripsi Pengiriman bisa diisi dari WMS maupun GSheet)",
+      "Import multi-sumber: Excel, CSV, Lampiran Gambar/Screenshot (Ctrl+V via Gemini Vision AI), PDF, & Input Manual dengan Tabel Pratinjau",
+      "Fitur Edit Lengkap seluruh kolom & Hapus Baris GSheet khusus Admin dan Warehouse dalam tampilan 2-Mode (Tabel & Kartu)"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.28.3",
     "versionCode": 483,
@@ -117,18 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
       "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
       "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.9",
-    "versionCode": 449,
-    "buildDate": "22 November 2026",
-    "buildHash": "wms-261122-v449-1356",
-    "releaseTitle": "WMS v2.24.9 — Filter Rentang Tanggal Spreadsheet Produksi",
-    "releaseNotes": [
-      "Mengubah dropdown daftar SJ pada tampilan Spreadsheet Produksi menjadi filter rentang tanggal (Dari s/d Sampai)",
-      "Tampilan Desktop inline date range dan Seluler berupa bottom sheet dengan preset cepat (Hari Ini, 7 Hari, 30 Hari, Bulan Ini) yang tersinkronisasi dengan filter Riwayat Produksi"
     ],
     "minSupportedVersion": "v2.0.0"
   }

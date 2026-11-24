@@ -6,7 +6,7 @@
 
 ## Ringkasan Arsitektur Inti
 - **Frontend**: React 19 + TypeScript + Vite + Tailwind CSS v4 + PWA (`vite-plugin-pwa` Zero-Reload Background Update).
-- **Database Utama**: Supabase PostgreSQL (`src/services/supabase.ts` + SWR cache + IndexedDB `src/services/localDb.ts` untuk 28.000+ Master Produk agar egress minimal).
+- **Database Utama**: Supabase PostgreSQL (`src/services/supabase.ts` + SWR cache + **Watermark Gate ~150B** via `fetchSupabaseWatermark` + IndexedDB `src/services/localDb.ts` untuk 29.000+ Master Produk & `pengecekan_sj` delta sync agar PostgREST egress minimal; lihat `.agents/skills/wms-supabase-egress-guardrails/SKILL.md`).
 - **Penyimpanan Foto & Email/Sheet**: Google Apps Script (`gas/`) -> Google Drive + Google Sheets + `MailApp`.
 - **Server Proxy AI & Push**: `api/ai.js` (`@google/genai` server-side `gemini-3.1-flash-lite` & `gemini-4-hydrogen`, SSE streaming) dan `server.ts`.
 - **Single Source of Truth**:
@@ -21,7 +21,7 @@
 
 | No | Modul & `ActivePage` | Komponen Utama | Service / Backend | Tabel Supabase / Storage | Aturan & Invarian Kritis |
 |---:|---|---|---|---|---|
-| 1 | **Dashboard Utama** (`dashboard`) | `DashboardView` (`src/App.tsx`) | `supabase.ts`, `rackCapacityService.ts` | `stok_real_fisik`, `log_produk`, `rack_capacities` | KPI stok, kapasitas rak, navigasi cepat, **Mutasi Stok Terkini** seragam tabel `MutasiLogView` (Mobile 4-kolom compact + Desktop 7-kolom penuh, lookup Master Produk & live stok rak), hemat egress via cache lokal (`limit=12`). |
+| 1 | **Dashboard Utama** (`dashboard`) | `DashboardView` (`src/App.tsx`) | `supabase.ts`, `rackCapacityService.ts`, `settings.ts` | `stok_real_fisik`, `log_produk`, `rack_capacities`, `wms_settings`, `wms_system_docs` | KPI stok, kapasitas rak, navigasi cepat, **Mutasi Stok Terkini** seragam tabel `MutasiLogView` (Mobile 4-kolom compact + Desktop 7-kolom penuh, lookup Master Produk & live stok rak), hemat egress via cache lokal (`limit=12`), watermark gate `wms_settings`/`recount_audit_results`, & cooldown antrean KPI 90 detik. |
 | 2 | **Inventory & Denah 3D** (`inventory`) | `InventoryView`, `Warehouse3DView`, `InventoryCartModal` | `supabase.ts`, `localDb.ts`, `productLookup.ts` | `stok_real_fisik`, `master_produk` | Lookup SKU ketat via `lookupProductBySku`, stok fisik vs DealPOS, Denah 3D rak, Keranjang Order. |
 | 3 | **Scanner Barcode** (`scanner`, `ScannerPopupModal`) | `CameraScanner.tsx`, `ScannerPopupModal.tsx` | `supabase.ts`, `productLookup.ts` | `log_produk` | Default kamera HP **selalu Camera 0** (rear utama), dropdown tersortir prioritas, aman offline/staging (`wms_active_staging_scans`). |
 | 4 | **Stock Opname (SO)** (`stock_opname`) | `StockOpnameView` | `supabase.ts` (`fetchStockOpnameQueue`) | `stock_opname_queue`, `log_produk`, `stok_real_fisik` | Rumus `Selisih = Scan Fisik - Stok Sistem`. Unscanned item = `0` (`ADJ_OUT`). Hanya buat `ADJ_IN`/`ADJ_OUT` saat klik Approve. |

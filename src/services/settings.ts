@@ -15,6 +15,15 @@ export const DEFAULT_MANUAL_SHIPMENT_GAS_URL =
 let cachedSettings: WmsSettings | null = null;
 let isFetchingPromise: Promise<WmsSettings | null> | null = null;
 
+const LS_SETTINGS_UPDATED_AT_KEY = 'wms_settings_max_updated_at';
+const LS_SETTINGS_SNAPSHOT_KEY = 'wms_settings_snapshot_v1';
+const LS_RECOUNT_DOC_UPDATED_AT_KEY = 'wms_recount_doc_updated_at';
+const RECOUNT_AUDIT_SWR_TTL_MS = 2 * 60 * 1000;
+
+let memoryRecountAuditCache: Record<string, any> | null = null;
+let memoryRecountAuditLastFetch = 0;
+let inflightRecountAuditPromise: Promise<Record<string, any>> | null = null;
+
 /**
  * Validasi dan bersihkan URL GAS jika merupakan URL script mati/404 lama
  */
@@ -71,6 +80,20 @@ function initCacheFromLocalStorage(): WmsSettings {
       } catch {}
     }
 
+    let snapshotSettings: Partial<WmsSettings> | null = null;
+    try {
+      const snapRaw = localStorage.getItem(LS_SETTINGS_SNAPSHOT_KEY);
+      if (snapRaw) snapshotSettings = JSON.parse(snapRaw);
+    } catch {}
+
+    let parsedRecountMap = snapshotSettings?.recount_audit_map || null;
+    if (!parsedRecountMap) {
+      const recountStored = localStorage.getItem('wms_recount_audit_map');
+      if (recountStored) {
+        try { parsedRecountMap = JSON.parse(recountStored); } catch {}
+      }
+    }
+
     cachedSettings = {
       gas_endpoint: gasEndpoint,
       manual_shipment_gas_url: manualShipmentGas,
@@ -81,8 +104,10 @@ function initCacheFromLocalStorage(): WmsSettings {
       fonnte_auto_send: fonnteAuto,
       wa_webhook_gas_url: waWebhookGasUrl,
       katalog_manual_data: katalogManualData,
-      presensi_locations: parsedPresensiLocations,
-      roles: parsedRoles,
+      presensi_locations: parsedPresensiLocations || snapshotSettings?.presensi_locations || null,
+      agenda_categories: snapshotSettings?.agenda_categories || null,
+      recount_audit_map: parsedRecountMap,
+      roles: parsedRoles || snapshotSettings?.roles || null,
     };
   } catch {
     cachedSettings = {
@@ -247,6 +272,7 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
         window.dispatchEvent(new CustomEvent('wms_presensi_location_changed', { detail: merged.presensi_locations }));
       }
     }
+    localStorage.setItem(LS_SETTINGS_SNAPSHOT_KEY, JSON.stringify(merged));
   } catch {}
 
   // Dispatch event agar seluruh UI bereaksi seketika
@@ -262,14 +288,14 @@ function syncCacheAndStorage(data: WmsSettings): WmsSettings {
 /**
  * Ambil konfigurasi global WMS dari Supabase Cloud (berlaku untuk semua pengguna)
  */
-export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSettings | null> {
+export async function fetchWmsSettings(forceRefresh = false, hardBypass = false): Promise<WmsSettings | null> {
   // Jika sudah ada di memori dan tidak dipaksa refresh, return instan
   if (cachedSettings && !forceRefresh) {
     return cachedSettings;
   }
 
   // Hindari race condition multiple fetch
-  if (isFetchingPromise && !forceRefresh) {
+  if (isFetchingPromise && !hardBypass) {
     return isFetchingPromise;
   }
 
@@ -277,6 +303,26 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
 
   isFetchingPromise = (async () => {
     try {
+      // Lightweight ~150B updated_at watermark check before downloading ~392 KB wms_settings payload
+      if (!hardBypass) {
+        try {
+          const localWm = localStorage.getItem(LS_SETTINGS_UPDATED_AT_KEY) || '';
+          const hasSnapshot = Boolean(localStorage.getItem(LS_SETTINGS_SNAPSHOT_KEY));
+          if (localWm && hasSnapshot && cachedSettings) {
+            const wmRows = await supabaseFetch<Array<{ updated_at?: string }>>(
+              'wms_settings',
+              'GET',
+              undefined,
+              'select=updated_at&order=updated_at.desc.nullslast&limit=1'
+            );
+            const remoteWm = Array.isArray(wmRows) && wmRows[0]?.updated_at ? String(wmRows[0].updated_at) : '';
+            if (remoteWm && remoteWm === localWm) {
+              return cachedSettings;
+            }
+          }
+        } catch {}
+      }
+
       const rows = await supabaseFetch<any[]>('wms_settings', 'GET', undefined, 'order=id.asc');
       if (rows && rows.length > 0) {
         // Cari baris utama (id: 1) dan baris konfigurasi ekstensi (CONFIG_GAS / id: 2)
@@ -288,6 +334,12 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           try {
             gasConfig = JSON.parse(row2.fonnte_group_target);
           } catch {}
+        }
+
+        let maxUpdatedAt = '';
+        for (const r of rows) {
+          const ts = r?.updated_at ? String(r.updated_at) : '';
+          if (ts && (!maxUpdatedAt || ts > maxUpdatedAt)) maxUpdatedAt = ts;
         }
 
         const merged: WmsSettings = {
@@ -305,8 +357,14 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
           agenda_categories: gasConfig.agenda_categories || null,
           katalog_manual_data: row1.katalog_manual_data || gasConfig.katalog_manual_data || localStorage.getItem('wms_katalog_manual_data') || '',
           recount_audit_map: gasConfig.recount_audit_map || null,
-          updated_at: row1.updated_at || new Date().toISOString(),
+          updated_at: maxUpdatedAt || row1.updated_at || new Date().toISOString(),
         };
+
+        try {
+          if (maxUpdatedAt) {
+            localStorage.setItem(LS_SETTINGS_UPDATED_AT_KEY, maxUpdatedAt);
+          }
+        } catch {}
 
         return syncCacheAndStorage(merged);
       }
@@ -327,11 +385,12 @@ export async function fetchWmsSettings(forceRefresh = false): Promise<WmsSetting
  */
 export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<boolean> {
   // 1. Optimistic update cache lokal seketika
+  const savedAt = new Date().toISOString();
   const current = initCacheFromLocalStorage();
   const updated: WmsSettings = {
     ...current,
     ...settings,
-    updated_at: new Date().toISOString(),
+    updated_at: savedAt,
   };
   syncCacheAndStorage(updated);
 
@@ -362,17 +421,16 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
         gdrive_gas_url: updated.gdrive_gas_url || '',
         gdrive_folder_url: updated.gdrive_folder_url || '',
         katalog_manual_data: updated.katalog_manual_data || '',
-        updated_at: new Date().toISOString(),
+        updated_at: savedAt,
       };
       await supabaseFetch('wms_settings', 'PATCH', row1Payload, 'id=eq.1');
     } catch {
-      // Jika kolom gas_endpoint atau katalog_manual_data belum ditambahkan ke schema tabel di Supabase, update hanya kolom fonnte di row 1
       try {
         const fallbackRow1 = {
           fonnte_token: updated.fonnte_token || '',
           fonnte_group_target: updated.fonnte_group_target || '',
           fonnte_auto_send: updated.fonnte_auto_send !== undefined ? updated.fonnte_auto_send : true,
-          updated_at: new Date().toISOString(),
+          updated_at: savedAt,
         };
         await supabaseFetch('wms_settings', 'PATCH', fallbackRow1, 'id=eq.1');
       } catch {}
@@ -385,18 +443,20 @@ export async function saveWmsSettings(settings: Partial<WmsSettings>): Promise<b
         fonnte_token: 'CONFIG_GAS',
         fonnte_group_target: JSON.stringify(configPayload),
         fonnte_auto_send: false,
-        updated_at: new Date().toISOString(),
+        updated_at: savedAt,
       };
-      // Coba patch id: 2 dulu
       try {
         await supabaseFetch('wms_settings', 'PATCH', row2Payload, 'id=eq.2');
       } catch {
-        // Jika belum ada row 2, lakukan insert
         await supabaseFetch('wms_settings', 'POST', row2Payload);
       }
     } catch (err) {
       console.warn('Gagal menyimpan fallback config row 2:', err);
     }
+
+    try {
+      localStorage.setItem(LS_SETTINGS_UPDATED_AT_KEY, savedAt);
+    } catch {}
 
     return true;
   } catch (error) {
@@ -471,113 +531,172 @@ export function getRecountAuditMap(): Record<string, any> {
  * Ambil data hitung ulang terbaru dari Cloud (wms_system_docs & wms_settings)
  * Memastikan semua user & perangkat lain melihat kode mana saja yang sudah dihitung
  */
-export async function fetchRecountAuditMapFromCloud(): Promise<Record<string, any>> {
-  let localAuditMap: Record<string, any> = mergeRecountAuditMaps(getRecountAuditMap(), {});
+export async function fetchRecountAuditMapFromCloud(forceRefresh = false): Promise<Record<string, any>> {
+  if (
+    !forceRefresh &&
+    memoryRecountAuditCache &&
+    Date.now() - memoryRecountAuditLastFetch < RECOUNT_AUDIT_SWR_TTL_MS
+  ) {
+    return memoryRecountAuditCache;
+  }
+  if (!forceRefresh && inflightRecountAuditPromise) {
+    return inflightRecountAuditPromise;
+  }
 
-  // Ekstrak juga dari riwayat log hitung ulang lokal di browser ini
-  try {
-    const rawLogs = localStorage.getItem('wms_penerimaan_recount_logs');
-    if (rawLogs) {
-      const logs = JSON.parse(rawLogs);
-      if (Array.isArray(logs)) {
-        const logMap: Record<string, any> = {};
-        logs.forEach((log: any) => {
-          const code = normalizeRecountCodeKey(log.kode_produksi || '');
-          if (code) {
-            const totalSelisih = Number(log.total_selisih) || 0;
-            const candidate = {
-              kode_produksi: code,
-              tanggal_audit: log.tanggal_audit,
-              total_asli: Number(log.total_sebelumnya) || 0,
-              total_fisik: Number(log.total_fisik) || 0,
-              total_selisih: totalSelisih,
-              status: totalSelisih === 0 ? 'MATCH' : totalSelisih < 0 ? 'KURANG' : 'LEBIH',
-              round: Number(log.round || 1),
-              auditor: log.auditor || 'Auditor Fisik',
-              catatan: log.general_notes || '',
-              updated_at: log.created_at || log.tanggal_audit || '',
-              variants: (log.details || []).map((d: any) => ({
-                warna: d.warna,
-                size: d.size,
-                qty_asli: Number(d.qty_sebelumnya) || 0,
-                qty_fisik: Number(d.qty_fisik) || 0,
-                selisih: Number(d.selisih) || 0,
-                status: Number(d.selisih) === 0 ? 'MATCH' : Number(d.selisih) < 0 ? 'KURANG' : 'LEBIH',
-                note: d.catatan || '',
-              })),
-            };
-            if (!logMap[code] || isIncomingRecountNewer(logMap[code], candidate)) {
-              logMap[code] = candidate;
-            }
-          }
-        });
-        localAuditMap = mergeRecountAuditMaps(localAuditMap, logMap);
-      }
-    }
-  } catch (eLogs) {}
+  const runFetch = async (): Promise<Record<string, any>> => {
+    let localAuditMap: Record<string, any> = mergeRecountAuditMaps(getRecountAuditMap(), {});
 
-  let docMap: Record<string, any> = {};
-  let settingsMap: Record<string, any> = {};
-
-  // 1. Coba ambil dari wms_system_docs key 'recount_audit_results'
-  try {
-    const doc = await supabaseFetch<any[]>('wms_system_docs', 'GET', undefined, 'section_id=eq.recount_audit_results');
-    if (doc && doc[0] && doc[0].content) {
-      const parsed = JSON.parse(doc[0].content);
-      if (typeof parsed === 'object' && parsed !== null) {
-        docMap = mergeRecountAuditMaps(parsed, {});
-      }
-    }
-  } catch (eDoc) {}
-
-  // 2. Coba ambil dari wms_settings row 2
-  try {
-    const s = await fetchWmsSettings(true);
-    if (s && s.recount_audit_map && Object.keys(s.recount_audit_map).length > 0) {
-      settingsMap = mergeRecountAuditMaps(s.recount_audit_map, {});
-    }
-  } catch (eSet) {}
-
-  // MERGE cloud (doc + settings) and local berdasarkan timestamp updated_at / round terbaru (anti stale overwrite)
-  const cloudMap = mergeRecountAuditMaps(docMap, settingsMap);
-  const mergedMap = mergeRecountAuditMaps(cloudMap, localAuditMap);
-
-  const needsDocHeal = Object.keys(mergedMap).some(
-    (k) => !docMap[k] || isIncomingRecountNewer(docMap[k], mergedMap[k])
-  );
-  const needsSettingsHeal = Object.keys(mergedMap).some(
-    (k) => !settingsMap[k] || isIncomingRecountNewer(settingsMap[k], mergedMap[k])
-  );
-
-  if (needsDocHeal && Object.keys(mergedMap).length > 0) {
     try {
-      await supabaseFetch(
+      const rawLogs = localStorage.getItem('wms_penerimaan_recount_logs');
+      if (rawLogs) {
+        const logs = JSON.parse(rawLogs);
+        if (Array.isArray(logs)) {
+          const logMap: Record<string, any> = {};
+          logs.forEach((log: any) => {
+            const code = normalizeRecountCodeKey(log.kode_produksi || '');
+            if (code) {
+              const totalSelisih = Number(log.total_selisih) || 0;
+              const candidate = {
+                kode_produksi: code,
+                tanggal_audit: log.tanggal_audit,
+                total_asli: Number(log.total_sebelumnya) || 0,
+                total_fisik: Number(log.total_fisik) || 0,
+                total_selisih: totalSelisih,
+                status: totalSelisih === 0 ? 'MATCH' : totalSelisih < 0 ? 'KURANG' : 'LEBIH',
+                round: Number(log.round || 1),
+                auditor: log.auditor || 'Auditor Fisik',
+                catatan: log.general_notes || '',
+                updated_at: log.created_at || log.tanggal_audit || '',
+                variants: (log.details || []).map((d: any) => ({
+                  warna: d.warna,
+                  size: d.size,
+                  qty_asli: Number(d.qty_sebelumnya) || 0,
+                  qty_fisik: Number(d.qty_fisik) || 0,
+                  selisih: Number(d.selisih) || 0,
+                  status: Number(d.selisih) === 0 ? 'MATCH' : Number(d.selisih) < 0 ? 'KURANG' : 'LEBIH',
+                  note: d.catatan || '',
+                })),
+              };
+              if (!logMap[code] || isIncomingRecountNewer(logMap[code], candidate)) {
+                logMap[code] = candidate;
+              }
+            }
+          });
+          localAuditMap = mergeRecountAuditMaps(localAuditMap, logMap);
+        }
+      }
+    } catch (eLogs) {}
+
+    let docWmUpdatedAt = '';
+    try {
+      const docWm = await supabaseFetch<Array<{ updated_at?: string }>>(
         'wms_system_docs',
-        'POST',
-        [
-          {
-            section_id: 'recount_audit_results',
-            content: JSON.stringify(mergedMap),
-            updated_by: 'Auto-Sync Merge',
-            updated_at: new Date().toISOString(),
-          },
-        ],
-        'on_conflict=section_id',
-        true
+        'GET',
+        undefined,
+        'section_id=eq.recount_audit_results&select=updated_at&limit=1'
       );
+      if (Array.isArray(docWm) && docWm[0]?.updated_at) {
+        docWmUpdatedAt = String(docWm[0].updated_at);
+      }
     } catch {}
-  }
-  if (needsSettingsHeal && Object.keys(mergedMap).length > 0) {
-    saveWmsSettings({ recount_audit_map: mergedMap }).catch(() => {});
-  }
 
-  // Update local memory & cache
-  try {
-    localStorage.setItem('wms_recount_audit_map', JSON.stringify(mergedMap));
-    if (cachedSettings) cachedSettings.recount_audit_map = mergedMap;
-  } catch {}
+    const prevDocWm = (() => {
+      try { return localStorage.getItem(LS_RECOUNT_DOC_UPDATED_AT_KEY) || ''; } catch { return ''; }
+    })();
 
-  return mergedMap;
+    let settingsMap: Record<string, any> = {};
+    try {
+      const s = await fetchWmsSettings(true);
+      if (s && s.recount_audit_map && Object.keys(s.recount_audit_map).length > 0) {
+        settingsMap = mergeRecountAuditMaps(s.recount_audit_map, {});
+      }
+    } catch (eSet) {}
+
+    if (
+      !forceRefresh &&
+      docWmUpdatedAt &&
+      prevDocWm &&
+      docWmUpdatedAt === prevDocWm &&
+      Object.keys(localAuditMap).length > 0
+    ) {
+      const fastMerged = mergeRecountAuditMaps(settingsMap, localAuditMap);
+      memoryRecountAuditCache = fastMerged;
+      memoryRecountAuditLastFetch = Date.now();
+      return fastMerged;
+    }
+
+    let docMap: Record<string, any> = {};
+    try {
+      const doc = await supabaseFetch<any[]>(
+        'wms_system_docs',
+        'GET',
+        undefined,
+        'section_id=eq.recount_audit_results&select=content,updated_at&limit=1'
+      );
+      if (doc && doc[0]) {
+        if (doc[0].updated_at) {
+          try { localStorage.setItem(LS_RECOUNT_DOC_UPDATED_AT_KEY, String(doc[0].updated_at)); } catch {}
+        }
+        if (doc[0].content) {
+          const parsed = JSON.parse(doc[0].content);
+          if (typeof parsed === 'object' && parsed !== null) {
+            docMap = mergeRecountAuditMaps(parsed, {});
+          }
+        }
+      }
+    } catch (eDoc) {}
+
+    const cloudMap = mergeRecountAuditMaps(docMap, settingsMap);
+    const mergedMap = mergeRecountAuditMaps(cloudMap, localAuditMap);
+
+    const needsDocHeal = Object.keys(mergedMap).some(
+      (k) => !docMap[k] || isIncomingRecountNewer(docMap[k], mergedMap[k])
+    );
+    const needsSettingsHeal = Object.keys(mergedMap).some(
+      (k) => !settingsMap[k] || isIncomingRecountNewer(settingsMap[k], mergedMap[k])
+    );
+
+    if (needsDocHeal && Object.keys(mergedMap).length > 0) {
+      const healAt = new Date().toISOString();
+      try {
+        await supabaseFetch(
+          'wms_system_docs',
+          'POST',
+          [
+            {
+              section_id: 'recount_audit_results',
+              content: JSON.stringify(mergedMap),
+              updated_by: 'Auto-Sync Merge',
+              updated_at: healAt,
+            },
+          ],
+          'on_conflict=section_id',
+          true
+        );
+        try { localStorage.setItem(LS_RECOUNT_DOC_UPDATED_AT_KEY, healAt); } catch {}
+      } catch {}
+    }
+    if (needsSettingsHeal && Object.keys(mergedMap).length > 0) {
+      saveWmsSettings({ recount_audit_map: mergedMap }).catch(() => {});
+    }
+
+    memoryRecountAuditCache = mergedMap;
+    memoryRecountAuditLastFetch = Date.now();
+    try {
+      localStorage.setItem('wms_recount_audit_map', JSON.stringify(mergedMap));
+      if (cachedSettings) cachedSettings.recount_audit_map = mergedMap;
+    } catch {}
+
+    return mergedMap;
+  };
+
+  if (!forceRefresh) {
+    inflightRecountAuditPromise = runFetch().finally(() => {
+      inflightRecountAuditPromise = null;
+    });
+    return inflightRecountAuditPromise;
+  }
+  return runFetch();
 }
 
 /**
@@ -641,12 +760,15 @@ export async function saveRecountAuditRecord(record: {
   };
 
   // Sync cache lokal
+  memoryRecountAuditCache = updatedMap;
+  memoryRecountAuditLastFetch = Date.now();
   try {
     localStorage.setItem('wms_recount_audit_map', JSON.stringify(updatedMap));
     if (cachedSettings) cachedSettings.recount_audit_map = updatedMap;
   } catch {}
 
   // Sync ke Cloud A: wms_system_docs key 'recount_audit_results'
+  const savedDocAt = new Date().toISOString();
   try {
     await supabaseFetch(
       'wms_system_docs',
@@ -656,12 +778,13 @@ export async function saveRecountAuditRecord(record: {
           section_id: 'recount_audit_results',
           content: JSON.stringify(updatedMap),
           updated_by: record.auditor || 'WMS Auditor',
-          updated_at: new Date().toISOString(),
+          updated_at: savedDocAt,
         },
       ],
       'on_conflict=section_id',
       true
     );
+    try { localStorage.setItem(LS_RECOUNT_DOC_UPDATED_AT_KEY, savedDocAt); } catch {}
   } catch (errDoc) {
     console.warn('Gagal sync recount ke wms_system_docs:', errDoc);
   }

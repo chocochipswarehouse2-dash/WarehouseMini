@@ -15,7 +15,7 @@ Sebelum memulai analisis, perencanaan, edit kode, atau perintah apa pun:
 
 ## 2. Supabase Migration, Schema & Egress Guardrails
 - Setiap perubahan skema tabel, payload model, `src/services/supabase.ts`, file `.sql`, atau sinkronisasi GAS wajib menyelaraskan modul migrasi (`migrate.js`, `tools/migrate-supabase.cjs`, `test-webhook.ts`).
-- **Egress Minimal**: Gunakan SWR cache / IndexedDB (`localDb.ts`), hindari polling cepat, selalu pakai `select=...` spesifik dan `limit=...` pada query daftar.
+- **Egress Minimal (`.agents/skills/wms-supabase-egress-guardrails/SKILL.md`)**: Wajib baca skill guardrail egress sebelum menambah/mengubah fetch Supabase atau polling. Gunakan SWR cache / IndexedDB (`localDb.ts`), **watermark gate ~150B** (`fetchSupabaseWatermark`) sebelum re-fetch tabel sedang/besar (`pengecekan_sj`, `wms_settings`, `penerimaan_produksi`, `manual_shipment`, `wms_system_docs`), probe ringan (~200B) untuk interval polling, lazy-load tab berat, selalu pakai `select=...` spesifik + `limit=...`, serta patuhi skema kolom nyata (mis. `penerimaan_produksi` & `picking_list` tidak memiliki `updated_at`).
 - **Penyimpanan**: Data bisnis ke Supabase; foto dokumentasi ke Google Drive (via GAS).
 
 ---

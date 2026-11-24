@@ -622,6 +622,45 @@ export async function supabaseFetchAllPages<T = unknown>(
 }
 
 /**
+ * Lightweight PostgREST watermark probe (~150 bytes): fetches only the latest row's
+ * marker column (`updated_at` or `id`) plus exact row count via `Prefer: count=exact`.
+ */
+export async function fetchSupabaseWatermark(
+  table: string,
+  orderCol = 'updated_at',
+  extraFilter = ''
+): Promise<{ latestMarker: string; totalCount: number } | null> {
+  try {
+    const { url, key } = getStoredSupabaseConfig();
+    const filterPart = extraFilter ? `${extraFilter}&` : '';
+    const endpoint = `${url}/rest/v1/${table}?select=${encodeURIComponent(orderCol)}&${filterPart}order=${encodeURIComponent(orderCol)}.desc&limit=1`;
+    const res = await fetchWithTimeout(
+      endpoint,
+      {
+        method: 'GET',
+        headers: {
+          apikey: key,
+          Authorization: `Bearer ${key}`,
+          Prefer: 'count=exact',
+        },
+      },
+      8000
+    );
+    if (!res.ok) return null;
+    const contentRange = res.headers.get('content-range') || '';
+    const totalPart = contentRange.split('/')[1];
+    const parsedTotal = Number(totalPart);
+    const totalCount = Number.isFinite(parsedTotal) ? parsedTotal : -1;
+    const rows = (await res.json().catch(() => [])) as Array<Record<string, unknown>>;
+    const rawMarker = Array.isArray(rows) && rows[0] ? rows[0][orderCol] : '';
+    const latestMarker = rawMarker !== undefined && rawMarker !== null ? String(rawMarker) : '';
+    return { latestMarker, totalCount };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * =========================================================================
  * SCHEMA SQL DEFINITIONS & GENERATOR FOR SUPABASE
  * Jika table belum ada di database Supabase user, sistem menyediakan DDL Script
@@ -6466,6 +6505,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
 
 let memoryPickingListCache: PickingListItem[] | null = null;
 let memoryPickingListLastFetch = 0;
+let inflightPickingListPromise: Promise<PickingListItem[]> | null = null;
 
 export function invalidatePickingListCache(): void {
   memoryPickingListCache = null;
@@ -6476,8 +6516,12 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
   if (!forceRefresh && memoryPickingListCache && memoryPickingListCache.length > 0 && Date.now() - memoryPickingListLastFetch < 5 * 60 * 1000) {
     return memoryPickingListCache;
   }
+  if (!forceRefresh && inflightPickingListPromise) {
+    return inflightPickingListPromise;
+  }
 
-  const itemsMap = new Map<string, PickingListItem>();
+  const runFetch = async (): Promise<PickingListItem[]> => {
+    const itemsMap = new Map<string, PickingListItem>();
 
   // Retrieve persistent set of completed Surat Jalan & offline outbox SJs
   const storedCompletedSJs = new Set<string>();
@@ -6577,15 +6621,21 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
     }
   }
 
-  const result = Array.from(itemsMap.values());
-  // Sort newest first
-  result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-  memoryPickingListCache = result;
-  memoryPickingListLastFetch = Date.now();
-  try {
-    localStorage.setItem('wms_picking_cache', JSON.stringify(result));
-  } catch {}
-  return result;
+    const result = Array.from(itemsMap.values());
+    // Sort newest first
+    result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+    memoryPickingListCache = result;
+    memoryPickingListLastFetch = Date.now();
+    try {
+      localStorage.setItem('wms_picking_cache', JSON.stringify(result));
+    } catch {}
+    return result;
+  };
+
+  inflightPickingListPromise = runFetch().finally(() => {
+    inflightPickingListPromise = null;
+  });
+  return inflightPickingListPromise;
 }
 
 export async function savePickingItemToSupabase(item: PickingListItem): Promise<boolean> {
@@ -7862,7 +7912,15 @@ export async function syncSmartLowEgressCache(): Promise<{
     const hasInitialLocationSync = localStorage.getItem('wms_loc_sync_v6_done') === 'true';
 
     // CASE 1: Superadmin imported a new Master Produk CSV OR local IndexedDB is incomplete/stale compared to cloud count
-    const isLocalCatalogIncomplete = cloudMasterCount > 0 && cloudMasterCount - localMasterCount > 5;
+    const lastSyncedCloudCount = Number(localStorage.getItem('wms_master_synced_cloud_count') || '0');
+    const lastMasterFullSyncAt = Number(localStorage.getItem('wms_master_last_full_sync_at') || '0');
+    const MASTER_FULL_SYNC_COOLDOWN_MS = 6 * 60 * 60 * 1000;
+    const isWithinMasterCooldown = lastMasterFullSyncAt > 0 && Date.now() - lastMasterFullSyncAt < MASTER_FULL_SYNC_COOLDOWN_MS;
+    const isLocalCatalogIncomplete =
+      cloudMasterCount > 0 &&
+      (localMasterCount === 0 ||
+        (cloudMasterCount - localMasterCount > 5 &&
+          (!isWithinMasterCooldown || (lastSyncedCloudCount > 0 && cloudMasterCount !== lastSyncedCloudCount))));
     if ((cloudMasterImportEpoch > 0 && cloudMasterImportEpoch > localMasterImportEpoch) || isLocalCatalogIncomplete) {
       const freshCatalog = await fetchMasterProductsFromSupabase(50000, true);
       if (freshCatalog.length > 0) {
@@ -7871,6 +7929,10 @@ export async function syncSmartLowEgressCache(): Promise<{
       try {
         if (cloudMasterImportEpoch > 0) localStorage.setItem('wms_last_master_import_epoch', String(cloudMasterImportEpoch));
         localStorage.removeItem('wms_master_updated_watermark');
+        if (freshCatalog.length > 0) {
+          localStorage.setItem('wms_master_synced_cloud_count', String(cloudMasterCount || freshCatalog.length));
+          localStorage.setItem('wms_master_last_full_sync_at', String(Date.now()));
+        }
         if (cloudStockResetEpoch > 0) localStorage.setItem('wms_last_stock_reset_epoch', String(cloudStockResetEpoch));
         if (latestLogId > 0) localStorage.setItem('wms_last_seen_log_id', String(latestLogId));
         localStorage.setItem('wms_loc_sync_v6_done', 'true');
@@ -10803,10 +10865,15 @@ export async function deleteQcReportFromSupabase(
  */
 let memoryPenerimaanProduksiCache: PenerimaanProduksiItem[] | null = null;
 let memoryPenerimaanProduksiLastFetch = 0;
+let inflightPenerimaanProduksiPromise: Promise<PenerimaanProduksiItem[]> | null = null;
+const LS_PENERIMAAN_WATERMARK_KEY = 'wms_local_penerimaan_watermark_v1';
 
 export function invalidatePenerimaanProduksiCache(): void {
   memoryPenerimaanProduksiCache = null;
   memoryPenerimaanProduksiLastFetch = 0;
+  try {
+    localStorage.removeItem(LS_PENERIMAAN_WATERMARK_KEY);
+  } catch {}
 }
 
 function comparePenerimaanProduksiItems(a: PenerimaanProduksiItem, b: PenerimaanProduksiItem): number {
@@ -10895,62 +10962,124 @@ export async function fetchPenerimaanProduksiFromSupabase(filters?: {
     return localData;
   }
 
-  try {
-    const queryParts: string[] = ['order=tanggal_penerimaan.desc,created_at.desc,id.desc'];
-
-    if (filters?.kategori && filters.kategori !== 'Semua') {
-      queryParts.push(`kategori=eq.${encodeURIComponent(filters.kategori)}`);
-    }
-    if (filters?.startDate) {
-      queryParts.push(`tanggal_penerimaan=gte.${encodeURIComponent(filters.startDate)}`);
-    }
-    if (filters?.endDate) {
-      queryParts.push(`tanggal_penerimaan=lte.${encodeURIComponent(filters.endDate)}`);
-    }
-
-    let remoteData: PenerimaanProduksiItem[];
-    if (filters?.limit) {
-      queryParts.push(`limit=${filters.limit}`);
-      remoteData = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'GET', undefined, queryParts.join('&'));
-    } else {
-      remoteData = await supabaseFetchAllPages<PenerimaanProduksiItem>('penerimaan_produksi', queryParts.join('&'), 10000, 1000, 4);
-    }
-
-    if (remoteData && Array.isArray(remoteData)) {
-      // Supabase is authoritative.
-      const remoteIds = new Set(remoteData.map((d) => String(d.id || '')).filter(Boolean));
-      // Keep offline pending items (temporary numeric id or un-synced)
-      const offlinePending = localData.filter((d) => {
-        const sid = String(d.id || '');
-        return (typeof d.id === 'number' && d.id > 1000000000) || (!remoteIds.has(sid) && sid.startsWith('local_'));
-      });
-
-      const merged = [...remoteData, ...offlinePending].sort(comparePenerimaanProduksiItems);
-
-      localData = merged;
-      if (!hasSpecificFilters) {
-        memoryPenerimaanProduksiCache = merged;
-        memoryPenerimaanProduksiLastFetch = Date.now();
-      }
-      saveLightweightPenerimaanToLocalStorage(localData);
-
-      // Apply keyword filter client-side if provided
-      if (filters?.keyword && filters.keyword.trim()) {
-        const kw = filters.keyword.trim().toLowerCase();
-        return localData.filter((it) =>
-          (it.kode_produksi || '').toLowerCase().includes(kw) ||
-          (it.no_surat_jalan || '').toLowerCase().includes(kw) ||
-          (it.warna || '').toLowerCase().includes(kw) ||
-          (it.keterangan || '').toLowerCase().includes(kw) ||
-          (it.operator || '').toLowerCase().includes(kw)
-        );
-      }
-
-      return localData;
-    }
-  } catch (err) {
-    console.warn('Gagal memuat penerimaan_produksi dari Supabase, memuat dari local cache:', err);
+  if (!filters?.forceRefresh && !hasSpecificFilters && inflightPenerimaanProduksiPromise) {
+    return inflightPenerimaanProduksiPromise;
   }
+
+  const runFetch = async (): Promise<PenerimaanProduksiItem[]> => {
+    try {
+      // Watermark gate (~150B) across page reloads / 5m SWR expiry when no specific filters
+      let checkedWatermark: { latestMarker: string; totalCount: number } | null = null;
+      if (!filters?.forceRefresh && !hasSpecificFilters && localData.length > 0) {
+        try {
+          const storedRaw = localStorage.getItem(LS_PENERIMAAN_WATERMARK_KEY);
+          if (storedRaw) {
+            const stored = JSON.parse(storedRaw) as { latestId?: string; totalCount?: number };
+            checkedWatermark = await fetchSupabaseWatermark('penerimaan_produksi', 'id');
+            if (
+              checkedWatermark &&
+              checkedWatermark.totalCount >= 0 &&
+              stored?.latestId === checkedWatermark.latestMarker &&
+              stored?.totalCount === checkedWatermark.totalCount
+            ) {
+              memoryPenerimaanProduksiCache = localData;
+              memoryPenerimaanProduksiLastFetch = Date.now();
+              return localData;
+            }
+          }
+        } catch {}
+      }
+
+      const queryParts: string[] = ['order=tanggal_penerimaan.desc,created_at.desc,id.desc'];
+
+      if (filters?.kategori && filters.kategori !== 'Semua') {
+        queryParts.push(`kategori=eq.${encodeURIComponent(filters.kategori)}`);
+      }
+      if (filters?.startDate) {
+        queryParts.push(`tanggal_penerimaan=gte.${encodeURIComponent(filters.startDate)}`);
+      }
+      if (filters?.endDate) {
+        queryParts.push(`tanggal_penerimaan=lte.${encodeURIComponent(filters.endDate)}`);
+      }
+
+      let remoteData: PenerimaanProduksiItem[];
+      if (filters?.limit) {
+        queryParts.push(`limit=${filters.limit}`);
+        remoteData = await supabaseFetch<PenerimaanProduksiItem[]>('penerimaan_produksi', 'GET', undefined, queryParts.join('&'));
+      } else {
+        remoteData = await supabaseFetchAllPages<PenerimaanProduksiItem>('penerimaan_produksi', queryParts.join('&'), 10000, 1000, 4);
+      }
+
+      if (remoteData && Array.isArray(remoteData)) {
+        // Supabase is authoritative.
+        const remoteIds = new Set(remoteData.map((d) => String(d.id || '')).filter(Boolean));
+        // Keep offline pending items (temporary numeric id or un-synced)
+        const offlinePending = localData.filter((d) => {
+          const sid = String(d.id || '');
+          return (typeof d.id === 'number' && d.id > 1000000000) || (!remoteIds.has(sid) && sid.startsWith('local_'));
+        });
+
+        const merged = [...remoteData, ...offlinePending].sort(comparePenerimaanProduksiItems);
+
+        localData = merged;
+        if (!hasSpecificFilters && !filters?.limit) {
+          memoryPenerimaanProduksiCache = merged;
+          memoryPenerimaanProduksiLastFetch = Date.now();
+          try {
+            let maxIdMarker = '';
+            let maxNumericId = -Infinity;
+            for (const row of remoteData) {
+              const rawId = row?.id;
+              if (rawId === undefined || rawId === null) continue;
+              const numId = Number(rawId);
+              if (Number.isFinite(numId)) {
+                if (numId > maxNumericId) {
+                  maxNumericId = numId;
+                  maxIdMarker = String(rawId);
+                }
+              } else {
+                const sId = String(rawId);
+                if (!maxIdMarker || sId > maxIdMarker) maxIdMarker = sId;
+              }
+            }
+            localStorage.setItem(
+              LS_PENERIMAAN_WATERMARK_KEY,
+              JSON.stringify({
+                latestId: checkedWatermark?.latestMarker || maxIdMarker,
+                totalCount: remoteData.length,
+              })
+            );
+          } catch {}
+        }
+        saveLightweightPenerimaanToLocalStorage(localData);
+
+        // Apply keyword filter client-side if provided
+        if (filters?.keyword && filters.keyword.trim()) {
+          const kw = filters.keyword.trim().toLowerCase();
+          return localData.filter((it) =>
+            (it.kode_produksi || '').toLowerCase().includes(kw) ||
+            (it.no_surat_jalan || '').toLowerCase().includes(kw) ||
+            (it.warna || '').toLowerCase().includes(kw) ||
+            (it.keterangan || '').toLowerCase().includes(kw) ||
+            (it.operator || '').toLowerCase().includes(kw)
+          );
+        }
+
+        return localData;
+      }
+    } catch (err) {
+      console.warn('Gagal memuat penerimaan_produksi dari Supabase, memuat dari local cache:', err);
+    }
+    return localData;
+  };
+
+  if (!filters?.forceRefresh && !hasSpecificFilters) {
+    inflightPenerimaanProduksiPromise = runFetch().finally(() => {
+      inflightPenerimaanProduksiPromise = null;
+    });
+    return inflightPenerimaanProduksiPromise;
+  }
+  return runFetch();
 
   // Ensure sorting is applied (useful if falling back to cache)
   localData = [...localData].sort(comparePenerimaanProduksiItems);

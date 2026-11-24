@@ -1,5 +1,5 @@
 import { PengecekanSJRecord, PengecekanSJItem, PengecekanSJDraft, ProductItem } from '../types';
-import { supabaseFetch, supabaseFetchAllPages } from './supabase';
+import { supabaseFetch, supabaseFetchAllPages, fetchSupabaseWatermark } from './supabase';
 import { fetchWithDeltaSync } from './gasSync';
 import { saveSJDraftsToDb, loadSJDraftsFromDb, deleteSJDraftFromDb, getLocalDbMeta, setLocalDbMeta } from './localDb';
 import { resolveProductName, resolveProductDisplaySize, extractSizeFromSku, isRealSize, isCorruptedColorCodeSize } from '../utils/sortUtils';
@@ -10,7 +10,13 @@ const CACHE_KEY_LEGACY = 'wms_cached_tarikan_md';
 const CACHE_KEY_DRAFTS = 'wms_cached_pengecekan_sj_drafts';
 const CACHE_KEY_OFFLINE_QUEUE = 'wms_offline_queue_pengecekan_sj';
 const IDB_CACHE_KEY_RECORDS = 'pengecekan_sj_records_cache';
+const IDB_WATERMARK_KEY_RECORDS = 'pengecekan_sj_sync_watermark_v1';
 const LS_CACHE_SLICE_LIMIT = 60;
+const PENGECEKAN_SWR_TTL_MS = 60 * 1000;
+
+let memoryPengecekanCache: PengecekanSJRecord[] | null = null;
+let memoryPengecekanLastFetch = 0;
+let inflightPengecekanPromise: Promise<PengecekanSJRecord[]> | null = null;
 
 async function persistPengecekanSJCache(records: PengecekanSJRecord[]): Promise<void> {
   // 1. Store full list in IndexedDB (no 5MB quota truncation)
@@ -187,7 +193,10 @@ export async function savePengecekanSJToSupabase(record: PengecekanSJRecord): Pr
         updated_at: nowIso
       };
       const updatedCache = [sanitizedRecord, ...cached.filter(r => r.no_sj !== cleanNoSj)];
+      memoryPengecekanCache = updatedCache;
+      memoryPengecekanLastFetch = Date.now();
       await persistPengecekanSJCache(updatedCache);
+      await setLocalDbMeta(IDB_WATERMARK_KEY_RECORDS, null).catch(() => {});
     } catch {}
 
     return true;
@@ -237,7 +246,11 @@ export async function deletePengecekanSJFromSupabase(no_sj: string): Promise<boo
     // Hapus juga dari cache lokal (IndexedDB + localStorage)
     try {
       const cached = await getCachedPengecekanSJListAsync();
-      await persistPengecekanSJCache(cached.filter(r => r.no_sj !== cleanNoSj));
+      const updatedCache = cached.filter(r => r.no_sj !== cleanNoSj);
+      memoryPengecekanCache = updatedCache;
+      memoryPengecekanLastFetch = Date.now();
+      await persistPengecekanSJCache(updatedCache);
+      await setLocalDbMeta(IDB_WATERMARK_KEY_RECORDS, null).catch(() => {});
     } catch {}
 
     return true;
@@ -371,28 +384,139 @@ export async function getCachedPengecekanSJListAsync(): Promise<PengecekanSJReco
 }
 
 export async function clearPengecekanSJRecordsCache(): Promise<void> {
+  memoryPengecekanCache = null;
+  memoryPengecekanLastFetch = 0;
   try {
     localStorage.removeItem(CACHE_KEY_RECORDS);
     localStorage.removeItem(CACHE_KEY_LEGACY);
   } catch {}
   try {
     await setLocalDbMeta(IDB_CACHE_KEY_RECORDS, null);
+    await setLocalDbMeta(IDB_WATERMARK_KEY_RECORDS, null);
   } catch {}
 }
 
-export async function fetchPengecekanSJList(limit = 0): Promise<PengecekanSJRecord[]> {
-  try {
-    const onlineData = await fetchPengecekanSJFromSupabase(limit);
-    if (onlineData && onlineData.length > 0) {
-      if (limit <= 0) {
-        await persistPengecekanSJCache(onlineData);
-      }
-      return onlineData;
-    }
-  } catch (err) {
-    console.warn('Error fetching pengecekan SJ list:', err);
+function getMaxUpdatedAt(records: PengecekanSJRecord[]): string {
+  let maxTs = '';
+  for (const r of records) {
+    const ts = String(r.updated_at || r.created_at || '');
+    if (ts && (!maxTs || ts > maxTs)) maxTs = ts;
   }
-  return getCachedPengecekanSJListAsync();
+  return maxTs;
+}
+
+export async function fetchPengecekanSJList(limit = 0, forceRefresh = false): Promise<PengecekanSJRecord[]> {
+  if (limit > 0) {
+    try {
+      const onlineData = await fetchPengecekanSJFromSupabase(limit);
+      if (onlineData && onlineData.length > 0) return onlineData;
+    } catch (err) {
+      console.warn('Error fetching pengecekan SJ list (limited):', err);
+    }
+    return getCachedPengecekanSJListAsync();
+  }
+
+  if (
+    !forceRefresh &&
+    memoryPengecekanCache &&
+    memoryPengecekanCache.length > 0 &&
+    Date.now() - memoryPengecekanLastFetch < PENGECEKAN_SWR_TTL_MS
+  ) {
+    return memoryPengecekanCache;
+  }
+  if (!forceRefresh && inflightPengecekanPromise) {
+    return inflightPengecekanPromise;
+  }
+
+  const runFetch = async (): Promise<PengecekanSJRecord[]> => {
+    const cachedList = await getCachedPengecekanSJListAsync();
+    try {
+      const remoteWm = await fetchSupabaseWatermark('pengecekan_sj', 'updated_at');
+      const localWm = await getLocalDbMeta<{ maxUpdatedAt?: string; totalCount?: number }>(IDB_WATERMARK_KEY_RECORDS);
+
+      if (
+        !forceRefresh &&
+        remoteWm &&
+        localWm?.maxUpdatedAt &&
+        cachedList.length > 0 &&
+        remoteWm.totalCount >= 0
+      ) {
+        if (remoteWm.latestMarker === localWm.maxUpdatedAt && remoteWm.totalCount === localWm.totalCount) {
+          memoryPengecekanCache = cachedList;
+          memoryPengecekanLastFetch = Date.now();
+          return cachedList;
+        }
+
+        if (remoteWm.totalCount >= (localWm.totalCount || 0)) {
+          const deltaRaw = await supabaseFetchAllPages<any>(
+            'pengecekan_sj',
+            `select=${PENGECEKAN_SJ_COLUMNS}&updated_at=gt.${encodeURIComponent(localWm.maxUpdatedAt)}&order=updated_at.asc,id.asc`,
+            10000,
+            250,
+            2
+          );
+          if (Array.isArray(deltaRaw) && deltaRaw.length > 0) {
+            const deltaNormalized = normalizeRecords(deltaRaw);
+            const mergedByKey = new Map<string, PengecekanSJRecord>();
+            for (const rec of cachedList) {
+              mergedByKey.set(`${rec.no_sj}|${rec.source}|${rec.destination}`, rec);
+            }
+            for (const rec of deltaNormalized) {
+              mergedByKey.set(`${rec.no_sj}|${rec.source}|${rec.destination}`, rec);
+            }
+            const mergedList = Array.from(mergedByKey.values()).sort((a, b) =>
+              String(b.created_at || b.tanggal_sj || '').localeCompare(String(a.created_at || a.tanggal_sj || ''))
+            );
+            memoryPengecekanCache = mergedList;
+            memoryPengecekanLastFetch = Date.now();
+            await persistPengecekanSJCache(mergedList);
+            await setLocalDbMeta(IDB_WATERMARK_KEY_RECORDS, {
+              maxUpdatedAt: remoteWm.latestMarker || getMaxUpdatedAt(mergedList),
+              totalCount: remoteWm.totalCount,
+            }).catch(() => {});
+            return mergedList;
+          }
+          if (remoteWm.totalCount === localWm.totalCount) {
+            memoryPengecekanCache = cachedList;
+            memoryPengecekanLastFetch = Date.now();
+            await setLocalDbMeta(IDB_WATERMARK_KEY_RECORDS, {
+              maxUpdatedAt: remoteWm.latestMarker || localWm.maxUpdatedAt,
+              totalCount: remoteWm.totalCount,
+            }).catch(() => {});
+            return cachedList;
+          }
+        }
+      }
+
+      const rawData = await supabaseFetchAllPages<any>(
+        'pengecekan_sj',
+        `select=${PENGECEKAN_SJ_COLUMNS}&order=created_at.desc,id.desc`,
+        100000,
+        250,
+        4
+      );
+      const onlineData = normalizeRecords(rawData);
+      if (onlineData && onlineData.length > 0) {
+        memoryPengecekanCache = onlineData;
+        memoryPengecekanLastFetch = Date.now();
+        await persistPengecekanSJCache(onlineData);
+        const maxWm = remoteWm?.latestMarker || getMaxUpdatedAt(onlineData);
+        await setLocalDbMeta(IDB_WATERMARK_KEY_RECORDS, {
+          maxUpdatedAt: maxWm,
+          totalCount: Array.isArray(rawData) ? rawData.length : onlineData.length,
+        }).catch(() => {});
+        return onlineData;
+      }
+    } catch (err) {
+      console.warn('Error fetching pengecekan SJ list:', err);
+    }
+    return cachedList;
+  };
+
+  inflightPengecekanPromise = runFetch().finally(() => {
+    inflightPengecekanPromise = null;
+  });
+  return inflightPengecekanPromise;
 }
 
 export async function fetchTarikanMDLegacy(): Promise<any[]> {
@@ -665,12 +789,15 @@ export function deleteSJDraft(idOrNoSj: string): void {
 }
 
 export async function clearAllCaches() {
+  memoryPengecekanCache = null;
+  memoryPengecekanLastFetch = 0;
   localStorage.removeItem(CACHE_KEY_RECORDS);
   localStorage.removeItem(CACHE_KEY_LEGACY);
   localStorage.removeItem(CACHE_KEY_DRAFTS);
   localStorage.removeItem(CACHE_KEY_OFFLINE_QUEUE);
   try {
     await setLocalDbMeta(IDB_CACHE_KEY_RECORDS, null);
+    await setLocalDbMeta(IDB_WATERMARK_KEY_RECORDS, null);
   } catch {}
 }
 
@@ -829,6 +956,6 @@ export async function submitTarikanMD(record: PengecekanSJRecord): Promise<{ suc
   }
 }
 
-export async function fetchTarikanMDRecords(limit = 0): Promise<PengecekanSJRecord[]> {
-  return fetchPengecekanSJList(limit);
+export async function fetchTarikanMDRecords(limit = 0, forceRefresh = false): Promise<PengecekanSJRecord[]> {
+  return fetchPengecekanSJList(limit, forceRefresh);
 }

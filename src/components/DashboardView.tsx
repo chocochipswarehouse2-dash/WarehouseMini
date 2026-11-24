@@ -674,11 +674,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         })
         .catch(() => {});
     }
-    fetchRackCapacityConfig()
-      .then((cfg) => {
-        if (active && cfg) setRackConfig(cfg);
-      })
-      .catch(() => {});
+    if (metrics.lastUpdated && Date.now() - metrics.lastUpdated <= CACHE_TTL_MS) {
+      fetchRackCapacityConfig()
+        .then((cfg) => {
+          if (active && cfg) setRackConfig(cfg);
+        })
+        .catch(() => {});
+    }
     return () => {
       active = false;
     };
@@ -848,12 +850,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     [metrics, penerimaanItems, onShowToast, refreshLocalDraftAndQueueState, session]
   );
 
-  // Initial mount: fetch full lean metrics when stale, or still refresh volatile operational queues
+  // Initial mount: fetch full lean metrics when stale, or still refresh volatile operational queues (with 90s cooldown)
   useEffect(() => {
     const age = Date.now() - (metrics.lastUpdated || 0);
     if (!metrics.lastUpdated || age > CACHE_TTL_MS) {
+      try { sessionStorage.setItem('wms_dashboard_last_queue_sync_at', String(Date.now())); } catch {}
       fetchLeanMetrics(false);
     } else {
+      const lastQueueSync = Number((() => { try { return sessionStorage.getItem('wms_dashboard_last_queue_sync_at') || '0'; } catch { return '0'; } })());
+      if (lastQueueSync > 0 && Date.now() - lastQueueSync < 90 * 1000) {
+        return;
+      }
+      try { sessionStorage.setItem('wms_dashboard_last_queue_sync_at', String(Date.now())); } catch {}
       // Refresh ringan antrean operasional aktif agar selalu sinkron meski cache KPI masih segar
       Promise.allSettled([
         fetchPenerimaanRecountQueueFromSupabase(),

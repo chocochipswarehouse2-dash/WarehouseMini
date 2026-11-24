@@ -202,25 +202,38 @@ export function useInventoryStock(): UseInventoryStock {
   // Listen for catalog & location refresh events so InventoryView automatically updates without manual refresh
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const handleCatalogOrLocationUpdate = () => {
+    const handleCatalogOrLocationSoftUpdate = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        const mem = getMemoryStokFisikCache();
+        if (mem && mem.length > 0) {
+          replaceAll(mem);
+          bump();
+          setPhase('ready');
+        } else {
+          reload(false);
+        }
+      }, 300);
+    };
+    const handleInventoryHardUpdate = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         reload(true);
       }, 300);
     };
 
-    window.addEventListener('wms_full_locations_refreshed', handleCatalogOrLocationUpdate);
-    window.addEventListener('wms_catalog_updated', handleCatalogOrLocationUpdate);
-    window.addEventListener('wms_inventory_updated', handleCatalogOrLocationUpdate);
-    window.addEventListener('wms_stock_updated', handleCatalogOrLocationUpdate);
+    window.addEventListener('wms_full_locations_refreshed', handleCatalogOrLocationSoftUpdate);
+    window.addEventListener('wms_catalog_updated', handleCatalogOrLocationSoftUpdate);
+    window.addEventListener('wms_inventory_updated', handleInventoryHardUpdate);
+    window.addEventListener('wms_stock_updated', handleInventoryHardUpdate);
     return () => {
       if (timer) clearTimeout(timer);
-      window.removeEventListener('wms_full_locations_refreshed', handleCatalogOrLocationUpdate);
-      window.removeEventListener('wms_catalog_updated', handleCatalogOrLocationUpdate);
-      window.removeEventListener('wms_inventory_updated', handleCatalogOrLocationUpdate);
-      window.removeEventListener('wms_stock_updated', handleCatalogOrLocationUpdate);
+      window.removeEventListener('wms_full_locations_refreshed', handleCatalogOrLocationSoftUpdate);
+      window.removeEventListener('wms_catalog_updated', handleCatalogOrLocationSoftUpdate);
+      window.removeEventListener('wms_inventory_updated', handleInventoryHardUpdate);
+      window.removeEventListener('wms_stock_updated', handleInventoryHardUpdate);
     };
-  }, [reload]);
+  }, [bump, reload]);
 
   // Realtime: batched per-SKU delta
   useEffect(() => {

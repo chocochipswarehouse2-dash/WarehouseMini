@@ -4,6 +4,19 @@
 
 ---
 
+## v2.29.1 — 24 November 2026
+**Modul**: Optimasi PostgREST Egress Lintas Layanan (`gasTarikanMD.ts`, `settings.ts`, `supabase.ts`, `gasManualShipment.ts`, `DistribusiStoreTab.tsx`, `QcPengerjaanTab.tsx`, `PickingTasksView.tsx`, `DashboardView.tsx`, `useInventoryStock.ts`, `App.tsx`) + Upgrade Skill (`.agents/skills/wms-supabase-egress-guardrails/SKILL.md`)
+- **Audit & Perbaikan Kebocoran PostgREST Egress (`279.481 MB/hari`)**:
+  - **`pengecekan_sj` (~14.5 MB selected / ~28.88 MB raw per fetch, 794 baris)**: Menambahkan SWR 60s, in-flight deduplication, dan **IndexedDB Delta Watermark Sync** (`pengecekan_sj_sync_watermark_v1` berbasis `updated_at` + `count=exact`) di `gasTarikanMD.ts` sehingga load ulang saat data tidak berubah hanya menarik **~150 byte**; menambahkan lazy-load di `QcPengerjaanTab.tsx` (hanya fetch saat `qcMode === 'MUTASI'`) serta cooldown 60s di `DistribusiStoreTab.tsx`.
+  - **`wms_settings` (`392.7 KB`) & `recount_audit_results` (`112.9 KB`)**: Menambahkan watermark gate `updated_at` (~150B), snapshot cache lokal (`LS_SETTINGS_SNAPSHOT_KEY`), SWR 2 menit untuk `fetchRecountAuditMapFromCloud`, dan in-flight dedup di `settings.ts`.
+  - **`PickingTasksView.tsx` Polling 60s (`279.4 KB/call`)**: Mengganti blind fetch `picking_list?limit=800` setiap 60s dengan **probe signature ringan ~200B** (`status=neq.SELESAI` + 1 row `created_at.desc`); full fetch hanya dijalankan saat signature berubah.
+  - **`penerimaan_produksi` (`~780 KB`) & `manual_shipment` (`159 KB`)**: Menambahkan `fetchSupabaseWatermark` (`id` + `count=exact` untuk `penerimaan_produksi` karena tanpa kolom `updated_at`; `updated_at` + `count=exact` untuk `manual_shipment` dengan SWR 2m).
+  - **`master_produk` (`~7.5 MB`), `stok_real_fisik` (`~1.2 MB`), & Throttling Event/KPI**: Menambahkan proteksi cooldown 6 jam (`wms_master_synced_cloud_count`, `wms_master_last_full_sync_at`) di `syncSmartLowEgressCache`, hidrasi memory cache di `useInventoryStock.ts` pada event `wms_full_locations_refreshed`/`wms_catalog_updated`, cooldown 90s antrean KPI di `DashboardView.tsx`, dan throttle 15s pada `checkNewStoreOrdersDelta` (`App.tsx`).
+- **Continuous Skill Upgrade**:
+  - Membuat skill baru `.agents/skills/wms-supabase-egress-guardrails/SKILL.md` dan memperbarui `GEMINI.md` (`§2`) serta `docs/memory/WMS_FEATURE_REGISTRY.md`.
+
+---
+
 ## v2.29.0 — 24 November 2026
 **Modul**: Renovasi Total Rekap Tagihan JNE (`src/components/JneRekapView.tsx`, `src/services/jneRekapService.ts`, `src/services/jneRekapParser.ts`, `gas/jne_tagihan_backend.js`, `src/services/permissions.ts`, `.agents/skills/wms-jne-rekap-guardrails/SKILL.md`)
 - **Sinkronisasi 2 Arah Murni ke Google Sheets `JNEMember` (`gid=1026608111`)**:
