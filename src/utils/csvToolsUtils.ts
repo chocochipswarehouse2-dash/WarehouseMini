@@ -220,6 +220,33 @@ export function getOutletDisplayName(code: string): {
   return { code: norm, title, isBazaar, category };
 }
 
+export type QrSizePreset = 'small' | 'normal' | 'large' | 'xlarge';
+export type TitleFontSizePreset = 'small' | 'normal' | 'large' | 'xlarge';
+export type TitleFontWeight = '500' | '600' | '700' | '800';
+export type PriceFontSizePreset = 'small' | 'normal' | 'large' | 'xlarge';
+export type PriceFontWeight = '600' | '700' | '800' | '900';
+
+export const QR_SIZE_PRESETS_MM: Record<QrSizePreset, number> = {
+  small: 11.5,
+  normal: 13.5,
+  large: 15.0,
+  xlarge: 16.5,
+};
+
+export const TITLE_FONT_SIZE_PRESETS_PT: Record<TitleFontSizePreset, { title: number; variant: number }> = {
+  small: { title: 7.5, variant: 7.0 },
+  normal: { title: 8.8, variant: 8.0 },
+  large: { title: 9.8, variant: 8.8 },
+  xlarge: { title: 11.0, variant: 9.8 },
+};
+
+export const PRICE_FONT_SIZE_PRESETS_PT: Record<PriceFontSizePreset, number> = {
+  small: 9.5,
+  normal: 11.5,
+  large: 13.5,
+  xlarge: 15.5,
+};
+
 export interface BarcodePrinterConfig {
   lineMode: '1' | '2'; // '1' = 50x20mm Single, '2' = 104x20mm Twin
   labelWidthMm: number;
@@ -233,11 +260,14 @@ export interface BarcodePrinterConfig {
   barcodeHeight: number;
   barcodeWidth: number;
   qrSize: number;
+  qrSizePreset: QrSizePreset;
 
   showProductName: boolean;
   productNameSize: number;
   productNameBold: boolean;
   productNameCase: 'normal' | 'uppercase';
+  titleFontSizePreset: TitleFontSizePreset;
+  titleFontWeight: TitleFontWeight;
 
   showVariantSize: boolean;
   variantSize: number;
@@ -255,11 +285,14 @@ export interface BarcodePrinterConfig {
   priceCustomPrefix: string;
   priceCustomSuffix: string;
   priceThousandSeparator: '.' | ',' | 'none';
+  priceFontSizePreset: PriceFontSizePreset;
+  priceFontWeight: PriceFontWeight;
   customText: string;
 
   // Orientasi, Rotasi & Offset Cetak Thermal
   printOrientation: 'landscape' | 'portrait'; // 'landscape' (50x20mm) | 'portrait' (20x50mm)
   printRotation: number; // 0 | 90 | 180 | 270
+  preventAutoRotate: boolean;
   offsetX: number; // Geser X (mm)
   offsetY: number; // Geser Y (mm)
 }
@@ -279,14 +312,17 @@ export const DEFAULT_BARCODE_LABEL_CONFIG: BarcodePrinterConfig = {
   barcodeHeight: 22,
   barcodeWidth: 1.2,
   qrSize: 44,
+  qrSizePreset: 'normal', // 13.5mm
 
   showProductName: true,
-  productNameSize: 8.5,
+  productNameSize: 9.8,
   productNameBold: true,
   productNameCase: 'normal',
+  titleFontSizePreset: 'large', // 9.8pt (Besar & Proporsional mengisi stiker)
+  titleFontWeight: '700', // Bold (700)
 
   showVariantSize: true,
-  variantSize: 8.0,
+  variantSize: 8.8,
   variantBold: false,
 
   showSku: true,
@@ -295,16 +331,19 @@ export const DEFAULT_BARCODE_LABEL_CONFIG: BarcodePrinterConfig = {
   skuPrefix: '',
 
   showPrice: true,
-  priceSize: 11.0,
+  priceSize: 13.5,
   priceBold: true,
   pricePrefixType: 'Rp',
   priceCustomPrefix: '',
   priceCustomSuffix: '',
   priceThousandSeparator: '.',
+  priceFontSizePreset: 'large', // 13.5pt (Tegas & Jelas)
+  priceFontWeight: '800', // Extra Bold (800)
   customText: '',
 
   printOrientation: 'landscape',
   printRotation: 0,
+  preventAutoRotate: true,
   offsetX: 0,
   offsetY: 0,
 };

@@ -135,6 +135,7 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedProductNames, setSelectedProductNames] = useState<Set<string>>(new Set());
   const [selectedCustomSkus, setSelectedCustomSkus] = useState<Set<string>>(new Set());
+  const [unselectedProductSkus, setUnselectedProductSkus] = useState<Set<string>>(new Set());
   const [outletSearch, setOutletSearch] = useState('');
   const [selectedOutlets, setSelectedOutlets] = useState<Set<string>>(new Set());
   const [hideZeroOutlets, setHideZeroOutlets] = useState(false);
@@ -167,12 +168,17 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
     selectedProductNames.forEach((pName) => {
       const grp = inventoryData.productMap.get(pName);
       if (grp) {
-        grp.variants.forEach((v) => set.add(v.sku.toUpperCase()));
+        grp.variants.forEach((v) => {
+          const skuUpper = v.sku.toUpperCase();
+          if (!unselectedProductSkus.has(skuUpper)) {
+            set.add(skuUpper);
+          }
+        });
       }
     });
     selectedCustomSkus.forEach((sku) => set.add(sku.toUpperCase()));
     return set;
-  }, [inventoryData, selectedProductNames, selectedCustomSkus]);
+  }, [inventoryData, selectedProductNames, unselectedProductSkus, selectedCustomSkus]);
 
   const searchResults = useMemo(() => {
     const q = productSearch.trim().toLowerCase();
@@ -275,10 +281,80 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
   const handleToggleProduct = (name: string) => {
     setSelectedProductNames((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      if (next.has(name)) {
+        next.delete(name);
+        const grp = inventoryData.productMap.get(name);
+        if (grp) {
+          setUnselectedProductSkus((uPrev) => {
+            const uNext = new Set(uPrev);
+            grp.variants.forEach((v) => uNext.delete(v.sku.toUpperCase()));
+            return uNext;
+          });
+        }
+      } else {
+        next.add(name);
+      }
       return next;
     });
+  };
+
+  const handleToggleVariantSku = (pName: string, skuUpper: string) => {
+    setSelectedProductNames((prev) => {
+      if (!prev.has(pName)) {
+        const next = new Set(prev);
+        next.add(pName);
+        return next;
+      }
+      return prev;
+    });
+
+    setUnselectedProductSkus((prev) => {
+      const next = new Set(prev);
+      if (next.has(skuUpper)) {
+        next.delete(skuUpper);
+      } else {
+        next.add(skuUpper);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectOnlyVariant = (pName: string, targetSkuUpper: string) => {
+    const grp = inventoryData.productMap.get(pName);
+    setSelectedProductNames((prev) => {
+      const next = new Set(prev);
+      next.add(pName);
+      return next;
+    });
+
+    if (grp) {
+      setUnselectedProductSkus((prev) => {
+        const next = new Set(prev);
+        grp.variants.forEach((v) => {
+          const vSku = v.sku.toUpperCase();
+          if (vSku === targetSkuUpper) {
+            next.delete(vSku);
+          } else {
+            next.add(vSku);
+          }
+        });
+        return next;
+      });
+    }
+    const targetVar = grp?.variants.find((v) => v.sku.toUpperCase() === targetSkuUpper)?.variant || targetSkuUpper;
+    onNotify(`Hanya size ${targetVar} yang dipilih untuk ${pName}.`, 'info');
+  };
+
+  const handleSelectAllVariantsForProduct = (pName: string) => {
+    const grp = inventoryData.productMap.get(pName);
+    if (grp) {
+      setUnselectedProductSkus((prev) => {
+        const next = new Set(prev);
+        grp.variants.forEach((v) => next.delete(v.sku.toUpperCase()));
+        return next;
+      });
+      onNotify(`Semua varian size untuk ${pName} diaktifkan.`, 'success');
+    }
   };
 
   const handleApplyBulkPaste = () => {
@@ -654,43 +730,104 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                     </div>
                   ) : (
                     searchResults.map((prod) => {
-                      const isSelected = selectedProductNames.has(prod.name);
+                      const isProductSelected = selectedProductNames.has(prod.name);
+                      const allVariantsActive =
+                        isProductSelected &&
+                        prod.variants.every((v) => !unselectedProductSkus.has(v.sku.toUpperCase()));
+                      const activeVariantsCount = isProductSelected
+                        ? prod.variants.filter((v) => !unselectedProductSkus.has(v.sku.toUpperCase())).length
+                        : 0;
+
                       return (
-                        <button
+                        <div
                           key={prod.name}
-                          type="button"
-                          onClick={() => handleToggleProduct(prod.name)}
-                          className={`w-full text-left p-2.5 rounded-lg flex items-center justify-between gap-2 transition-colors ${
-                            isSelected
-                              ? 'bg-indigo-50 dark:bg-indigo-950/40'
-                              : 'hover:bg-slate-50 dark:hover:bg-slate-800'
+                          className={`w-full p-3 rounded-xl border transition-all space-y-2 ${
+                            isProductSelected
+                              ? 'bg-indigo-50/60 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800'
+                              : 'bg-white dark:bg-slate-850 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                           }`}
                         >
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
-                                {prod.name}
-                              </span>
-                              {prod.category && (
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
-                                  {prod.category}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-xs text-slate-900 dark:text-white">
+                                  {prod.name}
                                 </span>
-                              )}
+                                {prod.category && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500">
+                                    {prod.category}
+                                  </span>
+                                )}
+                                {isProductSelected && (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                                    {activeVariantsCount} dari {prod.variants.length} size aktif
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                Total {prod.variants.length} Varian Size
+                              </div>
                             </div>
-                            <div className="text-[11px] text-slate-400 truncate mt-0.5">
-                              {prod.variants.length} Varian • {prod.variants.slice(0, 4).map((v) => v.variant).join(', ')}
-                            </div>
+
+                            {/* Tombol Pilih / Unselect Semua Size */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (allVariantsActive) {
+                                  handleToggleProduct(prod.name);
+                                } else if (isProductSelected) {
+                                  handleSelectAllVariantsForProduct(prod.name);
+                                } else {
+                                  handleToggleProduct(prod.name);
+                                }
+                              }}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 transition-colors ${
+                                allVariantsActive
+                                  ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                                  : isProductSelected
+                                  ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200'
+                                  : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200'
+                              }`}
+                            >
+                              {allVariantsActive ? '✓ Semua Size' : isProductSelected ? '+ Aktifkan Semua' : '+ Semua Size'}
+                            </button>
                           </div>
-                          <span
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold shrink-0 ${
-                              isSelected
-                                ? 'bg-indigo-600 text-white'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                            }`}
-                          >
-                            {isSelected ? '✓ Terpilih' : '+ Pilih'}
-                          </span>
-                        </button>
+
+                          {/* Tombol Per-Size Tertentu */}
+                          <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                              Pilih Size:
+                            </span>
+                            {prod.variants.map((v) => {
+                              const vSkuUpper = v.sku.toUpperCase();
+                              const isVariantActive =
+                                isProductSelected && !unselectedProductSkus.has(vSkuUpper);
+
+                              return (
+                                <button
+                                  key={v.sku}
+                                  type="button"
+                                  title={`SKU: ${v.sku}`}
+                                  onClick={() => {
+                                    if (!isProductSelected) {
+                                      handleSelectOnlyVariant(prod.name, vSkuUpper);
+                                    } else {
+                                      handleToggleVariantSku(v.sku);
+                                    }
+                                  }}
+                                  className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
+                                    isVariantActive
+                                      ? 'bg-indigo-600 text-white shadow-2xs scale-102'
+                                      : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 hover:text-indigo-600 dark:hover:text-indigo-400 border border-slate-200/80 dark:border-slate-700'
+                                  }`}
+                                >
+                                  <span>{isVariantActive ? '✓' : '+'}</span>
+                                  <span>{v.variant || v.sku}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
                       );
                     })
                   )}
@@ -698,53 +835,133 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
               )}
             </div>
 
-            {/* Selected Chips */}
+            {/* Selected Chips & Per-Product Variant Cards */}
             <div>
-              <div className="text-xs text-slate-500 mb-2">
-                Produk Terpilih (<b>{selectedProductNames.size}</b> Produk • <b className="text-indigo-600 dark:text-indigo-400">{allActiveSkusSet.size}</b> SKU)
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-xs text-slate-500">
+                  Produk Terpilih (<b>{selectedProductNames.size}</b> Produk • <b className="text-indigo-600 dark:text-indigo-400">{allActiveSkusSet.size}</b> SKU Siap Cetak)
+                </div>
+                {selectedProductNames.size > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedProductNames(new Set());
+                      setUnselectedProductSkus(new Set());
+                    }}
+                    className="text-[11px] font-bold text-rose-600 hover:underline"
+                  >
+                    Kosongkan Semua Produk
+                  </button>
+                )}
               </div>
+
               {selectedProductNames.size === 0 && selectedCustomSkus.size === 0 ? (
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-200 dark:border-slate-700 text-center text-xs text-slate-400">
                   Belum ada produk dipilih. Cari produk di atas atau gunakan tombol <b>Tempel Banyak SKU</b>.
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                   {Array.from(selectedProductNames).map((pName) => {
                     const grp = inventoryData.productMap.get(pName);
+                    const variants = grp?.variants || [];
+                    const activeVars = variants.filter(
+                      (v) => !unselectedProductSkus.has(v.sku.toUpperCase())
+                    );
+                    const isAllActive = activeVars.length === variants.length;
+
                     return (
-                      <span
+                      <div
                         key={pName}
-                        className="px-3 py-1 rounded-full text-xs font-semibold bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-200 flex items-center gap-1.5"
+                        className="p-2.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 space-y-1.5"
                       >
-                        <span>{pName}</span>
-                        <span className="text-[10px] opacity-75">({grp?.variants.length || 0})</span>
-                        <button type="button" onClick={() => handleToggleProduct(pName)} className="hover:text-rose-600 font-bold">
-                          ✕
-                        </button>
-                      </span>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex items-center gap-2">
+                            <span className="font-bold text-xs text-slate-900 dark:text-white truncate">
+                              {pName}
+                            </span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 shrink-0">
+                              {activeVars.length} / {variants.length} Size Aktif
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {!isAllActive && (
+                              <button
+                                type="button"
+                                onClick={() => handleSelectAllVariantsForProduct(pName)}
+                                className="text-[10px] font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50"
+                              >
+                                + Semua Size
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleToggleProduct(pName)}
+                              className="text-[10px] font-bold px-2 py-0.5 rounded bg-white dark:bg-slate-800 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-900 hover:bg-rose-50"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Chips per size */}
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {variants.map((v) => {
+                            const vSkuUpper = v.sku.toUpperCase();
+                            const isActive = !unselectedProductSkus.has(vSkuUpper);
+
+                            return (
+                              <button
+                                key={v.sku}
+                                type="button"
+                                title={`SKU: ${v.sku} — Klik untuk ${isActive ? 'nonaktifkan' : 'aktifkan'}`}
+                                onClick={() => handleToggleVariantSku(v.sku)}
+                                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 ${
+                                  isActive
+                                    ? 'bg-indigo-600 text-white shadow-2xs'
+                                    : 'bg-white dark:bg-slate-800 text-slate-400 line-through border border-dashed border-slate-300 dark:border-slate-700 hover:text-slate-600'
+                                }`}
+                              >
+                                <span>{isActive ? '✓' : '✕'}</span>
+                                <span>{v.variant || v.sku}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     );
                   })}
-                  {Array.from(selectedCustomSkus).map((sku) => (
-                    <span
-                      key={sku}
-                      className="px-3 py-1 rounded-full text-xs font-mono font-semibold bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200 flex items-center gap-1.5"
-                    >
-                      <span>{sku}</span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSelectedCustomSkus((prev) => {
-                            const next = new Set(prev);
-                            next.delete(sku);
-                            return next;
-                          })
-                        }
-                        className="hover:text-rose-600 font-bold"
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
+
+                  {selectedCustomSkus.size > 0 && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50/50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                      <div className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 mb-1.5">
+                        SKU Manual / Tempelan ({selectedCustomSkus.size} SKU)
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {Array.from(selectedCustomSkus).map((sku) => (
+                          <span
+                            key={sku}
+                            className="px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-600 text-white flex items-center gap-1"
+                          >
+                            <span>{sku}</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedCustomSkus((prev) => {
+                                  const next = new Set(prev);
+                                  next.delete(sku);
+                                  return next;
+                                })
+                              }
+                              className="hover:text-rose-200 font-bold ml-1"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

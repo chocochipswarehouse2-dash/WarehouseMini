@@ -21,6 +21,14 @@ import {
   parseLabelNameAndVariant,
   printHtmlInHiddenIframe,
   getOutletDisplayName,
+  QrSizePreset,
+  TitleFontSizePreset,
+  TitleFontWeight,
+  PriceFontSizePreset,
+  PriceFontWeight,
+  QR_SIZE_PRESETS_MM,
+  TITLE_FONT_SIZE_PRESETS_PT,
+  PRICE_FONT_SIZE_PRESETS_PT,
 } from '../../utils/csvToolsUtils';
 
 interface BatchBarcodePrintModalProps {
@@ -110,22 +118,37 @@ const StickerPreviewCard: React.FC<{
   const isPortrait = config.printOrientation === 'portrait';
 
   if (config.codeType === 'qrcode') {
+    const qrPixelSize =
+      config.qrSizePreset === 'small' ? 66 : config.qrSizePreset === 'large' ? 88 : config.qrSizePreset === 'xlarge' ? 98 : 78;
+
+    const fontSizes = TITLE_FONT_SIZE_PRESETS_PT[config.titleFontSizePreset || 'large'] || { title: 9.8, variant: 8.8 };
+    const titlePt = Number(config.productNameSize) || fontSizes.title;
+    const variantPt = Number(config.variantSize) || fontSizes.variant;
+    const pricePt = Number(config.priceSize) || PRICE_FONT_SIZE_PRESETS_PT[config.priceFontSizePreset || 'large'] || 13.5;
+    const titleWeight = Number(config.titleFontWeight) || 700;
+    const variantWeight = titleWeight > 600 ? 600 : 500;
+    const priceWeight = Number(config.priceFontWeight) || 800;
+
     return (
       <div
-        className={`w-[190px] h-[76px] bg-white border border-slate-300 rounded shadow-xs p-1 flex items-center gap-1.5 overflow-hidden select-none text-slate-900 transition-transform duration-200 ${
+        className={`w-[260px] h-[104px] bg-white border border-slate-300 rounded shadow-xs p-2 flex items-center justify-between overflow-hidden select-none text-slate-900 transition-transform duration-200 ${
           rotation ? `rotate-[${rotation}deg]` : ''
         }`}
         style={{
           transform: rotation ? `rotate(${rotation}deg)` : undefined,
           transformOrigin: 'center center',
+          fontFamily: "'Quicksand', -apple-system, BlinkMacSystemFont, sans-serif",
         }}
         title={`${item.sku} - ${item.name}`}
       >
-        <div className="shrink-0 flex items-center justify-center w-[44px] h-[44px]">
+        <div
+          style={{ width: `${qrPixelSize}px`, height: `${qrPixelSize}px` }}
+          className="shrink-0 flex items-center justify-center mr-2"
+        >
           {qrDataUrl ? (
-            <img src={qrDataUrl} alt="QR" className="w-[42px] h-[42px] block" />
+            <img src={qrDataUrl} alt="QR" className="w-full h-full object-contain [image-rendering:pixelated] block" />
           ) : (
-            <div className="w-[42px] h-[42px] bg-slate-100 flex items-center justify-center text-[8px] text-slate-400">
+            <div className="w-full h-full bg-slate-100 flex items-center justify-center text-[8px] text-slate-400">
               QR
             </div>
           )}
@@ -134,26 +157,30 @@ const StickerPreviewCard: React.FC<{
           {config.showProductName && (
             <div
               style={{
-                fontSize: `${Number(config.productNameSize) || 8.5}pt`,
+                fontSize: `${titlePt * 1.3}px`,
+                fontWeight: titleWeight,
                 textTransform: config.productNameCase === 'uppercase' ? 'uppercase' : 'none',
               }}
-              className="font-bold text-slate-950 truncate leading-tight"
+              className="text-slate-950 truncate leading-tight tracking-tight uppercase"
             >
               {qrRow1}
             </div>
           )}
           {config.showVariantSize && qrRow2 ? (
             <div
-              style={{ fontSize: `${Number(config.variantSize) || 8.0}pt` }}
-              className="text-slate-700 truncate leading-tight mt-[0.8px]"
+              style={{
+                fontSize: `${variantPt * 1.3}px`,
+                fontWeight: variantWeight,
+              }}
+              className="text-slate-800 truncate leading-tight tracking-tight mt-0.5"
             >
               {qrRow2}
             </div>
           ) : null}
           {config.showSku && (
             <div
-              style={{ fontSize: `${Number(config.skuSize) || 6.8}pt` }}
-              className="font-mono font-bold text-slate-800 truncate leading-tight my-[1px]"
+              style={{ fontSize: '10px' }}
+              className="font-mono font-bold text-slate-600 truncate leading-tight my-0.5"
             >
               {config.skuPrefix}
               {item.sku}
@@ -161,8 +188,11 @@ const StickerPreviewCard: React.FC<{
           )}
           {priceLine ? (
             <div
-              style={{ fontSize: `${Number(config.priceSize) || 11.0}pt` }}
-              className="font-black text-slate-950 truncate leading-tight tracking-tight mt-[1px]"
+              style={{
+                fontSize: `${pricePt * 1.3}px`,
+                fontWeight: priceWeight,
+              }}
+              className="text-slate-950 truncate leading-tight tracking-tight mt-0.5 font-bold"
             >
               {priceLine}
             </div>
@@ -403,7 +433,15 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
         }
 
         if (config.codeType === 'qrcode') {
-          const qrPx = Number(config.qrSize) || 44;
+          const qrMmSize = `${QR_SIZE_PRESETS_MM[config.qrSizePreset || 'normal'] || 13.5}mm`;
+          const fontSizes = TITLE_FONT_SIZE_PRESETS_PT[config.titleFontSizePreset || 'large'] || { title: 9.8, variant: 8.8 };
+          const titlePt = `${Number(config.productNameSize) || fontSizes.title}pt`;
+          const variantPt = `${Number(config.variantSize) || fontSizes.variant}pt`;
+          const pricePt = `${Number(config.priceSize) || PRICE_FONT_SIZE_PRESETS_PT[config.priceFontSizePreset || 'large'] || 13.5}pt`;
+          const titleWeight = Number(config.titleFontWeight) || 700;
+          const variantWeight = titleWeight > 600 ? 600 : 500;
+          const priceWeight = Number(config.priceFontWeight) || 800;
+
           return `
             <div class="sticker-cell is-qr ${isPortrait ? 'mode-portrait' : 'mode-landscape'}" style="width: ${cellWidthMm}mm !important; height: ${cellHeightMm}mm !important; box-sizing: border-box !important; padding: ${
               isPortrait ? '1.5mm 1mm' : '1mm 1.5mm'
@@ -416,48 +454,40 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
               ? `transform: ${effectiveTransform} !important; transform-origin: center center !important;`
               : ''
           }">
-              <div style="width: ${qrPx}px; height: ${qrPx}px; flex-shrink: 0; margin-right: ${
+              <div class="qr-box" style="width: ${qrMmSize} !important; height: ${qrMmSize} !important; flex-shrink: 0 !important; margin-right: ${
                 isPortrait ? '0' : '1.8mm'
-              }; margin-bottom: ${
+              } !important; margin-bottom: ${
                 isPortrait ? '1.2mm' : '0'
-              }; display: flex; align-items: center; justify-content: center;">
-                <img src="${codeAsset}" style="width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; display: block;" />
+              } !important; display: flex !important; align-items: center !important; justify-content: center !important;">
+                <img src="${codeAsset}" style="width: 100% !important; height: 100% !important; object-fit: contain !important; image-rendering: pixelated !important; display: block !important;" />
               </div>
-              <div style="flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; overflow: hidden; text-align: ${
+              <div class="info-box" style="flex: 1 !important; min-width: 0 !important; display: flex !important; flex-direction: column !important; justify-content: center !important; text-align: ${
                 isPortrait ? 'center' : 'left'
-              };">
+              } !important; overflow: hidden !important;">
                 ${
                   config.showProductName
-                    ? `<div style="font-size: ${Number(config.productNameSize) || 8.5}pt; font-weight: ${
-                        config.productNameBold ? '800' : '700'
-                      }; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000; line-height: 1.15; letter-spacing: -0.01em; text-transform: ${
+                    ? `<div class="title-text" style="font-family: 'Quicksand', sans-serif !important; font-size: ${titlePt} !important; font-weight: ${titleWeight} !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; color: #000000 !important; line-height: 1.15 !important; letter-spacing: -0.01em !important; text-transform: ${
                         config.productNameCase === 'uppercase' ? 'uppercase' : 'none'
-                      };">${escapeHtml(qrRow1)}</div>`
+                      } !important;">${escapeHtml(qrRow1)}</div>`
                     : ''
                 }
                 ${
                   config.showVariantSize && qrRow2
-                    ? `<div style="font-size: ${Number(config.variantSize) || 8.0}pt; font-weight: ${
-                        config.variantBold ? '700' : '600'
-                      }; color: #111111; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.15; margin-top: 0.2mm; letter-spacing: -0.01em;">${escapeHtml(
+                    ? `<div class="variant-text" style="font-family: 'Quicksand', sans-serif !important; font-size: ${variantPt} !important; font-weight: ${variantWeight} !important; color: #111111 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; line-height: 1.15 !important; margin-top: 0.2mm !important; letter-spacing: -0.01em !important;">${escapeHtml(
                         qrRow2
                       )}</div>`
                     : ''
                 }
                 ${
                   config.showSku
-                    ? `<div style="font-family: 'JetBrains Mono', monospace; font-size: ${
-                        Number(config.skuSize) || 6.8
-                      }pt; font-weight: 700; color: #333333; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; margin: 0.3mm 0;">${escapeHtml(
+                    ? `<div class="sku-text" style="font-family: 'JetBrains Mono', monospace !important; font-size: 6.8pt !important; font-weight: 700 !important; color: #333333 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; line-height: 1.1 !important; margin: 0.3mm 0 !important;">${escapeHtml(
                         config.skuPrefix
                       )}${escapeHtml(it.sku)}</div>`
                     : ''
                 }
                 ${
                   priceLine
-                    ? `<div style="font-size: ${Number(config.priceSize) || 11.0}pt; font-weight: ${
-                        config.priceBold ? '900' : '800'
-                      }; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; letter-spacing: -0.01em; margin-top: 0.2mm;">${priceLine}</div>`
+                    ? `<div class="price-text" style="font-family: 'Quicksand', sans-serif !important; font-size: ${pricePt} !important; font-weight: ${priceWeight} !important; color: #000000 !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: ellipsis !important; line-height: 1.1 !important; letter-spacing: -0.01em !important; margin-top: 0.2mm !important;">${priceLine}</div>`
                     : ''
                 }
               </div>
@@ -643,217 +673,281 @@ export const BatchBarcodePrintModal: React.FC<BatchBarcodePrintModalProps> = ({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-          {/* Detailed Setup Drawer */}
+          {/* Detailed Setup Drawer (Identik 100% dengan Modul Barcode WMS Teruji) */}
           {showSetup && (
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-                  Pengaturan Elemen &amp; Tipografi Label
+            <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-2">
+                  <Settings className="w-4 h-4 text-purple-600" />
+                  <span>Pengaturan Format &amp; Tipografi Label Thermal</span>
                 </span>
                 <button
                   type="button"
                   onClick={() => setConfig(DEFAULT_BARCODE_LABEL_CONFIG)}
-                  className="text-[11px] text-slate-500 hover:text-indigo-600 flex items-center gap-1"
+                  className="text-[11px] font-bold text-slate-500 hover:text-purple-600 flex items-center gap-1 cursor-pointer"
                 >
-                  <RotateCcw className="w-3 h-3" />
+                  <RotateCcw className="w-3.5 h-3.5" />
                   <span>Reset Default</span>
                 </button>
               </div>
 
-              {/* Checkboxes */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.showProductName}
-                    onChange={(e) =>
-                      setConfig((p) => ({ ...p, showProductName: e.target.checked }))
-                    }
-                    className="rounded text-indigo-600"
-                  />
-                  <span className="font-medium text-slate-700 dark:text-slate-200">
-                    Nama Produk
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.showVariantSize}
-                    onChange={(e) =>
-                      setConfig((p) => ({ ...p, showVariantSize: e.target.checked }))
-                    }
-                    className="rounded text-indigo-600"
-                  />
-                  <span className="font-medium text-slate-700 dark:text-slate-200">
-                    Size / Varian
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.showSku}
-                    onChange={(e) =>
-                      setConfig((p) => ({ ...p, showSku: e.target.checked }))
-                    }
-                    className="rounded text-indigo-600"
-                  />
-                  <span className="font-medium text-slate-700 dark:text-slate-200">
-                    Kode SKU
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={config.showPrice}
-                    onChange={(e) =>
-                      setConfig((p) => ({ ...p, showPrice: e.target.checked }))
-                    }
-                    className="rounded text-indigo-600"
-                  />
-                  <span className="font-medium text-slate-700 dark:text-slate-200">
-                    Harga Jual
-                  </span>
-                </label>
+              {/* A. Format Tag Harga Produk */}
+              <div className="space-y-1.5">
+                <div className="font-black text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <span className="text-purple-600 font-bold">$</span>
+                  <span>Format Tag Harga Produk:</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfig((p) => ({ ...p, pricePrefixType: 'none' }))}
+                    className={`p-2 rounded-xl text-center border font-bold cursor-pointer transition-all ${
+                      config.pricePrefixType === 'none'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs">Polos</div>
+                    <div className="text-[10px] opacity-80 mt-0.5">189.000</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfig((p) => ({ ...p, pricePrefixType: 'Rp' }))}
+                    className={`p-2 rounded-xl text-center border font-bold cursor-pointer transition-all ${
+                      config.pricePrefixType === 'Rp'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs">Tag Rp</div>
+                    <div className="text-[10px] opacity-80 mt-0.5">Rp 189.000</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfig((p) => ({ ...p, pricePrefixType: 'IDR' }))}
+                    className={`p-2 rounded-xl text-center border font-bold cursor-pointer transition-all ${
+                      config.pricePrefixType === 'IDR'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs">Tag IDR</div>
+                    <div className="text-[10px] opacity-80 mt-0.5">IDR 189.000</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setConfig((p) => ({ ...p, pricePrefixType: 'custom' }))}
+                    className={`p-2 rounded-xl text-center border font-bold cursor-pointer transition-all ${
+                      config.pricePrefixType === 'custom'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs">Custom Tag</div>
+                    <div className="text-[10px] opacity-80 mt-0.5">{config.priceCustomPrefix || 'Ketik...'}</div>
+                  </button>
+                </div>
+
+                {config.pricePrefixType === 'custom' && (
+                  <div className="pt-1.5">
+                    <input
+                      type="text"
+                      value={config.priceCustomPrefix}
+                      onChange={(e) => setConfig((p) => ({ ...p, priceCustomPrefix: e.target.value }))}
+                      placeholder="Ketik prefix harga custom (contoh: NET, SALE, S$, RP.)"
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    />
+                  </div>
+                )}
               </div>
 
-              {/* Harga & Teks Kustom */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-slate-200 dark:border-slate-700 text-xs">
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Awalan Harga
-                  </label>
-                  <select
-                    value={config.pricePrefixType}
-                    onChange={(e) =>
-                      setConfig((p) => ({
-                        ...p,
-                        pricePrefixType: e.target.value as any,
-                      }))
-                    }
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200"
-                  >
-                    <option value="Rp">Rp (Contoh: Rp 249.000)</option>
-                    <option value="IDR">IDR (Contoh: IDR 249.000)</option>
-                    <option value="none">Tanpa Awalan (Contoh: 249.000)</option>
-                  </select>
+              {/* B. Ukuran QR Code */}
+              <div className="space-y-1.5">
+                <div className="font-black text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <QrCode className="w-3.5 h-3.5 text-purple-600" />
+                  <span>Ukuran QR Code:</span>
                 </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Teks Kustom (Opsional, e.g. SALE)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="SALE / PROMO"
-                    value={config.customText}
-                    onChange={(e) =>
-                      setConfig((p) => ({ ...p, customText: e.target.value }))
-                    }
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] text-slate-500 mb-1">
-                    Huruf Nama Produk
-                  </label>
-                  <select
-                    value={config.productNameCase}
-                    onChange={(e) =>
-                      setConfig((p) => ({
-                        ...p,
-                        productNameCase: e.target.value as any,
-                      }))
-                    }
-                    className="w-full px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-200"
-                  >
-                    <option value="normal">Normal (Sesuai Katalog)</option>
-                    <option value="uppercase">HURUF BESAR SEMUA</option>
-                  </select>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(
+                    [
+                      { id: 'small', label: 'Kecil (11.5mm)' },
+                      { id: 'normal', label: 'Standar (13.5mm)' },
+                      { id: 'large', label: 'Besar (15mm)' },
+                      { id: 'xlarge', label: 'Ekstra (16.5mm)' },
+                    ] as const
+                  ).map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => setConfig((p) => ({ ...p, qrSizePreset: preset.id }))}
+                      className={`py-2 px-2.5 rounded-xl text-center border font-bold text-xs cursor-pointer transition-all ${
+                        (config.qrSizePreset || 'normal') === preset.id
+                          ? 'bg-purple-600 text-white border-purple-600 shadow-xs'
+                          : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Orientasi & Rotasi Cetak Thermal */}
-              <div className="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                    <Compass className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Orientasi &amp; Rotasi Cetak Thermal</span>
+              {/* C. Font Nama Produk & Size */}
+              <div className="space-y-1.5">
+                <div className="font-black text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <span className="text-purple-600 font-bold">T</span>
+                  <span>Font Nama Produk &amp; Size:</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-500 font-bold block mb-1">Ukuran Huruf:</label>
+                    <select
+                      value={config.titleFontSizePreset || 'large'}
+                      onChange={(e) =>
+                        setConfig((p) => ({
+                          ...p,
+                          titleFontSizePreset: e.target.value as TitleFontSizePreset,
+                          productNameSize: TITLE_FONT_SIZE_PRESETS_PT[e.target.value as TitleFontSizePreset]?.title || 9.8,
+                          variantSize: TITLE_FONT_SIZE_PRESETS_PT[e.target.value as TitleFontSizePreset]?.variant || 8.8,
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="small">Kecil (7.5pt)</option>
+                      <option value="normal">Standar (8.8pt)</option>
+                      <option value="large">Besar (9.8pt)</option>
+                      <option value="xlarge">Ekstra Besar (11pt)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-500 font-bold block mb-1">Ketebalan Font:</label>
+                    <select
+                      value={config.titleFontWeight || '700'}
+                      onChange={(e) =>
+                        setConfig((p) => ({
+                          ...p,
+                          titleFontWeight: e.target.value as TitleFontWeight,
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="500">Medium (500)</option>
+                      <option value="600">Semi-Bold (600)</option>
+                      <option value="700">Bold (700)</option>
+                      <option value="800">Extra Bold (800)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* D. Font Harga Produk */}
+              <div className="space-y-1.5">
+                <div className="font-black text-xs text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <span className="text-purple-600 font-bold">$</span>
+                  <span>Font Harga Produk:</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[11px] text-slate-500 font-bold block mb-1">Ukuran Font Harga:</label>
+                    <select
+                      value={config.priceFontSizePreset || 'large'}
+                      onChange={(e) =>
+                        setConfig((p) => ({
+                          ...p,
+                          priceFontSizePreset: e.target.value as PriceFontSizePreset,
+                          priceSize: PRICE_FONT_SIZE_PRESETS_PT[e.target.value as PriceFontSizePreset] || 13.5,
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="small">Kecil (9.5pt)</option>
+                      <option value="normal">Standar (11.5pt)</option>
+                      <option value="large">Besar (13.5pt)</option>
+                      <option value="xlarge">Ekstra Besar (15.5pt)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="text-[11px] text-slate-500 font-bold block mb-1">Ketebalan Font Harga:</label>
+                    <select
+                      value={config.priceFontWeight || '800'}
+                      onChange={(e) =>
+                        setConfig((p) => ({
+                          ...p,
+                          priceFontWeight: e.target.value as PriceFontWeight,
+                        }))
+                      }
+                      className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                      <option value="600">Semi-Bold (600)</option>
+                      <option value="700">Bold (700)</option>
+                      <option value="800">Extra Bold (800)</option>
+                      <option value="900">Black (900)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* E. Tampilkan Elemen Stiker */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                <div className="font-black text-xs text-slate-800 dark:text-slate-200">
+                  Tampilkan Elemen Stiker:
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={config.showProductName}
+                      onChange={(e) => setConfig((p) => ({ ...p, showProductName: e.target.checked }))}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span>Nama Produk</span>
                   </label>
-                  <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400">
-                    {config.printOrientation === 'portrait' ? 'Potret (Tegak)' : 'Lanskap (Melebar)'} • {config.printRotation || 0}&deg;
-                  </span>
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={config.showVariantSize}
+                      onChange={(e) => setConfig((p) => ({ ...p, showVariantSize: e.target.checked }))}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span>Size / Ukuran</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={config.showPrice}
+                      onChange={(e) => setConfig((p) => ({ ...p, showPrice: e.target.checked }))}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span className="font-bold text-purple-700 dark:text-purple-300">Harga Produk</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer text-slate-700 dark:text-slate-300 font-medium">
+                    <input
+                      type="checkbox"
+                      checked={config.showSku}
+                      onChange={(e) => setConfig((p) => ({ ...p, showSku: e.target.checked }))}
+                      className="rounded text-purple-600 focus:ring-purple-500"
+                    />
+                    <span>Kode SKU</span>
+                  </label>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  {/* Arah Halaman */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                      Arah Halaman:
-                    </span>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setConfig((p) => ({ ...p, printOrientation: 'landscape' }))
-                        }
-                        className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                          (config.printOrientation || 'landscape') === 'landscape'
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="text-xs">Lanskap (Melebar)</div>
-                        <div className="text-[10px] font-normal opacity-80 mt-0.5">50 &times; 20 mm</div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setConfig((p) => ({ ...p, printOrientation: 'portrait' }))
-                        }
-                        className={`p-2 rounded-xl border text-center font-bold transition-all ${
-                          config.printOrientation === 'portrait'
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                            : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="text-xs">Potret (Tegak)</div>
-                        <div className="text-[10px] font-normal opacity-80 mt-0.5">20 &times; 50 mm</div>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Rotasi Konten */}
-                  <div className="space-y-1.5">
-                    <span className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
-                      Rotasi Stiker (Jika Hasil Cetak Terbalik):
-                    </span>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {[
-                        { deg: 0, label: '0° Normal' },
-                        { deg: 90, label: '90° Kanan' },
-                        { deg: 180, label: '180° Balik' },
-                        { deg: 270, label: '270° Kiri' },
-                      ].map((r) => (
-                        <button
-                          key={r.deg}
-                          type="button"
-                          onClick={() =>
-                            setConfig((p) => ({ ...p, printRotation: r.deg }))
-                          }
-                          className={`py-2 px-1 rounded-xl border text-center font-bold transition-all ${
-                            (Number(config.printRotation) || 0) === r.deg
-                              ? 'bg-amber-400 text-slate-950 border-amber-500 font-extrabold shadow-xs'
-                              : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="text-[11px] font-extrabold">{r.deg}&deg;</div>
-                          <div className="text-[9px] font-normal opacity-80">{r.label.split(' ')[1]}</div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+              {/* F. Petunjuk Setup Thermal 50x20mm (Kotak Kuning Informasi) */}
+              <div className="p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-xl text-xs text-amber-900 dark:text-amber-100 space-y-1">
+                <div className="flex items-center gap-1.5 font-black text-amber-950 dark:text-amber-50">
+                  <span className="text-amber-600 font-extrabold text-sm">ⓘ</span>
+                  <span>Pengaturan Printer Thermal 50×20 mm:</span>
                 </div>
+                <ul className="list-disc pl-5 space-y-0.5 text-[11px]">
+                  <li><b>Tata Letak:</b> Lanskap (Landscape)</li>
+                  <li><b>Ukuran Kertas:</b> 50×20 mm / User Defined</li>
+                  <li><b>Margin:</b> None (Tanpa Margin) &amp; Skala 100%</li>
+                </ul>
               </div>
             </div>
           )}

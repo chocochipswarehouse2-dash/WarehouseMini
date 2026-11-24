@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.28.2",
-  "versionCode": 482,
+  "version": "v2.28.3",
+  "versionCode": 483,
   "buildDate": "24 November 2026",
-  "buildHash": "wms-261124-v482-0015",
-  "releaseTitle": "WMS v2.28.2 — Fix Baris Picking Nyangkut & Upgrade Skill Guardrails",
+  "buildHash": "wms-261124-v483-0731",
+  "releaseTitle": "WMS v2.28.3 — Pilih Cetak Per-Size & Setup Customizer Barcode Presisi",
   "releaseNotes": [
-    "Perbaikan paralel completion + SJ-wide sweep agar 0 baris nyangkut",
-    "Pembersihan data TO.OMP.26.11.00356 di Supabase",
-    "Upgrade skill wms-picking-completion-sync-guardrails untuk seluruh agen"
+    "Tambah fitur pilih cetak varian size tertentu di Langkah 1 (tombol size langsung dan toggle chip)",
+    "Sediakan panel customizer barcode lengkap (Format Tag Harga IDR/Rp/Polos, Ukuran QR, Font Size & Weight)",
+    "Perbaiki proporsi stiker thermal 50x20mm dan vertical center alignment"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.28.2",
+    "versionCode": 482,
+    "buildDate": "24 November 2026",
+    "buildHash": "wms-261124-v482-0015",
+    "releaseTitle": "WMS v2.28.2 — Fix Baris Picking Nyangkut & Upgrade Skill Guardrails",
+    "releaseNotes": [
+      "Perbaikan paralel completion + SJ-wide sweep agar 0 baris nyangkut",
+      "Pembersihan data TO.OMP.26.11.00356 di Supabase",
+      "Upgrade skill wms-picking-completion-sync-guardrails untuk seluruh agen"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.28.1",
     "versionCode": 481,
@@ -115,19 +128,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Default kamera scanner HP otomatis memilih camera 0 (kamera belakang utama)",
       "Dropdown pilihan kamera diurutkan dengan kamera belakang utama di posisi teratas dan selalu sinkron dengan lensa aktif"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.24.7",
-    "versionCode": 447,
-    "buildDate": "21 November 2026",
-    "buildHash": "wms-261121-v447-1609",
-    "releaseTitle": "WMS v2.24.7 — Integrasi Lengkap Entitas WMS & B-LWS B-PNK QC WH MAP",
-    "releaseNotes": [
-      "Pastikan B-LWS, B-PNK Panakkukang, QC, WH, MAP selalu tampil lengkap di CSV Barcode",
-      "Tingkatkan pencarian outlet agar mengenali nama panjang Panakkukang & Living World",
-      "Tambah filter cepat kategori Bazaar (B-) dan Gudang/QC WMS"
     ],
     "minSupportedVersion": "v2.0.0"
   }
