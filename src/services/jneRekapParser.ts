@@ -2,13 +2,17 @@ import * as XLSX from 'xlsx';
 
 export interface JneDetectedRecord {
   id: string;
-  no_resi: string;
-  tanggal: string;
-  nominal: number;
-  layanan: string;
-  nama_tujuan: string;
-  alamat_tujuan: string;
-  deskripsi: string;
+  row_number?: number;
+  no?: string | number;
+  no_resi: string;         // Kolom C: Cnote No
+  deskripsi: string;       // Kolom D: Deskripsi pengiriman
+  layanan: string;         // Kolom E: Services (CTC23, REG23, CTCYES23, YES23, dll.)
+  nama_tujuan: string;     // Kolom F: Receiver Name
+  alamat_tujuan: string;   // Kolom G: Destination
+  nama_pengirim: string;   // Kolom H: Shipper Name (default: CCH-CHOCOCHIPS)
+  nominal: number;         // Kolom I: Amount (Rp)
+  tanggal: string;         // Kolom J: Tanggal Pengiriman (YYYY-MM-DD)
+  agen: string;            // Kolom K: Agen (default: JNE Member)
   source_file?: string;
   raw_line?: string;
 }
@@ -18,27 +22,26 @@ export interface ParseResult {
   records: JneDetectedRecord[];
   totalDetected: number;
   fileName: string;
-  fileType: 'excel' | 'pdf' | 'image' | 'unknown';
+  fileType: 'excel' | 'csv' | 'pdf' | 'image' | 'text' | 'unknown';
+  engine?: 'xlsx' | 'gemini-vision' | 'pdf-text' | 'ocr-fallback' | 'text-paste';
   error?: string;
 }
+
+export const DEFAULT_SHIPPER_NAME = 'CCH-CHOCOCHIPS';
+export const DEFAULT_AGEN_NAME = 'JNE Member';
+export const DEFAULT_JNE_SERVICE = 'REG23';
 
 /**
  * Konversi Excel Serial Date (e.g. 46316.57) ke string ISO YYYY-MM-DD
  */
 export function excelDateToISO(serial: number): string {
   if (typeof serial !== 'number' || isNaN(serial)) return '';
-  const utc_days = Math.floor(serial - 25569);
-  const date_info = new Date(utc_days * 86400 * 1000);
-  const fractional_day = serial - Math.floor(serial) + 0.0000001;
-  let total_seconds = Math.floor(86400 * fractional_day);
-  const seconds = total_seconds % 60;
-  total_seconds -= seconds;
-  const hours = Math.floor(total_seconds / (60 * 60));
-  const minutes = Math.floor(total_seconds / 60) % 60;
-  const d = new Date(date_info.getFullYear(), date_info.getMonth(), date_info.getDate(), hours, minutes, seconds);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const utcDays = Math.floor(serial - 25569);
+  const utcValue = utcDays * 86400 * 1000;
+  const dateInfo = new Date(utcValue);
+  const y = dateInfo.getUTCFullYear();
+  const m = String(dateInfo.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(dateInfo.getUTCDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
 }
 
@@ -47,26 +50,29 @@ export function excelDateToISO(serial: number): string {
  */
 export function normalizeDate(raw: any): string {
   if (!raw) return '';
-  if (raw instanceof Date) {
+  if (raw instanceof Date && !isNaN(raw.getTime())) {
     const y = raw.getFullYear();
     const m = String(raw.getMonth() + 1).padStart(2, '0');
     const d = String(raw.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
-  // Format Excel serial date (e.g. 46316.57)
   if (typeof raw === 'number' && raw > 30000 && raw < 75000) {
     return excelDateToISO(raw);
   }
   const s = String(raw).trim();
-  // Format DD/MM/YYYY or DD-MM-YYYY
-  const dmyMatch = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  if (!s) return '';
+
+  // DD/MM/YYYY atau DD-MM-YYYY atau DD.MM.YYYY
+  const dmyMatch = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
   if (dmyMatch) {
     const d = dmyMatch[1].padStart(2, '0');
     const m = dmyMatch[2].padStart(2, '0');
-    const y = dmyMatch[3];
+    let y = dmyMatch[3];
+    if (y.length === 2) y = `20${y}`;
     return `${y}-${m}-${d}`;
   }
-  // Format YYYY-MM-DD
+
+  // YYYY-MM-DD
   const ymdMatch = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
   if (ymdMatch) {
     const y = ymdMatch[1];
@@ -74,17 +80,45 @@ export function normalizeDate(raw: any): string {
     const d = ymdMatch[3].padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
+
+  // Format nama bulan Indonesia/Inggris (e.g. "23 Nov 2026" / "05 Mei 2025")
+  const monthMap: Record<string, string> = {
+    jan: '01', januari: '01', january: '01',
+    feb: '02', februari: '02', february: '02',
+    mar: '03', maret: '03', march: '03',
+    apr: '04', april: '04',
+    mei: '05', may: '05',
+    jun: '06', juni: '06', june: '06',
+    jul: '07', juli: '07', july: '07',
+    agu: '08', ags: '08', agustus: '08', aug: '08', august: '08',
+    sep: '09', sept: '09', september: '09',
+    okt: '10', oktober: '10', oct: '10', october: '10',
+    nov: '11', nop: '11', november: '11',
+    des: '12', desember: '12', dec: '12', december: '12',
+  };
+  const namedMatch = s.match(/(\d{1,2})\s+([a-zA-Z]{3,10})\s+(\d{4})/);
+  if (namedMatch) {
+    const mm = monthMap[namedMatch[2].toLowerCase()];
+    if (mm) {
+      return `${namedMatch[3]}-${mm}-${namedMatch[1].padStart(2, '0')}`;
+    }
+  }
+
   return s;
 }
 
 /**
- * Normalisasi nominal rupiah dengan pemisahan desimal dan ribuan yang sangat teliti.
- * Format yang didukung:
- * - 72,000.00 (Ribuan koma, desimal titik) -> 72000
- * - 72.000,00 (Ribuan titik, desimal koma) -> 72000
- * - 72000.00 / 72000,00 -> 72000
- * - 72,000 / 72.000 (Ribuan saja) -> 72000
- * - Rp. 72,000.00 / IDR 72.000 -> 72000
+ * Format YYYY-MM-DD menjadi DD/MM/YYYY sesuai tampilan GSheet JNEMember
+ */
+export function formatDisplayDateJne(isoOrRaw: string): string {
+  const norm = normalizeDate(isoOrRaw);
+  const m = norm.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+  return isoOrRaw || '-';
+}
+
+/**
+ * Normalisasi nominal rupiah dengan pemisahan desimal & ribuan presisi
  */
 export function normalizeNominal(raw: any): number {
   if (raw === null || raw === undefined || raw === '') return 0;
@@ -94,189 +128,291 @@ export function normalizeNominal(raw: any): number {
   let s = String(raw).trim().replace(/^(?:Rp|IDR)\.?\s*/i, '').trim();
   if (!s || s === '-' || s === '0.00' || s === '0,00') return 0;
 
-  // Kasus 1: Format 72,000.00 atau 1,250,000.00 (Koma ribuan, Titik desimal)
   if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(s)) {
     s = s.replace(/,/g, '');
     return Math.round(parseFloat(s) || 0);
   }
-
-  // Kasus 2: Format 72.000,00 atau 1.250.000,00 (Titik ribuan, Koma desimal)
   if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(s)) {
     s = s.replace(/\./g, '').replace(',', '.');
     return Math.round(parseFloat(s) || 0);
   }
-
-  // Kasus 3: Titik sebagai desimal 1-2 digit di akhir (contoh: 72000.00 atau 10000.5)
   if (/^\d+\.\d{1,2}$/.test(s)) {
     return Math.round(parseFloat(s) || 0);
   }
-
-  // Kasus 4: Koma sebagai desimal 1-2 digit di akhir (contoh: 72000,00 atau 10000,5)
   if (/^\d+,\d{1,2}$/.test(s)) {
     s = s.replace(',', '.');
     return Math.round(parseFloat(s) || 0);
   }
-
-  // Kasus 5: Akhiran .00 atau ,00
   if (/[\.,]00$/.test(s)) {
     s = s.slice(0, -3);
   }
-
-  // Kasus 6: Format ribuan murni (e.g. 72.000 atau 72,000)
   if (/^\d{1,3}(?:[\.,]\d{3})+$/.test(s)) {
     s = s.replace(/[\.,]/g, '');
     return parseInt(s, 10) || 0;
   }
 
-  // Fallback: bersihkan karakter non-angka
   const digitsOnly = s.replace(/[^0-9]/g, '');
   const parsed = parseInt(digitsOnly, 10);
   return isNaN(parsed) ? 0 : parsed;
 }
 
 /**
- * Bersihkan nomor resi JNE
+ * Bersihkan nomor resi JNE (pertahankan leading zero seperti 0137900...)
  */
 export function cleanResi(raw: any): string {
-  if (!raw) return '';
-  // Hanya ambil huruf dan angka, ubah ke uppercase
-  return String(raw).trim().replace(/[\s\-_]/g, '').toUpperCase();
+  if (raw === null || raw === undefined) return '';
+  let s = String(raw).trim().replace(/^['"`]+/, '').replace(/[\s\-_]/g, '').toUpperCase();
+  // Jika Excel memotong leading zero pada resi 14 digit yang dimulai "137900..." -> pulihkan "0137900..."
+  if (/^1379\d{10}$/.test(s)) {
+    s = '0' + s;
+  }
+  return s;
 }
 
 /**
- * Deteksi Layanan JNE (YES, REG, JTR, OKE, SPS, dsb)
+ * Pertahankan kode layanan asli JNE Member (CTC23, REG23, CTCYES23, YES23, JTR23, dll.)
  */
-export function detectJneService(raw: any): string {
-  const s = String(raw || '').toUpperCase().trim();
-  if (s.includes('YES')) return 'YES';
-  if (s.includes('JTR') || s.includes('TRUCKING')) return 'JTR';
-  if (s.includes('OKE')) return 'OKE';
-  if (s.includes('SPS') || s.includes('SUPER SPEED')) return 'SPS';
-  if (s.includes('REG') || s.includes('CTC')) return 'REG';
-  return s || 'REG';
+export function normalizeJneService(raw: any): string {
+  const s = String(raw || '').toUpperCase().trim().replace(/\s+/g, '');
+  if (!s || s === '-') return DEFAULT_JNE_SERVICE;
+  return s;
 }
 
 /**
- * Ekstraksi baris per sheet Excel
+ * Klasifikasi kategori deskripsi pengiriman (Kolom D) untuk filter cepat & analitik
  */
-function extractRecordsFromSheet(rawRows: any[][], fileName: string, sheetName: string): JneDetectedRecord[] {
-  if (!rawRows || rawRows.length < 2) return [];
+export type JneDeskripsiCategory =
+  | 'EMPTY'
+  | 'MANUAL_SHIPMENT'
+  | 'WEBSITE'
+  | 'RETUR'
+  | 'PR_SEEDING'
+  | 'OTHER';
 
-  // Cari baris header (bisa bertingkat 1-4 baris seperti pada format JNE)
+export function classifyJneDeskripsi(deskripsi: string): JneDeskripsiCategory {
+  const d = String(deskripsi || '').trim();
+  if (!d) return 'EMPTY';
+  const upper = d.toUpperCase();
+  if (
+    /^#?MS[A-Z]{2,5}/i.test(d) ||
+    /^#?AR-/i.test(d) ||
+    upper.includes('MANUAL SHIPMENT') ||
+    upper.includes('ALTER')
+  ) {
+    return 'MANUAL_SHIPMENT';
+  }
+  if (upper.includes('RETUR') || /^#?RTR-/i.test(d)) {
+    return 'RETUR';
+  }
+  if (
+    upper.includes('WEBSITE') ||
+    upper.includes('ORDER ID') ||
+    upper.includes('WOOCOMMERCE') ||
+    upper.includes('SHOPEE') ||
+    upper.includes('TIKTOK') ||
+    /^[A-Z0-9]{8,9}$/.test(upper)
+  ) {
+    return 'WEBSITE';
+  }
+  if (
+    upper.includes('SEEDING') ||
+    upper.startsWith('PR ') ||
+    upper.includes('ENDORSE') ||
+    upper.includes('KOL') ||
+    upper.includes('INFLUENCER')
+  ) {
+    return 'PR_SEEDING';
+  }
+  return 'OTHER';
+}
+
+/**
+ * Ekstraksi baris per sheet dari matriks sel Excel/CSV (dengan proteksi leading zero)
+ */
+function extractRecordsFromMatrix(
+  displayRows: string[][],
+  rawRows: any[][],
+  fileName: string,
+  sheetName: string
+): JneDetectedRecord[] {
+  if (!displayRows || displayRows.length < 1) return [];
+
   const headerRowIndices: number[] = [];
-  for (let r = 0; r < Math.min(rawRows.length, 6); r++) {
-    const row = rawRows[r];
+  for (let r = 0; r < Math.min(displayRows.length, 10); r++) {
+    const row = displayRows[r];
     if (!row || row.length === 0) continue;
-    const hasHeaderWord = row.some(cell => {
+
+    let headerScore = 0;
+    for (const cell of row) {
       const s = String(cell || '').toLowerCase().trim();
-      return /^(no|no\.|shipper|receiver|consignee|destination|services?|amount|date|tgl|tanggal|c[\s_-]?note|awb|resi|ongkir|charge|deskripsi|keterangan)$/i.test(s)
-        || /resi|awb|connote|c[\s_-]?note|airway|destination|receiver/i.test(s);
-    });
-    // Jika baris berisi nomor resi 12+ digit, itu baris data, bukan header!
-    const hasDataCell = row.some(cell => {
-      const s = String(cell || '').trim();
-      return /^\d{13,18}$/.test(s) || /^01\d{10,16}$/.test(s);
+      if (!s) continue;
+      if (/^(no|no\.|cnote\s*no|c[\s_-]?note|awb|no\s*resi|resi|connote)$/i.test(s)) headerScore += 2;
+      else if (/deskripsi|keterangan|services?|layanan|receiver|consignee|penerima|destination|tujuan|shipper|pengirim|amount|nominal|ongkir|tarif|tanggal|date|agen/i.test(s)) {
+        headerScore += 1;
+      }
+    }
+
+    const hasResiDataCell = row.some((cell) => {
+      const c = cleanResi(cell);
+      return /^01\d{11,16}$/.test(c) || /^(?:JNE|TJNE|CGK)\d{8,16}$/i.test(c);
     });
 
-    if (hasHeaderWord && !hasDataCell) {
+    if (headerScore >= 2 && !hasResiDataCell) {
       headerRowIndices.push(r);
     }
   }
 
   const colMap = {
+    no: -1,
     resi: -1,
-    tanggal: -1,
-    nominal: -1,
+    deskripsi: -1,
     layanan: -1,
     nama: -1,
     alamat: -1,
-    deskripsi: -1
+    pengirim: -1,
+    nominal: -1,
+    tanggal: -1,
+    agen: -1,
   };
 
   let startRow = 0;
   if (headerRowIndices.length > 0) {
-    startRow = Math.max(...headerRowIndices) + 1;
-    const maxCols = Math.max(...headerRowIndices.map(r => (rawRows[r] || []).length));
+    const mainHeaderIdx = headerRowIndices[headerRowIndices.length - 1];
+    startRow = mainHeaderIdx + 1;
+    const maxCols = Math.max(...headerRowIndices.map((r) => (displayRows[r] || []).length));
     const mergedHeaders: string[] = [];
 
-    // Gabungkan teks header per kolom dari seluruh baris header yang bertingkat
     for (let c = 0; c < maxCols; c++) {
       const parts: string[] = [];
       for (const r of headerRowIndices) {
-        const val = String(rawRows[r]?.[c] || '').trim();
+        const val = String(displayRows[r]?.[c] || '').trim();
         if (val && !parts.includes(val)) parts.push(val);
       }
-      mergedHeaders.push(parts.join(' '));
+      mergedHeaders.push(parts.join(' ').trim());
     }
 
-    colMap.resi = mergedHeaders.findIndex(c => /resi|awb|c[\s_-]?note|connote|airway\s*bill|no\s*cn|tracking/i.test(c));
-    colMap.nominal = mergedHeaders.findIndex(c => /nominal|tarif|ongkir|amount|total\s*bayar|biaya|charge|net/i.test(c));
-    colMap.tanggal = mergedHeaders.findIndex(c => /tgl|tanggal|date|shipment/i.test(c));
-    colMap.layanan = mergedHeaders.findIndex(c => /layanan|services?|produk|product/i.test(c));
-    colMap.nama = mergedHeaders.findIndex(c => /penerima|consignee|nama\s*tujuan|receiver/i.test(c));
-    colMap.alamat = mergedHeaders.findIndex(c => /alamat|tujuan|destination|kota|address/i.test(c));
-    colMap.deskripsi = mergedHeaders.findIndex(c => /deskripsi|keterangan|remarks|goods|isi\s*paket|description/i.test(c));
+    colMap.no = mergedHeaders.findIndex((h) => /^no\.?$/i.test(h));
+    colMap.resi = mergedHeaders.findIndex((h) => /cnote|c[\s_-]?note|no\s*resi|\bresi\b|awb|connote|airway\s*bill|no\s*cn|tracking/i.test(h));
+    colMap.deskripsi = mergedHeaders.findIndex((h) => /deskripsi|keterangan|remarks|goods|isi\s*paket|description|catatan/i.test(h));
+    colMap.layanan = mergedHeaders.findIndex((h) => /services?|layanan|produk|product/i.test(h));
+    colMap.nama = mergedHeaders.findIndex((h) => /receiver|penerima|consignee|nama\s*tujuan/i.test(h));
+    colMap.alamat = mergedHeaders.findIndex((h) => /destination|alamat|tujuan|kota|address|city/i.test(h));
+    colMap.pengirim = mergedHeaders.findIndex((h) => /shipper|pengirim|sender/i.test(h));
+    colMap.nominal = mergedHeaders.findIndex((h) => /amount|nominal|tarif|ongkir|total\s*bayar|biaya|charge|freight|\bnet\b/i.test(h));
+    colMap.tanggal = mergedHeaders.findIndex((h) => /tanggal|tgl|date|shipment/i.test(h));
+    colMap.agen = mergedHeaders.findIndex((h) => /\bagen\b|agent|origin\s*branch|cabang/i.test(h));
+
+    // Jika seperti format lama JNEMember dimana header Amount/Tanggal sempat kosong di I & J
+    if (colMap.resi === 2 && colMap.pengirim === 7 && colMap.agen === 10) {
+      if (colMap.nominal === -1) colMap.nominal = 8;
+      if (colMap.tanggal === -1) colMap.tanggal = 9;
+    }
   }
 
   const records: JneDetectedRecord[] = [];
-  for (let r = startRow; r < rawRows.length; r++) {
-    const row = rawRows[r];
-    if (!row || row.length === 0) continue;
 
+  for (let r = startRow; r < displayRows.length; r++) {
+    const dRow = displayRows[r] || [];
+    const rRow = rawRows[r] || [];
+    if (dRow.length === 0 && rRow.length === 0) continue;
+
+    let noVal = '';
     let noResi = '';
-    let tanggal = '';
-    let nominal = 0;
-    let layanan = 'REG';
+    let deskripsi = '';
+    let layanan = DEFAULT_JNE_SERVICE;
     let namaTujuan = '';
     let alamatTujuan = '';
-    let deskripsi = '';
+    let namaPengirim = DEFAULT_SHIPPER_NAME;
+    let nominal = 0;
+    let tanggal = '';
+    let agen = DEFAULT_AGEN_NAME;
 
     if (colMap.resi !== -1) {
-      noResi = cleanResi(row[colMap.resi]);
-      tanggal = colMap.tanggal !== -1 ? normalizeDate(row[colMap.tanggal]) : '';
-      nominal = colMap.nominal !== -1 ? normalizeNominal(row[colMap.nominal]) : 0;
-      layanan = colMap.layanan !== -1 ? detectJneService(row[colMap.layanan]) : 'REG';
-      namaTujuan = colMap.nama !== -1 ? String(row[colMap.nama] || '').trim() : '';
-      alamatTujuan = colMap.alamat !== -1 ? String(row[colMap.alamat] || '').trim() : '';
-      deskripsi = colMap.deskripsi !== -1 ? String(row[colMap.deskripsi] || '').trim() : '';
-    } else {
-      // Fallback: deteksi sel demi sel jika posisi header tidak terbaca
-      for (let c = 0; c < row.length; c++) {
-        const val = row[c];
-        if (val === null || val === undefined || val === '') continue;
-        const strVal = String(val).trim();
+      // Gunakan display cell terlebih dahulu agar leading zero '01379...' terjaga 100%
+      noResi = cleanResi(dRow[colMap.resi] || rRow[colMap.resi]);
+      if (!noResi || /^(CNOTENO|NORESI|TOTALTAGIHAN|TANGGALPEMBAYARAN)$/i.test(noResi)) continue;
 
-        if (!noResi && (/(?:JNE|TJNE|CGK|01)\d{8,16}/i.test(strVal) || (/^\d{12,18}$/.test(strVal) && strVal.length >= 12))) {
-          noResi = cleanResi(strVal);
+      noVal = colMap.no !== -1 ? String(dRow[colMap.no] || '').trim() : '';
+      deskripsi = colMap.deskripsi !== -1 ? String(dRow[colMap.deskripsi] ?? rRow[colMap.deskripsi] ?? '').trim() : '';
+      layanan = colMap.layanan !== -1 ? normalizeJneService(dRow[colMap.layanan] || rRow[colMap.layanan]) : DEFAULT_JNE_SERVICE;
+      namaTujuan = colMap.nama !== -1 ? String(dRow[colMap.nama] || rRow[colMap.nama] || '').trim() : '';
+      alamatTujuan = colMap.alamat !== -1 ? String(dRow[colMap.alamat] || rRow[colMap.alamat] || '').trim() : '';
+      namaPengirim = colMap.pengirim !== -1
+        ? String(dRow[colMap.pengirim] || rRow[colMap.pengirim] || DEFAULT_SHIPPER_NAME).trim()
+        : DEFAULT_SHIPPER_NAME;
+      nominal = colMap.nominal !== -1
+        ? normalizeNominal(typeof rRow[colMap.nominal] === 'number' ? rRow[colMap.nominal] : (dRow[colMap.nominal] || rRow[colMap.nominal]))
+        : 0;
+      tanggal = colMap.tanggal !== -1
+        ? normalizeDate(rRow[colMap.tanggal] instanceof Date ? rRow[colMap.tanggal] : (dRow[colMap.tanggal] || rRow[colMap.tanggal]))
+        : '';
+      agen = colMap.agen !== -1
+        ? String(dRow[colMap.agen] || rRow[colMap.agen] || DEFAULT_AGEN_NAME).trim()
+        : DEFAULT_AGEN_NAME;
+    } else {
+      // Fallback heuristik baris tanpa header (misal CSV polos / export mentah)
+      for (let c = 0; c < Math.max(dRow.length, rRow.length); c++) {
+        const dVal = String(dRow[c] ?? '').trim();
+        const rVal = rRow[c];
+        if (!dVal && (rVal === null || rVal === undefined || rVal === '')) continue;
+
+        const candidateResi = cleanResi(dVal || rVal);
+        if (
+          !noResi &&
+          (/(?:JNE|TJNE|CGK|01)\d{9,17}/i.test(candidateResi) || /^\d{12,18}$/.test(candidateResi))
+        ) {
+          noResi = candidateResi;
           continue;
         }
-        if (!tanggal && (val instanceof Date || (typeof val === 'number' && val > 30000 && val < 75000) || /\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}/.test(strVal))) {
-          tanggal = normalizeDate(val);
+        if (
+          !tanggal &&
+          (rVal instanceof Date ||
+            (typeof rVal === 'number' && rVal > 30000 && rVal < 75000) ||
+            /^\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4}$/.test(dVal) ||
+            /^\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2}$/.test(dVal))
+        ) {
+          tanggal = normalizeDate(rVal instanceof Date ? rVal : dVal);
           continue;
         }
-        const numVal = normalizeNominal(val);
-        if (numVal >= 1000 && numVal <= 50000000 && (!nominal || numVal > nominal)) {
+        if (/^(CTC\d*|CTCYES\d*|REG\d*|YES\d*|JTR\d*|OKE\d*|SPS\d*)$/i.test(dVal)) {
+          layanan = normalizeJneService(dVal);
+          continue;
+        }
+        if (/^CCH-/i.test(dVal)) {
+          namaPengirim = dVal;
+          continue;
+        }
+        if (/^JNE\s*Member$/i.test(dVal)) {
+          agen = dVal;
+          continue;
+        }
+        const numVal = normalizeNominal(typeof rVal === 'number' ? rVal : dVal);
+        if (
+          numVal >= 1000 &&
+          numVal <= 50000000 &&
+          (/^Rp/i.test(dVal) || typeof rVal === 'number' || /^[\d\.,]+$/.test(dVal)) &&
+          (!nominal || numVal > nominal)
+        ) {
           nominal = numVal;
-          continue;
-        }
-        if (/^(REG|YES|JTR|OKE|SPS|CTC)$/i.test(strVal)) {
-          layanan = strVal.toUpperCase();
           continue;
         }
       }
     }
 
-    if (noResi && noResi.length >= 8) {
+    if (noResi && noResi.length >= 8 && /[0-9]{6,}/.test(noResi)) {
       records.push({
         id: `JNE-${noResi}-${r}`,
+        no: noVal,
         no_resi: noResi,
-        tanggal: tanggal || normalizeDate(new Date()),
-        nominal: nominal,
-        layanan: layanan,
+        deskripsi: deskripsi,
+        layanan: layanan || DEFAULT_JNE_SERVICE,
         nama_tujuan: namaTujuan || '-',
         alamat_tujuan: alamatTujuan || '-',
-        deskripsi: deskripsi,
-        source_file: fileName + (sheetName && sheetName !== 'Sheet1' ? ` (${sheetName})` : '')
+        nama_pengirim: namaPengirim || DEFAULT_SHIPPER_NAME,
+        nominal: nominal,
+        tanggal: tanggal || normalizeDate(new Date()),
+        agen: agen || DEFAULT_AGEN_NAME,
+        source_file: fileName + (sheetName && sheetName !== 'Sheet1' ? ` (${sheetName})` : ''),
       });
     }
   }
@@ -286,22 +422,37 @@ function extractRecordsFromSheet(rawRows: any[][], fileName: string, sheetName: 
 
 /**
  * =========================================================================
- * 1. PARSER UNTUK EXCEL / CSV (.xlsx, .xls, .csv)
+ * 1. PARSER EXCEL & CSV (.xlsx, .xls, .csv)
  * =========================================================================
  */
 export async function parseExcelJneFile(file: File): Promise<ParseResult> {
+  const isCsv = file.name.toLowerCase().endsWith('.csv');
   try {
     const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
-    
+    const workbook = XLSX.read(buffer, {
+      type: 'array',
+      cellDates: true,
+      raw: false,
+    });
+
     let allRecords: JneDetectedRecord[] = [];
 
-    // Periksa setiap sheet dalam file Excel
     for (const sheetName of workbook.SheetNames) {
       const worksheet = workbook.Sheets[sheetName];
       if (!worksheet) continue;
-      const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
-      const sheetRecords = extractRecordsFromSheet(rawRows, file.name, sheetName);
+      // Baca formatted text (raw: false) untuk menjaga leading zero Cnote No, dan raw: true untuk angka/Date asli
+      const displayRows: string[][] = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: '',
+        raw: false,
+      });
+      const rawRows: any[][] = XLSX.utils.sheet_to_json(worksheet, {
+        header: 1,
+        defval: '',
+        raw: true,
+      });
+
+      const sheetRecords = extractRecordsFromMatrix(displayRows, rawRows, file.name, sheetName);
       if (sheetRecords.length > 0) {
         allRecords = allRecords.concat(sheetRecords);
       }
@@ -313,12 +464,12 @@ export async function parseExcelJneFile(file: File): Promise<ParseResult> {
         records: [],
         totalDetected: 0,
         fileName: file.name,
-        fileType: 'excel',
-        error: 'Tidak ditemukan data resi JNE yang valid dalam file Excel tersebut.'
+        fileType: isCsv ? 'csv' : 'excel',
+        engine: 'xlsx',
+        error: 'Tidak ditemukan baris Cnote / Nomor Resi JNE yang valid di dalam file ini.',
       };
     }
 
-    // Deduplikasi resi jika ada kembaran antar baris
     const uniqueRecords: JneDetectedRecord[] = [];
     const seen = new Set<string>();
     for (const rec of allRecords) {
@@ -333,105 +484,255 @@ export async function parseExcelJneFile(file: File): Promise<ParseResult> {
       records: uniqueRecords,
       totalDetected: uniqueRecords.length,
       fileName: file.name,
-      fileType: 'excel'
+      fileType: isCsv ? 'csv' : 'excel',
+      engine: 'xlsx',
     };
-
   } catch (err: any) {
     return {
       success: false,
       records: [],
       totalDetected: 0,
       fileName: file.name,
-      fileType: 'excel',
-      error: `Gagal membaca Excel: ${err?.message || String(err)}`
+      fileType: isCsv ? 'csv' : 'excel',
+      engine: 'xlsx',
+      error: `Gagal membaca file ${isCsv ? 'CSV' : 'Excel'}: ${err?.message || String(err)}`,
     };
   }
 }
 
 /**
- * =========================================================================
- * 2. PARSER UNTUK PDF (.pdf) via Dynamic CDN ESM pdfjs-dist
- * =========================================================================
+ * Kompres / resize gambar di browser agar ringan dikirim ke Gemini Vision API (< 1.5 MB)
+ * namun tetap tajam untuk membaca angka Cnote 15-16 digit.
  */
-export async function parsePdfJneFile(file: File): Promise<ParseResult> {
+async function convertImageFileToBase64(file: File | Blob): Promise<{ mimeType: string; data: string }> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Gagal membaca file gambar.'));
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const img = new Image();
+      img.onerror = () => {
+        // Fallback kirim raw base64 jika elemen Image gagal decode
+        const commaIdx = dataUrl.indexOf(',');
+        const mimeMatch = dataUrl.match(/^data:([^;]+);base64,/);
+        resolve({
+          mimeType: mimeMatch ? mimeMatch[1] : (file.type || 'image/png'),
+          data: commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+        });
+      };
+      img.onload = () => {
+        const MAX_DIM = 2200;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          const scale = MAX_DIM / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          const commaIdx = dataUrl.indexOf(',');
+          resolve({
+            mimeType: file.type || 'image/png',
+            data: commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+          });
+          return;
+        }
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        const outUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const commaIdx = outUrl.indexOf(',');
+        resolve({
+          mimeType: 'image/jpeg',
+          data: commaIdx !== -1 ? outUrl.slice(commaIdx + 1) : outUrl,
+        });
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Ekstrak JSON array records dari respons teks Gemini Vision
+ */
+function parseGeminiVisionJsonOutput(rawText: string, fileName: string): JneDetectedRecord[] {
+  let cleaned = String(rawText || '').trim();
+  if (!cleaned) return [];
+
+  // Buang markdown code fence jika ada
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+  let parsed: any = null;
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    
-    // Dynamic import pdfjs-dist dari CDN agar tidak membebani initial bundle
-    const pdfCdnUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
-    const pdfjsLib: any = await import(/* @vite-ignore */ pdfCdnUrl);
-
-    // Konfigurasi worker
-    if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
-      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    parsed = JSON.parse(cleaned);
+  } catch {
+    const arrStart = cleaned.indexOf('[');
+    const arrEnd = cleaned.lastIndexOf(']');
+    const objStart = cleaned.indexOf('{');
+    const objEnd = cleaned.lastIndexOf('}');
+    if (arrStart !== -1 && arrEnd > arrStart) {
+      parsed = JSON.parse(cleaned.slice(arrStart, arrEnd + 1));
+    } else if (objStart !== -1 && objEnd > objStart) {
+      parsed = JSON.parse(cleaned.slice(objStart, objEnd + 1));
     }
-
-    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
-    const pdfDoc = await loadingTask.promise;
-    const numPages = pdfDoc.numPages;
-
-    let fullLines: string[] = [];
-
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      const page = await pdfDoc.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      
-      // Kelompokkan item teks berdasarkan koordinat sumbu Y (baris yang sama)
-      const rowBuckets: { [y: number]: string[] } = {};
-      for (const item of textContent.items) {
-        if (!item.str) continue;
-        const y = Math.round(item.transform[5]); // posisi Y
-        if (!rowBuckets[y]) rowBuckets[y] = [];
-        rowBuckets[y].push(item.str);
-      }
-
-      // Urutkan dari atas ke bawah (Y besar ke kecil)
-      const sortedYs = Object.keys(rowBuckets).map(Number).sort((a, b) => b - a);
-      for (const y of sortedYs) {
-        const lineText = rowBuckets[y].join(' ').trim();
-        if (lineText) fullLines.push(lineText);
-      }
-    }
-
-    const records = extractJneRecordsFromTextLines(fullLines, file.name);
-
-    return {
-      success: records.length > 0,
-      records: records,
-      totalDetected: records.length,
-      fileName: file.name,
-      fileType: 'pdf'
-    };
-
-  } catch (err: any) {
-    return {
-      success: false,
-      records: [],
-      totalDetected: 0,
-      fileName: file.name,
-      fileType: 'pdf',
-      error: `Gagal memproses file PDF: ${err?.message || String(err)}`
-    };
   }
+
+  const rawItems: any[] = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.records)
+      ? parsed.records
+      : Array.isArray(parsed?.items)
+        ? parsed.items
+        : [];
+
+  const records: JneDetectedRecord[] = [];
+  const seen = new Set<string>();
+  const todayIso = normalizeDate(new Date());
+
+  rawItems.forEach((it, idx) => {
+    const noResi = cleanResi(it?.no_resi || it?.cnote_no || it?.cnote || it?.resi || it?.awb);
+    if (!noResi || noResi.length < 7 || seen.has(noResi)) return;
+    seen.add(noResi);
+
+    const deskripsi = String(it?.deskripsi || it?.deskripsi_pengiriman || it?.keterangan || '').trim();
+    const layanan = normalizeJneService(it?.layanan || it?.services || it?.service || DEFAULT_JNE_SERVICE);
+    const namaTujuan = String(it?.nama_tujuan || it?.receiver_name || it?.penerima || '-').trim() || '-';
+    const alamatTujuan = String(it?.alamat_tujuan || it?.destination || it?.tujuan || '-').trim() || '-';
+    const namaPengirim = String(it?.nama_pengirim || it?.shipper_name || DEFAULT_SHIPPER_NAME).trim() || DEFAULT_SHIPPER_NAME;
+    const nominal = normalizeNominal(it?.nominal ?? it?.amount ?? it?.ongkir ?? 0);
+    const tanggal = normalizeDate(it?.tanggal || it?.date) || todayIso;
+    const agen = String(it?.agen || DEFAULT_AGEN_NAME).trim() || DEFAULT_AGEN_NAME;
+
+    records.push({
+      id: `JNE-${noResi}-AI-${idx + 1}`,
+      no_resi: noResi,
+      deskripsi,
+      layanan,
+      nama_tujuan: namaTujuan,
+      alamat_tujuan: alamatTujuan,
+      nama_pengirim: namaPengirim,
+      nominal,
+      tanggal,
+      agen,
+      source_file: fileName,
+    });
+  });
+
+  return records;
+}
+
+/**
+ * Panggil endpoint /api/ai (Gemini Multimodal Vision) untuk membaca gambar/screenshot tagihan atau struk resi JNE
+ */
+async function extractJneFromBase64ViaAi(
+  images: Array<{ mimeType: string; data: string }>,
+  fileName: string
+): Promise<JneDetectedRecord[]> {
+  const systemInstruction = [
+    'Anda adalah mesin ekstraksi dokumen tagihan & resi ekspedisi JNE tingkat presisi tinggi.',
+    'Tugas Anda membaca gambar screenshot tabel tagihan JNE, spreadsheet, portal MyJNE, chat WA, atau foto struk fisik resi JNE, lalu mengekstrak SELURUH baris resi yang terlihat ke dalam JSON murni.',
+    'ATURAN KETAT:',
+    '1. Pertahankan seluruh digit Cnote No / Nomor Resi JNE apa adanya termasuk angka 0 di paling depan (contoh: "013790032629726"). JANGAN menebak digit yang tidak ada.',
+    '2. Kolom yang diekstrak per item:',
+    '   - "no_resi": string Cnote No / Nomor Resi JNE',
+    '   - "deskripsi": string Deskripsi pengiriman / catatan / referensi order jika tertulis di gambar (jika tidak ada isi "")',
+    '   - "layanan": string kode layanan JNE seperti "CTC23", "REG23", "CTCYES23", "YES23", "JTR23", "REG", "YES" (default "REG23" jika tidak terlihat)',
+    '   - "nama_tujuan": string nama penerima (Receiver Name)',
+    '   - "alamat_tujuan": string kota/kecamatan/alamat tujuan (Destination)',
+    '   - "nama_pengirim": string nama pengirim (Shipper Name, default "CCH-CHOCOCHIPS" jika tidak tertulis)',
+    '   - "nominal": integer angka murni biaya ongkir/amount dalam Rupiah tanpa titik/Rp (contoh: "Rp 18.000" -> 18000)',
+    '   - "tanggal": string tanggal pengiriman dalam format "YYYY-MM-DD" (contoh: "23/11/2026" -> "2026-11-23")',
+    '   - "agen": string nama agen (default "JNE Member" jika tidak tertulis)',
+    '3. Kembalikan HANYA objek JSON dengan format: {"records": [ ... ]} tanpa teks penjelasan lain.',
+  ].join('\n');
+
+  const parts: any[] = images.map((img) => ({
+    inlineData: {
+      mimeType: img.mimeType,
+      data: img.data,
+    },
+  }));
+  parts.push({
+    text: 'Ekstrak semua baris data resi / tagihan JNE pada gambar ini ke JSON {"records": [...]}. Pastikan angka Cnote No (termasuk angka 0 di depan), layanan, nama penerima, tujuan, nominal ongkir, dan tanggal terbaca akurat.',
+  });
+
+  const res = await fetch('/api/ai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts }],
+      systemInstruction,
+      generationConfig: {
+        responseMimeType: 'application/json',
+      },
+      speedMode: 'fast',
+      stream: false,
+    }),
+  });
+
+  if (!res.ok) {
+    const errJson = await res.json().catch(() => ({}));
+    throw new Error(errJson?.error || `AI Vision HTTP ${res.status}`);
+  }
+
+  const data = await res.json();
+  const text =
+    data?.text ||
+    data?.candidates?.[0]?.content?.parts
+      ?.map((p: any) => (p?.thought ? '' : p?.text || ''))
+      .join('') ||
+    '';
+
+  return parseGeminiVisionJsonOutput(text, fileName);
 }
 
 /**
  * =========================================================================
- * 3. PARSER UNTUK GAMBAR (.png, .jpeg, .jpg) via Dynamic Tesseract.js OCR
+ * 2. PARSER GAMBAR / SCREENSHOT (.png, .jpg, .jpeg, .webp)
+ *    Primary: Gemini Vision AI -> Fallback: Tesseract.js OCR
  * =========================================================================
  */
-export async function parseImageJneFile(file: File, onProgress?: (pct: number) => void): Promise<ParseResult> {
+export async function parseImageJneFile(
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<ParseResult> {
   try {
-    // Dynamic import Tesseract.js dari CDN
+    onProgress?.(15);
+    const base64Img = await convertImageFileToBase64(file);
+    onProgress?.(40);
+
+    try {
+      const aiRecords = await extractJneFromBase64ViaAi([base64Img], file.name);
+      onProgress?.(100);
+      if (aiRecords.length > 0) {
+        return {
+          success: true,
+          records: aiRecords,
+          totalDetected: aiRecords.length,
+          fileName: file.name,
+          fileType: 'image',
+          engine: 'gemini-vision',
+        };
+      }
+    } catch (aiErr) {
+      console.warn('[JNE Parser] Gemini Vision tidak tersedia/gagal, beralih ke OCR lokal:', aiErr);
+    }
+
+    // Fallback OCR lokal via Tesseract.js jika server AI offline / tidak terkonfigurasi
+    onProgress?.(50);
     const tesseractCdnUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js';
     const Tesseract: any = await import(/* @vite-ignore */ tesseractCdnUrl);
 
     const worker = await Tesseract.createWorker('ind+eng', 1, {
       logger: (m: any) => {
         if (m.status === 'recognizing text' && onProgress && typeof m.progress === 'number') {
-          onProgress(Math.round(m.progress * 100));
+          onProgress(50 + Math.round(m.progress * 50));
         }
-      }
+      },
     });
 
     const ret = await worker.recognize(file);
@@ -443,12 +744,13 @@ export async function parseImageJneFile(file: File, onProgress?: (pct: number) =
 
     return {
       success: records.length > 0,
-      records: records,
+      records,
       totalDetected: records.length,
       fileName: file.name,
-      fileType: 'image'
+      fileType: 'image',
+      engine: 'ocr-fallback',
+      error: records.length === 0 ? 'Tidak ditemukan nomor resi/Cnote JNE yang terbaca jelas pada gambar ini.' : undefined,
     };
-
   } catch (err: any) {
     return {
       success: false,
@@ -456,14 +758,180 @@ export async function parseImageJneFile(file: File, onProgress?: (pct: number) =
       totalDetected: 0,
       fileName: file.name,
       fileType: 'image',
-      error: `Gagal membaca gambar/OCR: ${err?.message || String(err)}`
+      error: `Gagal memproses gambar/screenshot: ${err?.message || String(err)}`,
     };
   }
 }
 
 /**
  * =========================================================================
- * 4. REGEX EXTRACTOR DARI BARIS TEKS (Untuk PDF & OCR)
+ * 3. PARSER PDF (.pdf) — Digital Text + Fallback Render Halaman ke AI Vision
+ * =========================================================================
+ */
+export async function parsePdfJneFile(
+  file: File,
+  onProgress?: (pct: number) => void
+): Promise<ParseResult> {
+  try {
+    onProgress?.(10);
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfCdnUrl = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
+    const pdfjsLib: any = await import(/* @vite-ignore */ pdfCdnUrl);
+
+    if (pdfjsLib.GlobalWorkerOptions && !pdfjsLib.GlobalWorkerOptions.workerSrc) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+    }
+
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+    const pdfDoc = await loadingTask.promise;
+    const numPages = pdfDoc.numPages;
+
+    const fullLines: string[] = [];
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDoc.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const rowBuckets: { [y: number]: Array<{ x: number; str: string }> } = {};
+
+      for (const item of textContent.items) {
+        if (!item.str) continue;
+        const y = Math.round(item.transform[5] / 3) * 3;
+        const x = Math.round(item.transform[4]);
+        if (!rowBuckets[y]) rowBuckets[y] = [];
+        rowBuckets[y].push({ x, str: item.str });
+      }
+
+      const sortedYs = Object.keys(rowBuckets).map(Number).sort((a, b) => b - a);
+      for (const y of sortedYs) {
+        const lineText = rowBuckets[y]
+          .sort((a, b) => a.x - b.x)
+          .map((it) => it.str)
+          .join('\t')
+          .trim();
+        if (lineText) fullLines.push(lineText);
+      }
+      onProgress?.(10 + Math.round((pageNum / numPages) * 45));
+    }
+
+    const textRecords = extractJneRecordsFromTextLines(fullLines, file.name);
+    if (textRecords.length > 0) {
+      onProgress?.(100);
+      return {
+        success: true,
+        records: textRecords,
+        totalDetected: textRecords.length,
+        fileName: file.name,
+        fileType: 'pdf',
+        engine: 'pdf-text',
+      };
+    }
+
+    // Jika PDF hasil scan gambar (tidak ada teks digital), render maks 4 halaman pertama ke Gemini Vision
+    const renderedImages: Array<{ mimeType: string; data: string }> = [];
+    const maxVisionPages = Math.min(numPages, 4);
+    for (let p = 1; p <= maxVisionPages; p++) {
+      const page = await pdfDoc.getPage(p);
+      const viewport = page.getViewport({ scale: 1.8 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        const commaIdx = dataUrl.indexOf(',');
+        renderedImages.push({
+          mimeType: 'image/jpeg',
+          data: commaIdx !== -1 ? dataUrl.slice(commaIdx + 1) : dataUrl,
+        });
+      }
+    }
+
+    if (renderedImages.length > 0) {
+      const visionRecords = await extractJneFromBase64ViaAi(renderedImages, file.name);
+      onProgress?.(100);
+      return {
+        success: visionRecords.length > 0,
+        records: visionRecords,
+        totalDetected: visionRecords.length,
+        fileName: file.name,
+        fileType: 'pdf',
+        engine: 'gemini-vision',
+        error: visionRecords.length === 0 ? 'Tidak ada Cnote JNE yang terdeteksi pada dokumen PDF ini.' : undefined,
+      };
+    }
+
+    return {
+      success: false,
+      records: [],
+      totalDetected: 0,
+      fileName: file.name,
+      fileType: 'pdf',
+      error: 'Tidak ditemukan data resi JNE pada file PDF ini.',
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      records: [],
+      totalDetected: 0,
+      fileName: file.name,
+      fileType: 'pdf',
+      error: `Gagal memproses file PDF: ${err?.message || String(err)}`,
+    };
+  }
+}
+
+/**
+ * =========================================================================
+ * 4. PARSER TEMPEL TEKS / BARIS SPREADSHEET (Copy-Paste dari Excel/GSheet/WA)
+ * =========================================================================
+ */
+export function parsePastedJneText(rawText: string, sourceLabel: string = 'Tempel Teks'): ParseResult {
+  const trimmed = String(rawText || '').trim();
+  if (!trimmed) {
+    return {
+      success: false,
+      records: [],
+      totalDetected: 0,
+      fileName: sourceLabel,
+      fileType: 'text',
+      engine: 'text-paste',
+      error: 'Teks tempelan masih kosong.',
+    };
+  }
+
+  // Jika berformat TSV/CSV (mengandung tab atau beberapa kolom koma)
+  const rawLines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  const hasTabs = rawLines.some((l) => l.includes('\t'));
+  if (hasTabs) {
+    const matrix = rawLines.map((l) => l.split('\t').map((c) => c.trim()));
+    const fromMatrix = extractRecordsFromMatrix(matrix, matrix, sourceLabel, '');
+    if (fromMatrix.length > 0) {
+      return {
+        success: true,
+        records: fromMatrix,
+        totalDetected: fromMatrix.length,
+        fileName: sourceLabel,
+        fileType: 'text',
+        engine: 'text-paste',
+      };
+    }
+  }
+
+  const fromLines = extractJneRecordsFromTextLines(rawLines, sourceLabel);
+  return {
+    success: fromLines.length > 0,
+    records: fromLines,
+    totalDetected: fromLines.length,
+    fileName: sourceLabel,
+    fileType: 'text',
+    engine: 'text-paste',
+    error: fromLines.length === 0 ? 'Tidak ditemukan nomor Cnote / Resi JNE yang valid dari teks yang ditempel.' : undefined,
+  };
+}
+
+/**
+ * =========================================================================
+ * 5. REGEX EXTRACTOR DARI BARIS TEKS (Untuk PDF Digital, Paste Teks & OCR)
  * =========================================================================
  */
 export function extractJneRecordsFromTextLines(lines: string[], fileName: string): JneDetectedRecord[] {
@@ -473,50 +941,55 @@ export function extractJneRecordsFromTextLines(lines: string[], fileName: string
   for (let idx = 0; idx < lines.length; idx++) {
     const line = lines[idx];
 
-    // Deteksi Resi JNE:
-    // Format 1: Diawali JNE/TJNE/01 diikuti angka, e.g. 0123456789012345
-    // Format 2: Alfanumerik 12 - 18 digit
-    const resiMatch = line.match(/\b((?:JNE|TJNE|CGK|01)[A-Z0-9]{10,18})\b/i) ||
-                      line.match(/\b([0-9]{12,18})\b/);
+    const resiMatch =
+      line.match(/\b((?:JNE|TJNE|CGK|01)[A-Z0-9]{10,18})\b/i) ||
+      line.match(/\b([0-9]{12,18})\b/);
 
     if (resiMatch) {
       const resi = cleanResi(resiMatch[1]);
       if (seenResi.has(resi) || resi.length < 10) continue;
       seenResi.add(resi);
 
-      // Cari tanggal di baris yang sama atau 1 baris sebelum/sesudahnya
       const contextLines = [lines[idx - 1] || '', line, lines[idx + 1] || ''].join(' ');
-      const dateMatch = contextLines.match(/\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})\b/) ||
-                        contextLines.match(/\b(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b/);
+      const dateMatch =
+        contextLines.match(/\b(\d{1,2}[\/\-\.]\d{1,2}[\/\-\.]\d{2,4})\b/) ||
+        contextLines.match(/\b(\d{4}[\/\-\.]\d{1,2}[\/\-\.]\d{1,2})\b/);
       const tanggal = dateMatch ? normalizeDate(dateMatch[1]) : normalizeDate(new Date());
 
-      // Cari nominal (Rp) dengan dukungan format ribuan dan desimal (, / .)
-      const nominalMatch = contextLines.match(/(?:Rp\.?|IDR|\b)\s*([0-9]{1,3}(?:[,\.][0-9]{3})+(?:[\.,][0-9]{2})?|[0-9]{4,8}(?:[\.,][0-9]{2})?)\b/i);
+      const nominalMatch = contextLines.match(
+        /(?:Rp\.?\s*|IDR\s*)([0-9]{1,3}(?:[,\.][0-9]{3})+(?:[\.,][0-9]{2})?|[0-9]{4,8})/i
+      ) || line.replace(resiMatch[1], ' ').match(/\b([0-9]{1,3}(?:[\.,][0-9]{3})+)\b/);
       const nominal = nominalMatch ? normalizeNominal(nominalMatch[1]) : 0;
 
-      // Cari layanan
-      const serviceMatch = contextLines.match(/\b(YES|REG|JTR|OKE|SPS|CTC)\b/i);
-      const layanan = serviceMatch ? serviceMatch[1].toUpperCase() : 'REG';
+      const serviceMatch = contextLines.match(/\b(CTCYES\d*|CTC\d*|REG\d*|YES\d*|JTR\d*|OKE\d*|SPS\d*)\b/i);
+      const layanan = serviceMatch ? normalizeJneService(serviceMatch[1]) : DEFAULT_JNE_SERVICE;
 
-      // Ekstraksi nama / tujuan jika ada
       let namaTujuan = '-';
       let alamatTujuan = '-';
-      const destMatch = contextLines.match(/(?:tujuan|penerima|to|dest)\s*[:\-]\s*([a-zA-Z0-9\s,\.]+)/i);
-      if (destMatch) {
-        namaTujuan = destMatch[1].trim().substring(0, 40);
+      const parts = line.split(/\t|\s{2,}/).map((p) => p.trim()).filter(Boolean);
+      if (parts.length >= 4) {
+        const resiIdx = parts.findIndex((p) => cleanResi(p) === resi);
+        if (resiIdx !== -1 && parts[resiIdx + 2]) {
+          namaTujuan = parts[resiIdx + 2];
+          if (parts[resiIdx + 3] && !/^Rp/i.test(parts[resiIdx + 3])) {
+            alamatTujuan = parts[resiIdx + 3];
+          }
+        }
       }
 
       records.push({
         id: `JNE-${resi}-${records.length + 1}`,
         no_resi: resi,
-        tanggal: tanggal,
-        nominal: nominal,
-        layanan: layanan,
+        deskripsi: '',
+        layanan,
         nama_tujuan: namaTujuan,
         alamat_tujuan: alamatTujuan,
-        deskripsi: '',
+        nama_pengirim: DEFAULT_SHIPPER_NAME,
+        nominal,
+        tanggal,
+        agen: DEFAULT_AGEN_NAME,
         source_file: fileName,
-        raw_line: line
+        raw_line: line,
       });
     }
   }
@@ -525,21 +998,33 @@ export function extractJneRecordsFromTextLines(lines: string[], fileName: string
 }
 
 /**
- * Universal Entry Point: Parser otomatis mendeteksi ekstensi file
+ * Universal Entry Point: Deteksi otomatis format file (Excel, CSV, Gambar/SS, PDF)
  */
 export async function parseJneImportFile(
   file: File,
   onProgress?: (pct: number) => void
 ): Promise<ParseResult> {
-  const ext = file.name.split('.').pop()?.toLowerCase();
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  const mime = (file.type || '').toLowerCase();
 
-  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
-    return parseExcelJneFile(file);
+  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || mime.includes('spreadsheet') || mime.includes('csv')) {
+    onProgress?.(40);
+    const res = await parseExcelJneFile(file);
+    onProgress?.(100);
+    return res;
   }
-  if (ext === 'pdf') {
-    return parsePdfJneFile(file);
+
+  if (ext === 'pdf' || mime === 'application/pdf') {
+    return parsePdfJneFile(file, onProgress);
   }
-  if (ext === 'png' || ext === 'jpg' || ext === 'jpeg') {
+
+  if (
+    ext === 'png' ||
+    ext === 'jpg' ||
+    ext === 'jpeg' ||
+    ext === 'webp' ||
+    mime.startsWith('image/')
+  ) {
     return parseImageJneFile(file, onProgress);
   }
 
@@ -549,6 +1034,6 @@ export async function parseJneImportFile(
     totalDetected: 0,
     fileName: file.name,
     fileType: 'unknown',
-    error: `Format file .${ext} tidak didukung. Harap upload Excel (.xlsx, .xls, .csv), PDF (.pdf), atau Gambar (.png, .jpg).`
+    error: `Format file .${ext || 'unknown'} belum didukung. Gunakan Excel (.xlsx/.xls), CSV (.csv), Gambar/Screenshot (.png/.jpg/.webp), atau PDF (.pdf).`,
   };
 }

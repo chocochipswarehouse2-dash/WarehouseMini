@@ -1,13 +1,13 @@
 {
-  "version": "v2.28.3",
-  "versionCode": 483,
+  "version": "v2.29.0",
+  "versionCode": 490,
   "buildDate": "24 November 2026",
-  "buildHash": "wms-261124-v483-0731",
-  "releaseTitle": "WMS v2.28.3 — Pilih Cetak Per-Size & Setup Customizer Barcode Presisi",
+  "buildHash": "wms-261124-v490-0955",
+  "releaseTitle": "WMS v2.29.0 — Renovasi Total Rekap Tagihan JNE (GSheet JNEMember 2-Way & AI Vision)",
   "releaseNotes": [
-    "Tambah fitur pilih cetak varian size tertentu di Langkah 1 (tombol size langsung dan toggle chip)",
-    "Sediakan panel customizer barcode lengkap (Format Tag Harga IDR/Rp/Polos, Ukuran QR, Font Size & Weight)",
-    "Perbaiki proporsi stiker thermal 50x20mm dan vertical center alignment"
+    "Sinkronisasi live 2 arah dengan GSheet JNEMember (Kolom D Deskripsi Pengiriman bisa diisi dari WMS maupun GSheet)",
+    "Import multi-sumber: Excel, CSV, Lampiran Gambar/Screenshot (Ctrl+V via Gemini Vision AI), PDF, & Input Manual dengan Tabel Pratinjau",
+    "Fitur Edit Lengkap seluruh kolom & Hapus Baris GSheet khusus Admin dan Warehouse dalam tampilan 2-Mode (Tabel & Kartu)"
   ],
   "minSupportedVersion": "v2.0.0"
 }

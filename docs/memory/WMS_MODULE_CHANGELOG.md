@@ -4,6 +4,21 @@
 
 ---
 
+## v2.29.0 — 24 November 2026
+**Modul**: Renovasi Total Rekap Tagihan JNE (`src/components/JneRekapView.tsx`, `src/services/jneRekapService.ts`, `src/services/jneRekapParser.ts`, `gas/jne_tagihan_backend.js`, `src/services/permissions.ts`, `.agents/skills/wms-jne-rekap-guardrails/SKILL.md`)
+- **Sinkronisasi 2 Arah Murni ke Google Sheets `JNEMember` (`gid=1026608111`)**:
+  - Merombak `gas/jne_tagihan_backend.js` & `jneRekapService.ts` agar terhubung langsung ke tab operasional `JNEMember` (`1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k`, kolom `A..K`: `No`, `Cnote No`, `Deskripsi pengiriman`, `Services`, `Receiver Name`, `Destination`, `Shipper Name`, `Amount`, `Tanggal Pengiriman`, `Agen`) lengkap dengan fallback baca JSON `gviz` bila endpoint GAS sedang sibuk.
+  - Menjaga presisi format sel GSheet: `Cnote No` diformat `@` teks sebelum tulis agar angka `0` di depan (`0137900...`) tidak terpotong, `Services` dipertahankan utuh (`CTC23`, `REG23`, `CTCYES23`, `YES23`), `Amount` disimpan sebagai angka berformat `"Rp   "#,##0`, dan `Tanggal Pengiriman` disimpan sebagai objek `Date` (`dd/mm/yyyy`).
+  - **Kolom D (`Deskripsi pengiriman`) 2-Way Safe**: Mendukung klik langsung (*inline spreadsheet edit* + tombol `Enter` simpan & otomatis turun ke baris berikutnya) serta **Isi Kolom D Massal**, menulis spesifik ke sel `D{baris}` di GSheet tanpa merusak kolom lain maupun menimpa isi Kolom D existing saat import resi baru.
+- **4 Jalur Penambahan Data & AI Vision Parser dengan Tabel Staging**:
+  - Mendukung **Import Excel/CSV (`.xlsx/.xls/.csv`)**, **Lampiran Gambar / Screenshot (`.png/.jpg/.webp` & `Ctrl+V` langsung di halaman menggunakan Gemini Vision `/api/ai` + fallback OCR)**, **PDF (`.pdf`)**, **Input Manual Satuan**, dan **Tempel Baris Spreadsheet**.
+  - Seluruh hasil ekstraksi masuk ke **Tabel Pratinjau (Staging)** dengan deteksi status `BARU` vs `ADA` di GSheet serta sel yang bisa dikoreksi sebelum disimpan.
+- **Aksi Edit Lengkap & Hapus Baris GSheet untuk Admin & Warehouse + Standar UI 2-Mode**:
+  - Menambahkan helper `canManageJneRekap` di `src/services/permissions.ts` serta endpoint `updateRecord` dan `deleteRecords` (penghapusan blok *bottom-to-top* aman indeks) khusus akun **Admin & Warehouse**.
+  - Merombak `JneRekapView.tsx` mengikuti standar WMS 2-Mode (`Tabel` Desktop + Compact List-Table Mobile zero horizontal scroll & `Kartu` Single-Elevation), `AppActionSheet` (`1 Primary CTA + ⋯`), tab kategori swipeable, dan paginasi cepat.
+
+---
+
 ## v2.28.2 — 23 November 2026
 **Modul**: Tugas Picking Completion & Outbox Sync (`src/services/supabase.ts`, `src/services/scannerOutboxService.ts`) + Upgrade Skill & SOP Agen (`.agents/skills/`, `GEMINI.md`, `docs/memory/`)
 - **Fix Bug Baris Terakhir Nyangkut `SEDANG PICKING` saat Selesai SJ (`TO.OMP.26.11.00356`)**:

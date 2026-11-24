@@ -812,7 +812,7 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                                     if (!isProductSelected) {
                                       handleSelectOnlyVariant(prod.name, vSkuUpper);
                                     } else {
-                                      handleToggleVariantSku(v.sku);
+                                      handleToggleVariantSku(prod.name, vSkuUpper);
                                     }
                                   }}
                                   className={`px-2 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
@@ -915,7 +915,7 @@ export const CsvBarcodeView: React.FC<CsvBarcodeViewProps> = ({ products, onNoti
                                 key={v.sku}
                                 type="button"
                                 title={`SKU: ${v.sku} — Klik untuk ${isActive ? 'nonaktifkan' : 'aktifkan'}`}
-                                onClick={() => handleToggleVariantSku(v.sku)}
+                                onClick={() => handleToggleVariantSku(pName, vSkuUpper)}
                                 className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 ${
                                   isActive
                                     ? 'bg-indigo-600 text-white shadow-2xs'

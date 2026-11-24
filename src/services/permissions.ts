@@ -1171,6 +1171,29 @@ export const canAccessJneRekap = (session: UserSession | null): boolean => {
   return hasPermission(session, 'menu_rekap_tagihan_jne');
 };
 
+/**
+ * Hak kelola penuh (Edit seluruh kolom & Hapus baris di GSheet JNEMember)
+ * Khusus untuk role/akun Admin dan Warehouse (bukan akun Store/Outlet).
+ */
+export const canManageJneRekap = (session: UserSession | null): boolean => {
+  if (!session) return false;
+  if (isStoreAccountSession(session)) return false;
+  if (isSuperadmin(session) || isWarehouseAccountOnly(session)) return true;
+
+  const user = String(session.username || '').trim().toLowerCase();
+  const role = String(session.role || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+  const div = String(session.divisi || '').trim().toLowerCase().replace(/[\s_-]/g, '');
+
+  if (['chocoadm', 'admin', 'warehouse', 'admin2'].includes(user)) return true;
+  if (['superadmin', 'admin', 'warehouse', 'gudang', 'headwarehouse', 'spvwarehouse'].includes(role)) {
+    return true;
+  }
+  if (['admin', 'warehouse', 'gudang'].includes(div) && canAccessJneRekap(session)) {
+    return true;
+  }
+  return false;
+};
+
 export const TOTAL_PERMISSIONS_COUNT = PERMISSION_GROUPS.reduce(
   (acc, g) => acc + g.permissions.length,
   0
