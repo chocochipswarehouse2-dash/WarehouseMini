@@ -22,6 +22,7 @@ import {
   PenerimaanProduksiItem,
   ProduksiQtyNotaRecord,
   PickingListItem,
+  PickingSplitAllocation,
   WmsUser,
   ProductItem,
   PeminjamanRecord,
@@ -5698,6 +5699,186 @@ export function mergePickerNamesWithLastActor(existingPickerName: string | undef
   return [...withoutActor, cleanActor].join(', ');
 }
 
+export function normalizePickSplits(splits?: PickingSplitAllocation[]): PickingSplitAllocation[] {
+  if (!Array.isArray(splits) || splits.length === 0) return [];
+  const merged: PickingSplitAllocation[] = [];
+  for (const sp of splits) {
+    if (!sp) continue;
+    const rawLoc = String(sp.lokasi || '').trim().toUpperCase();
+    const cleanLoc =
+      resolvePrimarySingleLocation(rawLoc) ||
+      rawLoc.split(/[,/;\n|]+/)[0]?.trim().toUpperCase() ||
+      '';
+    const qty = Math.max(0, Math.floor(Number(sp.qty) || 0));
+    const cleanPicker = String(sp.picker || '').trim();
+    if (!cleanLoc || cleanLoc === '-' || cleanLoc === '--' || qty <= 0) continue;
+    const existing = merged.find(
+      (m) =>
+        m.lokasi.toUpperCase() === cleanLoc.toUpperCase() &&
+        ((!m.picker && !cleanPicker) || (m.picker && cleanPicker && isSameOperatorIdentity(m.picker, cleanPicker)))
+    );
+    if (existing) {
+      existing.qty += qty;
+    } else {
+      merged.push({
+        lokasi: cleanLoc,
+        qty,
+        ...(cleanPicker ? { picker: cleanPicker } : {}),
+      });
+    }
+  }
+  return merged;
+}
+
+export function summarizePickSplitsLocations(splits?: PickingSplitAllocation[]): string {
+  const norm = normalizePickSplits(splits);
+  if (norm.length === 0) return '';
+  const byLoc = new Map<string, number>();
+  norm.forEach((sp) => {
+    const key = sp.lokasi.toUpperCase();
+    byLoc.set(key, (byLoc.get(key) || 0) + sp.qty);
+  });
+  const entries = Array.from(byLoc.entries());
+  if (entries.length === 1) return entries[0][0];
+  return entries.map(([loc, qty]) => `${loc} (${qty})`).join(', ');
+}
+
+export function getPickSplitsDistinctPickers(splits?: PickingSplitAllocation[]): string[] {
+  const norm = normalizePickSplits(splits);
+  const pickers: string[] = [];
+  norm.forEach((sp) => {
+    if (!sp.picker || sp.qty <= 0) return;
+    if (!pickers.some((ex) => isSameOperatorIdentity(ex, sp.picker))) {
+      pickers.push(sp.picker);
+    }
+  });
+  return pickers;
+}
+
+export function resolvePickingItemActualPicker(
+  item: PickingListItem,
+  fallbackPicker: string = 'Operator'
+): string {
+  const splitPickers = getPickSplitsDistinctPickers(item.pick_splits);
+  if (splitPickers.length > 0) {
+    return splitPickers.join(', ');
+  }
+  const pickedQty = Math.max(0, Number(item.qty_picked) || 0);
+  const itemPickers = parsePickerNamesList(item.picker_name);
+  if (pickedQty > 0) {
+    if (itemPickers.length === 1) {
+      return itemPickers[0];
+    }
+    if (item.last_picked_by && String(item.last_picked_by).trim()) {
+      // If multiple pickers are listed on item.picker_name (e.g. both picked parts of the same SKU without splits),
+      // keep itemPickers if > 1; otherwise use exact last_picked_by
+      return itemPickers.length > 1 ? itemPickers.join(', ') : String(item.last_picked_by).trim();
+    }
+    if (itemPickers.length > 0) {
+      return itemPickers.join(', ');
+    }
+  } else if (item.is_kosong || item.status === 'KOSONG') {
+    if (item.last_picked_by && String(item.last_picked_by).trim()) {
+      return String(item.last_picked_by).trim();
+    }
+    if (itemPickers.length > 0) {
+      return itemPickers[itemPickers.length - 1];
+    }
+  }
+  return itemPickers.length > 0 ? itemPickers.join(', ') : (fallbackPicker || 'Operator');
+}
+
+export function buildOutLogEntriesForPickingItem(params: {
+  cleanNoSj: string;
+  item: PickingListItem;
+  deltaQty: number;
+  alreadyOut: number;
+  fallbackPicker: string;
+  catatan: string;
+  createdAtIso: string;
+}): LogProdukItem[] {
+  const { cleanNoSj, item, deltaQty, alreadyOut, fallbackPicker, catatan, createdAtIso } = params;
+  if (deltaQty <= 0) return [];
+
+  const lanjutanTag = alreadyOut > 0 ? ' (Lanjutan)' : '';
+  const fallbackLocation =
+    resolvePrimarySingleLocation(item.lokasi_picked || '') ||
+    resolvePrimarySingleLocation(item.lokasi || '') ||
+    'Warehouse';
+  const itemOperator = resolvePickingItemActualPicker(item, fallbackPicker);
+  const splits = normalizePickSplits(item.pick_splits);
+
+  const logs: LogProdukItem[] = [];
+  if (splits.length > 0) {
+    let remainingDelta = deltaQty;
+    // If splits exceed deltaQty (e.g. continuation session carried total splits including prior session),
+    // consume the tail/latest allocations that correspond to newly picked deltaQty.
+    const totalSplitQty = splits.reduce((s, x) => s + x.qty, 0);
+    let skipPrefix = Math.max(0, totalSplitQty - deltaQty);
+
+    for (const sp of splits) {
+      if (remainingDelta <= 0) break;
+      let effectiveQty = sp.qty;
+      if (skipPrefix > 0) {
+        const consumed = Math.min(skipPrefix, effectiveQty);
+        skipPrefix -= consumed;
+        effectiveQty -= consumed;
+      }
+      if (effectiveQty <= 0) continue;
+      const allocQty = Math.min(remainingDelta, effectiveQty);
+      remainingDelta -= allocQty;
+
+      const splitLoc = resolvePrimarySingleLocation(sp.lokasi) || fallbackLocation;
+      const splitOperator = (sp.picker && sp.picker.trim()) || itemOperator || fallbackPicker || 'Operator';
+      logs.push({
+        type: 'OUT',
+        invoice: cleanNoSj,
+        sku: item.sku,
+        nama_produk: item.nama_produk || item.sku,
+        size: item.size || '',
+        area: getAreaFromLokasi(splitLoc),
+        lokasi: splitLoc,
+        qty: allocQty,
+        operator: splitOperator,
+        keterangan: `[#OUT PICKING${lanjutanTag}] Surat Jalan ${cleanNoSj} (Lokasi: ${splitLoc}) ${catatan ? `- ${catatan}` : ''}`.trim(),
+        created_at: createdAtIso,
+      });
+    }
+
+    if (remainingDelta > 0) {
+      logs.push({
+        type: 'OUT',
+        invoice: cleanNoSj,
+        sku: item.sku,
+        nama_produk: item.nama_produk || item.sku,
+        size: item.size || '',
+        area: getAreaFromLokasi(fallbackLocation),
+        lokasi: fallbackLocation,
+        qty: remainingDelta,
+        operator: itemOperator || fallbackPicker || 'Operator',
+        keterangan: `[#OUT PICKING${lanjutanTag}] Surat Jalan ${cleanNoSj} (Lokasi: ${fallbackLocation}) ${catatan ? `- ${catatan}` : ''}`.trim(),
+        created_at: createdAtIso,
+      });
+    }
+    return logs;
+  }
+
+  logs.push({
+    type: 'OUT',
+    invoice: cleanNoSj,
+    sku: item.sku,
+    nama_produk: item.nama_produk || item.sku,
+    size: item.size || '',
+    area: getAreaFromLokasi(fallbackLocation),
+    lokasi: fallbackLocation,
+    qty: deltaQty,
+    operator: itemOperator || fallbackPicker || 'Operator',
+    keterangan: `[#OUT PICKING${lanjutanTag}] Surat Jalan ${cleanNoSj} (Lokasi: ${fallbackLocation}) ${catatan ? `- ${catatan}` : ''}`.trim(),
+    created_at: createdAtIso,
+  });
+  return logs;
+}
+
 export async function fetchActiveSjRealtimeRowsSupabase(no_sj: string): Promise<PickingListItem[]> {
   const cleanNoSj = String(no_sj || '').trim().toUpperCase();
   if (!cleanNoSj) return [];
@@ -5728,6 +5909,7 @@ export async function claimOrJoinPickingSJSupabase(
     const currentRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
     const allPickers: string[] = [];
     currentRows.forEach((r) => {
+      if (r.status === 'SELESAI') return;
       parsePickerNamesList(r.picker_name).forEach((p) => {
         if (!allPickers.some((existing) => isSameOperatorIdentity(existing, p))) {
           allPickers.push(p);
@@ -5738,7 +5920,10 @@ export async function claimOrJoinPickingSJSupabase(
     const mergedPickers = hasUser ? allPickers : [...allPickers, cleanUser];
     const mergedPickerStr = mergedPickers.join(', ');
 
-    // Group non-SELESAI updates by identical payload to eliminate N+1 sequential HTTP requests
+    // Group non-SELESAI updates by identical payload to eliminate N+1 sequential HTTP requests.
+    // HARD INVARIANT (Per-Item Picker Attribution):
+    // NEVER overwrite `picker_name` on rows that already have `qty_picked > 0` or `status === 'KOSONG'`
+    // when another collaborator joins — preserve the exact operator who actually picked that SKU!
     const patchGroups = new Map<
       string,
       { status: PickingListItem['status']; picker_name: string; ids: string[]; skusWithoutId: string[] }
@@ -5751,11 +5936,11 @@ export async function claimOrJoinPickingSJSupabase(
         continue;
       }
       const rowHasPicked = (Number(row.qty_picked) || 0) > 0 || row.status === 'KOSONG';
-      let nextPickerField = mergedPickerStr;
-      if (rowHasPicked && row.last_picked_by && !isSameOperatorIdentity(row.last_picked_by, cleanUser)) {
-        nextPickerField = mergePickerNamesWithLastActor(mergedPickerStr, row.last_picked_by);
-      }
       const nextStatus: PickingListItem['status'] = row.status === 'KOSONG' ? 'KOSONG' : 'SEDANG PICKING';
+      const nextPickerField =
+        rowHasPicked && (row.picker_name || '').trim()
+          ? (row.picker_name || '').trim()
+          : mergedPickerStr;
 
       updatedRows.push({
         ...row,
@@ -5891,13 +6076,18 @@ export async function leavePickingSJSupabase(
       const rowPickers = parsePickerNamesList(row.picker_name).filter(
         (p) => !isSameOperatorIdentity(p, cleanUser)
       );
-      const nextPickerStr = rowPickers.join(', ');
-      // CRITICAL: When no active pickers remain inside the form, release 'SEDANG PICKING' -> 'PENDING' (while preserving qty_picked & KOSONG!)
+      const hasPickedOrKosong = nextQty > 0 || nextKosong;
+      // Preserve actual picker attribution on already-picked/KOSONG rows;
+      // strip leaving user only from unpicked rows.
+      const nextPickerStr = hasPickedOrKosong
+        ? (localIt ? resolvePickingItemActualPicker(localIt, row.picker_name || cleanUser) : (row.picker_name || cleanUser))
+        : rowPickers.join(', ');
+      // CRITICAL: When no active pickers remain inside the form, release 'SEDANG PICKING' -> 'PENDING' (while preserving qty_picked, KOSONG & picker attribution!)
       const nextStatus: PickingListItem['status'] = nextKosong
         ? 'KOSONG'
-        : rowPickers.length > 0
-        ? 'SEDANG PICKING'
-        : 'PENDING';
+        : isSoloLeave
+        ? 'PENDING'
+        : 'SEDANG PICKING';
 
       updatedRowMap.set(String(row.id || row.sku), {
         qty_picked: nextQty,
@@ -6380,6 +6570,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
   absoluteQty?: number;
   markKosong?: boolean;
   lokasi_picked?: string;
+  pickSplits?: PickingSplitAllocation[];
   username: string;
   currentItem?: PickingListItem;
 }): Promise<{
@@ -6437,10 +6628,28 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
     ? 'SEDANG PICKING'
     : 'PENDING';
 
-  const mergedPickerName = mergePickerNamesWithLastActor(
-    serverRow?.picker_name || params.currentItem?.picker_name,
-    cleanUser
-  );
+  // PER-ITEM PICKER ATTRIBUTION:
+  // 1. If explicit pickSplits carry distinct pickers -> use exact split pickers.
+  // 2. If transitioning from unpicked (0) -> picked (>0) or marked KOSONG from unpicked -> stamp ONLY cleanUser
+  //    (do NOT inherit unrelated collaborators who merely opened the SJ!).
+  // 3. If adding more qty on top of an already-picked item -> merge existing actual picker(s) + cleanUser.
+  const splitPickers = getPickSplitsDistinctPickers(params.pickSplits || params.currentItem?.pick_splits);
+  let nextPickerName = cleanUser;
+  if (splitPickers.length > 0 && newQty > 0) {
+    nextPickerName = splitPickers.join(', ');
+  } else if (newQty > 0 && serverQtyBefore === 0) {
+    nextPickerName = cleanUser;
+  } else if (isKosong && serverQtyBefore === 0) {
+    nextPickerName = cleanUser;
+  } else if (newQty > 0 && serverQtyBefore > 0) {
+    nextPickerName = mergePickerNamesWithLastActor(
+      serverRow?.picker_name || params.currentItem?.picker_name,
+      cleanUser
+    );
+  } else {
+    // Reset to 0 -> keep existing SJ collaborator list or cleanUser
+    nextPickerName = (serverRow?.picker_name || params.currentItem?.picker_name || cleanUser).trim();
+  }
 
   const isOverPick = newQty > qtyReq && (typeof params.delta === 'number' ? params.delta > 0 : newQty > serverQtyBefore);
 
@@ -6453,7 +6662,7 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
         {
           qty_picked: newQty,
           status: nextStatus,
-          picker_name: mergedPickerName,
+          picker_name: nextPickerName,
         },
         condition
       );
@@ -6470,8 +6679,9 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
         ...baseItem,
         qty_picked: newQty,
         lokasi_picked: params.lokasi_picked || baseItem.lokasi_picked,
+        pick_splits: params.pickSplits || baseItem.pick_splits,
         status: nextStatus,
-        picker_name: mergedPickerName,
+        picker_name: nextPickerName,
         last_picked_by: newQty > 0 || isKosong ? cleanUser : undefined,
         is_kosong: isKosong,
       }
@@ -6503,91 +6713,66 @@ export async function syncSinglePickingItemRealtimeSupabase(params: {
   };
 }
 
+export interface PickingListHistoryMeta {
+  totalRows: number | null;
+  loadedOffset: number;
+  hasMore: boolean;
+}
+
+const PICKING_LIST_SELECT =
+  'select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking';
+
 let memoryPickingListCache: PickingListItem[] | null = null;
 let memoryPickingListLastFetch = 0;
 let inflightPickingListPromise: Promise<PickingListItem[]> | null = null;
+let pickingListHistoryMeta: PickingListHistoryMeta = {
+  totalRows: null,
+  loadedOffset: 0,
+  hasMore: false,
+};
+
+export function getPickingListHistoryMeta(): PickingListHistoryMeta {
+  return { ...pickingListHistoryMeta };
+}
 
 export function invalidatePickingListCache(): void {
   memoryPickingListCache = null;
   memoryPickingListLastFetch = 0;
 }
 
-export async function fetchPickingListFromSupabase(forceRefresh = false): Promise<PickingListItem[]> {
-  if (!forceRefresh && memoryPickingListCache && memoryPickingListCache.length > 0 && Date.now() - memoryPickingListLastFetch < 5 * 60 * 1000) {
-    return memoryPickingListCache;
+async function fetchPickingListPageWithExactCount(
+  query: string
+): Promise<{ rows: any[]; totalRows: number | null }> {
+  const { url, key } = getStoredSupabaseConfig();
+  if (!url || !key) throw new Error('Konfigurasi Supabase belum diatur');
+  const cleanUrl = url.replace(/\/+$/, '');
+  const resp = await fetch(`${cleanUrl}/rest/v1/picking_list?${query}`, {
+    method: 'GET',
+    headers: {
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+      Accept: 'application/json',
+      Prefer: 'count=exact',
+    },
+  });
+  if (!resp.ok) {
+    throw new Error(`PostgREST picking_list error ${resp.status}`);
   }
-  if (!forceRefresh && inflightPickingListPromise) {
-    return inflightPickingListPromise;
-  }
+  const contentRange = resp.headers.get('content-range') || '';
+  const totalMatch = contentRange.match(/\/(\d+)$/);
+  const totalRows = totalMatch ? parseInt(totalMatch[1], 10) : null;
+  const rows = await resp.json();
+  return {
+    rows: Array.isArray(rows) ? rows : [],
+    totalRows: Number.isFinite(totalRows) ? totalRows : null,
+  };
+}
 
-  const runFetch = async (): Promise<PickingListItem[]> => {
-    const itemsMap = new Map<string, PickingListItem>();
-
-  // Retrieve persistent set of completed Surat Jalan & offline outbox SJs
-  const storedCompletedSJs = new Set<string>();
-  const pendingOutboxSJs = new Set<string>();
-  try {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const cStr = localStorage.getItem('wms_completed_sjs_set');
-      if (cStr) {
-        const arr = JSON.parse(cStr);
-        if (Array.isArray(arr)) {
-          arr.forEach((s) => storedCompletedSJs.add(String(s).toUpperCase().trim()));
-        }
-      }
-      const outboxStr = localStorage.getItem('wms_picking_outbox_v1');
-      if (outboxStr) {
-        const outboxArr = JSON.parse(outboxStr);
-        if (Array.isArray(outboxArr)) {
-          outboxArr.forEach((b: any) => {
-            if (b?.no_sj) pendingOutboxSJs.add(String(b.no_sj).toUpperCase().trim());
-          });
-        }
-      }
-    }
-  } catch {}
-
-  const PICKING_SELECT = 'select=id,no_sj,tanggal,tujuan,sku,nama_produk,qty_req,qty_picked,lokasi,status,picker_name,created_at,invoice_picking';
-
-  // Fetch recent picking_list rows + active (non-SELESAI) rows concurrently.
-  // HARD GUARD: NEVER auto-insert rows from the `peminjaman` table during a read/fetch!
-  // PeminjamanView.tsx explicitly inserts into `picking_list` on SPS creation.
-  // Auto-syncing from `peminjaman` here caused old completed SPS/PJM records (that fell
-  // outside the limit=800 window) to be re-inserted as PENDING duplicates infinitely.
-  const [recentRes, activeRes] = await Promise.allSettled([
-    supabaseFetch<any[]>('picking_list', 'GET', null, `${PICKING_SELECT}&order=created_at.desc&limit=800`),
-    supabaseFetch<any[]>('picking_list', 'GET', null, `${PICKING_SELECT}&status=neq.SELESAI&order=created_at.desc&limit=500`)
-  ]);
-
-  const combinedRows: any[] = [];
-  if (recentRes.status === 'fulfilled' && Array.isArray(recentRes.value)) {
-    combinedRows.push(...recentRes.value);
-  } else if (recentRes.status === 'rejected') {
-    throw recentRes.reason;
-  }
-  if (activeRes.status === 'fulfilled' && Array.isArray(activeRes.value)) {
-    combinedRows.push(...activeRes.value);
-  }
-
-  // If Supabase explicitly reports an SJ as active (reopened for continuation picking) and it is NOT
-  // queued in our local offline outbox, prune it from storedCompletedSJs so reopened SJs stay active across devices.
-  const reopenedRemoteSJs = new Set<string>();
-  for (const r of combinedRows) {
-    const sjKey = String(r?.no_sj || '').toUpperCase().trim();
-    const st = String(r?.status || '').toUpperCase().trim();
-    if (sjKey && st && st !== 'SELESAI' && storedCompletedSJs.has(sjKey) && !pendingOutboxSJs.has(sjKey)) {
-      reopenedRemoteSJs.add(sjKey);
-    }
-  }
-  if (reopenedRemoteSJs.size > 0) {
-    reopenedRemoteSJs.forEach((sjKey) => storedCompletedSJs.delete(sjKey));
-    try {
-      if (typeof window !== 'undefined' && window.localStorage) {
-        localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(storedCompletedSJs)));
-      }
-    } catch {}
-  }
-
+function deduplicateAndParsePickingRows(
+  combinedRows: any[],
+  pendingOutboxSJs: Set<string>
+): PickingListItem[] {
+  const itemsMap = new Map<string, PickingListItem>();
   const getStatusRank = (st?: string): number => {
     const s = String(st || '').toUpperCase().trim();
     if (s === 'SELESAI') return 3;
@@ -6621,9 +6806,122 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
     }
   }
 
-    const result = Array.from(itemsMap.values());
-    // Sort newest first
-    result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  const result = Array.from(itemsMap.values());
+  result.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  return result;
+}
+
+export async function fetchPickingListFromSupabase(forceRefresh = false): Promise<PickingListItem[]> {
+  if (!forceRefresh && memoryPickingListCache && memoryPickingListCache.length > 0 && Date.now() - memoryPickingListLastFetch < 5 * 60 * 1000) {
+    return memoryPickingListCache;
+  }
+  if (!forceRefresh && inflightPickingListPromise) {
+    return inflightPickingListPromise;
+  }
+
+  const runFetch = async (): Promise<PickingListItem[]> => {
+    // Retrieve persistent set of completed Surat Jalan & offline outbox SJs
+    const storedCompletedSJs = new Set<string>();
+    const pendingOutboxSJs = new Set<string>();
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const cStr = localStorage.getItem('wms_completed_sjs_set');
+        if (cStr) {
+          const arr = JSON.parse(cStr);
+          if (Array.isArray(arr)) {
+            arr.forEach((s) => storedCompletedSJs.add(String(s).toUpperCase().trim()));
+          }
+        }
+        const outboxStr = localStorage.getItem('wms_picking_outbox_v1');
+        if (outboxStr) {
+          const outboxArr = JSON.parse(outboxStr);
+          if (Array.isArray(outboxArr)) {
+            outboxArr.forEach((b: any) => {
+              if (b?.no_sj) pendingOutboxSJs.add(String(b.no_sj).toUpperCase().trim());
+            });
+          }
+        }
+      }
+    } catch {}
+
+    const INITIAL_PAGE_LIMIT = 1000;
+
+    // Fetch recent picking_list rows (with exact total count) + all active (non-SELESAI) rows concurrently.
+    // HARD GUARD: NEVER auto-insert rows from `peminjaman` during read/fetch.
+    const [recentRes, activeRes] = await Promise.allSettled([
+      fetchPickingListPageWithExactCount(
+        `${PICKING_LIST_SELECT}&order=created_at.desc&limit=${INITIAL_PAGE_LIMIT}`
+      ),
+      supabaseFetch<any[]>(
+        'picking_list',
+        'GET',
+        null,
+        `${PICKING_LIST_SELECT}&status=neq.SELESAI&order=created_at.desc&limit=1000`
+      ),
+    ]);
+
+    const combinedRows: any[] = [];
+    let recentRows: any[] = [];
+    let totalRows: number | null = null;
+    if (recentRes.status === 'fulfilled') {
+      recentRows = recentRes.value.rows || [];
+      totalRows = recentRes.value.totalRows;
+      combinedRows.push(...recentRows);
+    } else {
+      throw recentRes.reason;
+    }
+    if (activeRes.status === 'fulfilled' && Array.isArray(activeRes.value)) {
+      combinedRows.push(...activeRes.value);
+    }
+
+    // TAIL-SJ BOUNDARY COMPLETENESS GUARD:
+    // If a large SJ sits on the 1000-row cutoff boundary, fetch the rest of that tail SJ
+    // so it NEVER renders with partial/truncated SKU counts.
+    if (recentRows.length >= INITIAL_PAGE_LIMIT) {
+      const tailSj = String(recentRows[recentRows.length - 1]?.no_sj || '').trim().toUpperCase();
+      if (tailSj) {
+        try {
+          const tailRows = await supabaseFetch<any[]>(
+            'picking_list',
+            'GET',
+            null,
+            `${PICKING_LIST_SELECT}&no_sj=ilike.${encodeURIComponent(tailSj)}&limit=1000`
+          );
+          if (Array.isArray(tailRows) && tailRows.length > 0) {
+            combinedRows.push(...tailRows);
+          }
+        } catch {}
+      }
+    }
+
+    pickingListHistoryMeta = {
+      totalRows,
+      loadedOffset: recentRows.length,
+      hasMore:
+        totalRows !== null
+          ? recentRows.length < totalRows
+          : recentRows.length >= INITIAL_PAGE_LIMIT,
+    };
+
+    // Prune remotely reopened SJs from local completed set so continuation picking stays active across devices
+    const reopenedRemoteSJs = new Set<string>();
+    for (const r of combinedRows) {
+      const sjKey = String(r?.no_sj || '').toUpperCase().trim();
+      const st = String(r?.status || '').toUpperCase().trim();
+      if (sjKey && st && st !== 'SELESAI' && storedCompletedSJs.has(sjKey) && !pendingOutboxSJs.has(sjKey)) {
+        reopenedRemoteSJs.add(sjKey);
+      }
+    }
+    if (reopenedRemoteSJs.size > 0) {
+      reopenedRemoteSJs.forEach((sjKey) => storedCompletedSJs.delete(sjKey));
+      try {
+        if (typeof window !== 'undefined' && window.localStorage) {
+          localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(storedCompletedSJs)));
+        }
+      } catch {}
+    }
+
+    const result = deduplicateAndParsePickingRows(combinedRows, pendingOutboxSJs);
     memoryPickingListCache = result;
     memoryPickingListLastFetch = Date.now();
     try {
@@ -6636,6 +6934,101 @@ export async function fetchPickingListFromSupabase(forceRefresh = false): Promis
     inflightPickingListPromise = null;
   });
   return inflightPickingListPromise;
+}
+
+/**
+ * Paginated on-demand history loader for `picking_list` (minimal egress: loads older rows only when requested).
+ * Automatically completes any SJ sliced at the page boundary.
+ */
+export async function fetchPickingListHistoryPageSupabase(
+  offset: number,
+  limit: number = 1000
+): Promise<{
+  items: PickingListItem[];
+  nextOffset: number;
+  hasMore: boolean;
+  totalRows: number | null;
+}> {
+  const safeOffset = Math.max(0, Math.floor(offset));
+  const safeLimit = Math.max(100, Math.min(1500, Math.floor(limit)));
+  const { rows, totalRows } = await fetchPickingListPageWithExactCount(
+    `${PICKING_LIST_SELECT}&order=created_at.desc&limit=${safeLimit}&offset=${safeOffset}`
+  );
+
+  const combined = [...rows];
+  if (rows.length >= safeLimit) {
+    const tailSj = String(rows[rows.length - 1]?.no_sj || '').trim().toUpperCase();
+    if (tailSj) {
+      try {
+        const tailRows = await supabaseFetch<any[]>(
+          'picking_list',
+          'GET',
+          null,
+          `${PICKING_LIST_SELECT}&no_sj=ilike.${encodeURIComponent(tailSj)}&limit=1000`
+        );
+        if (Array.isArray(tailRows) && tailRows.length > 0) {
+          combined.push(...tailRows);
+        }
+      } catch {}
+    }
+  }
+
+  const nextOffset = safeOffset + rows.length;
+  const hasMore =
+    totalRows !== null ? nextOffset < totalRows : rows.length >= safeLimit;
+
+  pickingListHistoryMeta = {
+    totalRows: totalRows ?? pickingListHistoryMeta.totalRows,
+    loadedOffset: Math.max(pickingListHistoryMeta.loadedOffset, nextOffset),
+    hasMore,
+  };
+
+  return {
+    items: deduplicateAndParsePickingRows(combined, new Set()),
+    nextOffset,
+    hasMore,
+    totalRows,
+  };
+}
+
+/**
+ * Lightweight cloud archive search across ALL historical `picking_list` rows without downloading the full table.
+ * Step 1: Tiny `select=no_sj` probe finds matching SJ numbers (~2-5 KB).
+ * Step 2: Hydrates full rows ONLY for the matched SJs (max 25 SJs per search).
+ */
+export async function searchPickingListHistorySupabase(query: string): Promise<PickingListItem[]> {
+  const cleanQ = String(query || '').trim().replace(/[,()*]/g, '');
+  if (cleanQ.length < 2) return [];
+  const pattern = `*${cleanQ}*`;
+  const orFilter = `or=(no_sj.ilike.${encodeURIComponent(pattern)},tujuan.ilike.${encodeURIComponent(pattern)},sku.ilike.${encodeURIComponent(pattern)},nama_produk.ilike.${encodeURIComponent(pattern)},picker_name.ilike.${encodeURIComponent(pattern)})`;
+
+  const probeRows = await supabaseFetch<Array<{ no_sj?: string }>>(
+    'picking_list',
+    'GET',
+    null,
+    `select=no_sj&${orFilter}&order=created_at.desc&limit=250`
+  );
+  if (!Array.isArray(probeRows) || probeRows.length === 0) return [];
+
+  const matchedSjs: string[] = [];
+  for (const r of probeRows) {
+    const sj = String(r?.no_sj || '').trim();
+    if (sj && !matchedSjs.some((ex) => ex.toUpperCase() === sj.toUpperCase())) {
+      matchedSjs.push(sj);
+      if (matchedSjs.length >= 25) break;
+    }
+  }
+  if (matchedSjs.length === 0) return [];
+
+  const inExpr = matchedSjs.map((s) => `"${s.replace(/"/g, '')}"`).join(',');
+  const fullRows = await supabaseFetch<any[]>(
+    'picking_list',
+    'GET',
+    null,
+    `${PICKING_LIST_SELECT}&no_sj=in.(${encodeURIComponent(inExpr)})&order=created_at.desc&limit=2000`
+  );
+  if (!Array.isArray(fullRows)) return [];
+  return deduplicateAndParsePickingRows(fullRows, new Set());
 }
 
 export async function savePickingItemToSupabase(item: PickingListItem): Promise<boolean> {
@@ -6711,15 +7104,16 @@ export async function completePickingSuratJalanSupabase(
   const nowIso = new Date().toISOString();
   const cleanNoSj = (no_sj || '').trim().toUpperCase();
 
-  // Combine all participating pickers from items + current submitter
+  // Combine all participating pickers from items + pick_splits + current submitter
   const combinedPickersSet = new Set<string>();
   items.forEach((it) => {
+    getPickSplitsDistinctPickers(it.pick_splits).forEach((p) => combinedPickersSet.add(p));
     parsePickerNamesList(it.picker_name).forEach((p) => combinedPickersSet.add(p));
   });
   parsePickerNamesList(pickerName).forEach((p) => combinedPickersSet.add(p));
   const finalPickerName = Array.from(combinedPickersSet).join(', ') || pickerName || 'Operator';
 
-  // 1. ALWAYS update local cache first so work is never lost
+  // 1. ALWAYS update local cache first so work is never lost (preserving per-item picker & multi-location summary!)
   try {
     const cached: PickingListItem[] = JSON.parse(localStorage.getItem('wms_picking_cache') || '[]');
     
@@ -6728,11 +7122,16 @@ export async function completePickingSuratJalanSupabase(
       if (c.no_sj && c.no_sj.trim().toUpperCase() === cleanNoSj) {
         const matchingItem = items.find((it) => (it.id && it.id === c.id) || it.sku.toUpperCase() === c.sku.toUpperCase());
         if (matchingItem) {
+          const splitSummary = summarizePickSplitsLocations(matchingItem.pick_splits);
+          const itemPicker = resolvePickingItemActualPicker(matchingItem, finalPickerName);
           return {
             ...c,
             qty_picked: matchingItem.qty_picked,
+            lokasi: splitSummary || matchingItem.lokasi_picked || c.lokasi,
+            lokasi_picked: matchingItem.lokasi_picked,
+            pick_splits: matchingItem.pick_splits,
             status: 'SELESAI' as const,
-            picker_name: finalPickerName,
+            picker_name: itemPicker,
             catatan: catatan || matchingItem.catatan || c.catatan || '',
           };
         }
@@ -6744,6 +7143,7 @@ export async function completePickingSuratJalanSupabase(
     for (const unexp of unexpectedItems) {
       const exists = updatedCache.some((c) => c.no_sj?.trim().toUpperCase() === cleanNoSj && c.sku.toUpperCase() === unexp.sku.toUpperCase());
       if (!exists) {
+        const unexpPicker = resolvePickingItemActualPicker(unexp, finalPickerName);
         updatedCache.unshift({
           id: `unexp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
           no_sj: cleanNoSj,
@@ -6754,9 +7154,10 @@ export async function completePickingSuratJalanSupabase(
           size: unexp.size || '-',
           qty_req: 0,
           qty_picked: unexp.qty_picked,
-          lokasi: unexp.lokasi || '-',
+          lokasi: summarizePickSplitsLocations(unexp.pick_splits) || unexp.lokasi_picked || unexp.lokasi || '-',
+          pick_splits: unexp.pick_splits,
           status: 'SELESAI',
-          picker_name: finalPickerName,
+          picker_name: unexpPicker,
           catatan: `[SALAH AMBIL / TAMBAHAN] ${catatan || ''}`.trim(),
           created_at: nowIso,
         });
@@ -6794,7 +7195,7 @@ export async function completePickingSuratJalanSupabase(
   } catch {}
 
   // 2. Sync to log_produk (OUT) automatically using SKU-level delta check against existing OUT logs
-  //    so continuation picking ONLY deducts newly picked qty and NEVER double-deducts prior sessions!
+  //    Supports multi-location splits AND per-item / per-split operator attribution!
   if (syncOutToLog && !alreadyCompletedRemotely) {
     try {
       const existingOutBySku = await fetchLoggedOutQtyBySkuForSj(cleanNoSj);
@@ -6810,24 +7211,16 @@ export async function completePickingSuratJalanSupabase(
         existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
         if (deltaQty <= 0) continue;
 
-        const actualLocation =
-          resolvePrimarySingleLocation(it.lokasi_picked || '') ||
-          resolvePrimarySingleLocation(it.lokasi || '') ||
-          'Warehouse';
-        const lanjutanTag = alreadyOut > 0 ? ' (Lanjutan)' : '';
-        logsOut.push({
-          type: 'OUT',
-          invoice: cleanNoSj,
-          sku: it.sku,
-          nama_produk: it.nama_produk || it.sku,
-          size: it.size || '',
-          area: getAreaFromLokasi(actualLocation),
-          lokasi: actualLocation,
-          qty: deltaQty,
-          operator: finalPickerName,
-          keterangan: `[#OUT PICKING${lanjutanTag}] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${catatan ? `- ${catatan}` : ''}`.trim(),
-          created_at: nowIso,
+        const itemLogs = buildOutLogEntriesForPickingItem({
+          cleanNoSj,
+          item: it,
+          deltaQty,
+          alreadyOut,
+          fallbackPicker: finalPickerName,
+          catatan,
+          createdAtIso: nowIso,
         });
+        logsOut.push(...itemLogs);
       }
       if (logsOut.length > 0) {
         await insertLogProduk(logsOut);
@@ -6839,6 +7232,7 @@ export async function completePickingSuratJalanSupabase(
   }
 
   // 3. Update Supabase picking_list table (bounded parallel chunks + retry + SJ-wide orphan sweep)
+  //    Preserves PER-SKU picker_name & multi-location rack breakdown on every row!
   try {
     const patchSingleItemToSelesai = async (item: PickingListItem): Promise<boolean> => {
       const condition =
@@ -6846,13 +7240,23 @@ export async function completePickingSuratJalanSupabase(
           ? `id=eq.${item.id}`
           : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
+      const itemPicker = resolvePickingItemActualPicker(item, finalPickerName);
+      const splitLocSummary = summarizePickSplitsLocations(item.pick_splits);
+      const pickedLocToSave =
+        (Number(item.qty_picked) || 0) > 0
+          ? splitLocSummary || resolvePrimarySingleLocation(item.lokasi_picked || '') || ''
+          : '';
+
       const attemptPatch = async (): Promise<boolean> => {
         try {
           const payload: Record<string, any> = {
             qty_picked: item.qty_picked,
             status: 'SELESAI',
-            picker_name: finalPickerName,
+            picker_name: itemPicker,
           };
+          if (pickedLocToSave) {
+            payload.lokasi = pickedLocToSave;
+          }
           if (catatan) {
             payload.catatan = catatan;
           }
@@ -6862,16 +7266,15 @@ export async function completePickingSuratJalanSupabase(
           const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
           if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
             try {
-              await supabaseFetch(
-                'picking_list',
-                'PATCH',
-                {
-                  qty_picked: item.qty_picked,
-                  status: 'SELESAI',
-                  picker_name: finalPickerName,
-                },
-                condition
-              );
+              const minimalPayload: Record<string, any> = {
+                qty_picked: item.qty_picked,
+                status: 'SELESAI',
+                picker_name: itemPicker,
+              };
+              if (pickedLocToSave) {
+                minimalPayload.lokasi = pickedLocToSave;
+              }
+              await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
               return true;
             } catch (innerErr) {
               console.warn(`Supabase patch failed for item ${item.sku}:`, innerErr);

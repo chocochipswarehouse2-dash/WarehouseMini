@@ -5,6 +5,7 @@ import {
   PenerimaanProduksiItem,
   PenerimaanRecountLogItem,
   PickingListItem,
+  PickingSplitAllocation,
   PutawayTask,
   SystemDoc
 } from '../types';
@@ -23,7 +24,10 @@ import {
   invalidatePenerimaanProduksiCache,
   insertPickingListRowsToSupabase,
   syncSinglePickingItemRealtimeSupabase,
-  resolvePrimarySingleLocation
+  resolvePrimarySingleLocation,
+  buildOutLogEntriesForPickingItem,
+  resolvePickingItemActualPicker,
+  summarizePickSplitsLocations
 } from './supabase';
 import {
   pushMasterRecountDeltaToGoogleSheet,
@@ -1182,24 +1186,16 @@ export async function syncAllPickingOutboxBatches(): Promise<{
               existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
               if (deltaQty <= 0) continue;
 
-              const actualLocation =
-                resolvePrimarySingleLocation(it.lokasi_picked || '') ||
-                resolvePrimarySingleLocation(it.lokasi || '') ||
-                'Warehouse';
-              const lanjutanTag = alreadyOut > 0 ? ' (Lanjutan)' : '';
-              logsOut.push({
-                type: 'OUT',
-                invoice: cleanNoSj,
-                sku: it.sku,
-                nama_produk: it.nama_produk || it.sku,
-                size: it.size || '',
-                area: getAreaFromLokasi(actualLocation),
-                lokasi: actualLocation,
-                qty: deltaQty,
-                operator: batch.pickerName || 'Picker',
-                keterangan: `[#OUT PICKING${lanjutanTag}] Surat Jalan ${cleanNoSj} (Lokasi: ${actualLocation}) ${batch.catatan ? `- ${batch.catatan}` : ''}`.trim(),
-                created_at: batch.createdAtIso || new Date().toISOString()
+              const itemLogs = buildOutLogEntriesForPickingItem({
+                cleanNoSj,
+                item: it,
+                deltaQty,
+                alreadyOut,
+                fallbackPicker: batch.pickerName || 'Picker',
+                catatan: batch.catatan || '',
+                createdAtIso: batch.createdAtIso || new Date().toISOString()
               });
+              logsOut.push(...itemLogs);
             }
 
             if (logsOut.length > 0) {
@@ -1228,12 +1224,22 @@ export async function syncAllPickingOutboxBatches(): Promise<{
                     ? `id=eq.${item.id}`
                     : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
+                const itemPicker = resolvePickingItemActualPicker(item, batch.pickerName || 'Operator');
+                const splitLocSummary = summarizePickSplitsLocations(item.pick_splits);
+                const pickedLocToSave =
+                  (Number(item.qty_picked) || 0) > 0
+                    ? splitLocSummary || resolvePrimarySingleLocation(item.lokasi_picked || '') || ''
+                    : '';
+
                 try {
                   const payload: Record<string, any> = {
                     qty_picked: item.qty_picked,
                     status: 'SELESAI',
-                    picker_name: batch.pickerName
+                    picker_name: itemPicker
                   };
+                  if (pickedLocToSave) {
+                    payload.lokasi = pickedLocToSave;
+                  }
                   if (batch.catatan) {
                     payload.catatan = batch.catatan;
                   }
@@ -1241,11 +1247,14 @@ export async function syncAllPickingOutboxBatches(): Promise<{
                 } catch (patchErr: any) {
                   const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
                   if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
-                    const minimalPayload = {
+                    const minimalPayload: Record<string, any> = {
                       qty_picked: item.qty_picked,
                       status: 'SELESAI',
-                      picker_name: batch.pickerName
+                      picker_name: itemPicker
                     };
+                    if (pickedLocToSave) {
+                      minimalPayload.lokasi = pickedLocToSave;
+                    }
                     await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
                   } else {
                     throw patchErr;
@@ -1283,9 +1292,12 @@ export async function syncAllPickingOutboxBatches(): Promise<{
             nama_produk: unexp.nama_produk || unexp.sku,
             qty_req: 0,
             qty_picked: unexp.qty_picked,
-            lokasi: resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
+            lokasi:
+              summarizePickSplitsLocations(unexp.pick_splits) ||
+              resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') ||
+              '-',
             status: 'SELESAI',
-            picker_name: batch.pickerName,
+            picker_name: resolvePickingItemActualPicker(unexp, batch.pickerName || 'Operator'),
             created_at: nowIso
           }));
           const ok = await insertPickingListRowsToSupabase(unexpPayloads);
@@ -1356,6 +1368,7 @@ export interface PickingItemSyncMutation {
   absoluteQty?: number;
   markKosong?: boolean;
   lokasi_picked: string;
+  pick_splits?: PickingSplitAllocation[];
   username: string;
   currentItem?: PickingListItem;
   updatedAt: number;
@@ -1444,6 +1457,7 @@ export function enqueuePickingItemSyncMutation(params: {
   absoluteQty?: number;
   markKosong?: boolean;
   lokasi_picked: string;
+  pick_splits?: PickingSplitAllocation[];
   username: string;
   currentItem?: PickingListItem;
 }): PickingItemSyncMutation[] {
@@ -1468,8 +1482,9 @@ export function enqueuePickingItemSyncMutation(params: {
         absoluteQty: Math.max(0, (Number(existing.absoluteQty) || 0) + params.delta),
         markKosong: false,
         lokasi_picked: params.lokasi_picked || existing.lokasi_picked,
+        pick_splits: params.pick_splits ?? existing.pick_splits,
         username: params.username || existing.username,
-        currentItem: existing.currentItem || params.currentItem,
+        currentItem: params.currentItem || existing.currentItem,
         updatedAt: nowTs,
       };
     } else if (existing?.mode === 'delta') {
@@ -1484,8 +1499,9 @@ export function enqueuePickingItemSyncMutation(params: {
           delta: combinedDelta,
           markKosong: false,
           lokasi_picked: params.lokasi_picked || existing.lokasi_picked,
+          pick_splits: params.pick_splits ?? existing.pick_splits,
           username: params.username || existing.username,
-          currentItem: existing.currentItem || params.currentItem,
+          currentItem: params.currentItem || existing.currentItem,
           updatedAt: nowTs,
         };
       }
@@ -1499,6 +1515,7 @@ export function enqueuePickingItemSyncMutation(params: {
         delta: params.delta,
         markKosong: Boolean(params.markKosong),
         lokasi_picked: params.lokasi_picked || '',
+        pick_splits: params.pick_splits,
         username: params.username || 'Operator',
         currentItem: params.currentItem,
         updatedAt: nowTs,
@@ -1514,8 +1531,9 @@ export function enqueuePickingItemSyncMutation(params: {
       absoluteQty: Math.max(0, Number(params.absoluteQty ?? 0) || 0),
       markKosong: Boolean(params.markKosong),
       lokasi_picked: params.lokasi_picked || existing?.lokasi_picked || '',
+      pick_splits: params.pick_splits ?? existing?.pick_splits,
       username: params.username || existing?.username || 'Operator',
-      currentItem: existing?.currentItem || params.currentItem,
+      currentItem: params.currentItem || existing?.currentItem,
       updatedAt: nowTs,
     };
   }
@@ -1564,6 +1582,7 @@ export async function flushPendingPickingItemSyncQueue(): Promise<{
         absoluteQty: snapshot.mode === 'absolute' ? snapshot.absoluteQty : undefined,
         markKosong: snapshot.markKosong,
         lokasi_picked: snapshot.lokasi_picked,
+        pickSplits: snapshot.pick_splits,
         username: snapshot.username,
         currentItem: snapshot.currentItem,
       });

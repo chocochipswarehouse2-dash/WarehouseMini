@@ -1,13 +1,11 @@
 {
-  "version": "v2.29.2",
-  "versionCode": 492,
-  "buildDate": "24 November 2026",
-  "buildHash": "wms-261124-v492-1049",
-  "releaseTitle": "WMS v2.29.2 — Filter Area Sumber Picking pada Keranjang Order",
+  "version": "v2.30.0",
+  "versionCode": 500,
+  "buildDate": "25 November 2026",
+  "buildHash": "wms-261125-v500-0114",
+  "releaseTitle": "WMS v2.30.0 — Riwayat Picking Lengkap, Multi-Lokasi Split & Picker Per-Produk",
   "releaseNotes": [
-    "Tambah filter Area Sumber Picking di Keranjang Order (Warehouse, Blok F, Kolian, Aksesoris, Transit, Perbaikan, Anomali)",
-    "Pencarian produk, impor CSV/Excel, lokasi rak & stok di keranjang otomatis tersaring sesuai area terpilih",
-    "Teruskan filter source_area hingga ke Modal Distribusi Picking (Tugas App, Pesan WA Grup, & Cetak A4)"
+    "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
   ],
   "minSupportedVersion": "v2.0.0"
 }

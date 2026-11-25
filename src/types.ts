@@ -815,6 +815,12 @@ export interface SimpanPenerimaanPayload {
 
 export type PickingStatus = 'PENDING' | 'SEDANG PICKING' | 'TERCETAK' | 'SELESAI' | 'KOSONG';
 
+export interface PickingSplitAllocation {
+  lokasi: string;
+  qty: number;
+  picker?: string;
+}
+
 export interface PickingListItem {
   id?: string | number;
   invoice_picking?: string;
@@ -829,6 +835,7 @@ export interface PickingListItem {
   prev_qty_picked?: number;
   lokasi: string;
   lokasi_picked?: string;
+  pick_splits?: PickingSplitAllocation[];
   status: PickingStatus;
   picker_name?: string;
   last_picked_by?: string;

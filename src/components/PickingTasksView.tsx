@@ -67,6 +67,7 @@ import { showGlobalLoading, hideGlobalLoading } from '../utils/globalLoading';
 import { safeLocalStorageSet, safeLocalStorageRemove, clearHeavyCaches } from '../utils/safeStorage';
 import {
   PickingListItem,
+  PickingSplitAllocation,
   PickingSuratJalanGroup,
   ProductItem,
   RekapStatusType,
@@ -76,6 +77,10 @@ import {
 import {
   supabaseFetch,
   fetchPickingListFromSupabase,
+  fetchPickingListHistoryPageSupabase,
+  searchPickingListHistorySupabase,
+  getPickingListHistoryMeta,
+  PickingListHistoryMeta,
   completePickingSuratJalanSupabase,
   createPickingSuratJalanSupabase,
   savePickingBatchToSupabase,
@@ -89,6 +94,10 @@ import {
   extractPickingItemFromRow,
   parsePickerNamesList,
   mergePickerNamesWithLastActor,
+  normalizePickSplits,
+  summarizePickSplitsLocations,
+  getPickSplitsDistinctPickers,
+  resolvePickingItemActualPicker,
   fetchActiveSjRealtimeRowsSupabase,
   claimOrJoinPickingSJSupabase,
   leavePickingSJSupabase,
@@ -323,7 +332,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     onConfirm: () => void;
   }>({ isOpen: false, title: '', message: '', onConfirm: () => {} });
 
-  // Modal Edit / Koreksi Item Tertentu (Ubah Qty Terambil, Rak Asal, atau Koreksi Salah Ambil)
+  // Modal Edit / Koreksi Item Tertentu (Ubah Qty Terambil, Rak Asal Multi-Lokasi, atau Koreksi Salah Ambil)
   const [isEditItemModalOpen, setIsEditItemModalOpen] = useState(false);
   const [editingItemData, setEditingItemData] = useState<{
     type: 'REGULAR' | 'UNEXPECTED';
@@ -333,10 +342,18 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     size: string;
     qty_req: number;
     qty_picked: number;
+    prev_qty_picked?: number;
     lokasi: string;
     lokasi_picked: string;
+    pick_splits?: PickingSplitAllocation[];
     targetSJItemSku?: string;
   } | null>(null);
+
+  // Paginated History & Cloud Archive Search States (Minimal Egress)
+  const [historyMeta, setHistoryMeta] = useState<PickingListHistoryMeta>(() => getPickingListHistoryMeta());
+  const [isLoadingMoreHistory, setIsLoadingMoreHistory] = useState(false);
+  const [isSearchingArchive, setIsSearchingArchive] = useState(false);
+  const lastArchiveSearchedQueryRef = useRef<string>('');
 
   // Modal Alert Tabrakan Over-Pick Multi-Picker (muncul di layar petugas yang mengambil terakhir melebihi qty_req)
   const [overPickAlertModal, setOverPickAlertModal] = useState<{
@@ -762,6 +779,35 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         .on('broadcast', { event: 'item_updated' }, (msg: any) => {
           const p = msg?.payload;
           if (!p || !p.no_sj || p.actor === currentUser) return;
+          const targetSj = String(p.no_sj).toUpperCase().trim();
+          const targetSku = String(p.sku || '').toUpperCase().trim();
+          // Merge co-picker's pick_splits & per-item attribution immediately into activeItems
+          if (
+            targetSku &&
+            activeSJRef.current &&
+            activeSJRef.current.no_sj.toUpperCase().trim() === targetSj &&
+            !hasPendingPickingItemSyncForSku(targetSj, targetSku)
+          ) {
+            setActiveItems((prev) => {
+              let changed = false;
+              const next = prev.map((it) => {
+                if ((it.sku || '').toUpperCase().trim() !== targetSku) return it;
+                const incomingSplits = Array.isArray(p.pick_splits)
+                  ? normalizePickSplits(p.pick_splits)
+                  : undefined;
+                if (!incomingSplits && !p.lokasi_picked && !p.picker_name) return it;
+                changed = true;
+                return {
+                  ...it,
+                  ...(incomingSplits ? { pick_splits: incomingSplits } : {}),
+                  ...(p.lokasi_picked ? { lokasi_picked: p.lokasi_picked } : {}),
+                  ...(p.picker_name ? { picker_name: p.picker_name } : {}),
+                  ...(p.last_picked_by ? { last_picked_by: p.last_picked_by } : {}),
+                };
+              });
+              return changed ? next : prev;
+            });
+          }
           scheduleRealtimeSjRefresh(p.no_sj, 150);
         })
         .on('broadcast', { event: 'picker_joined' }, (msg: any) => {
@@ -1100,6 +1146,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               qty_req: it.qty_req,
               lokasi: it.lokasi,
               lokasi_picked: it.lokasi_picked,
+              pick_splits: it.pick_splits,
               status: it.status,
               is_kosong: it.is_kosong,
               picker_name: it.picker_name,
@@ -1185,6 +1232,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         await syncPendingPickingItemsRef.current(false).catch(() => {});
       }
       const data = await fetchPickingListFromSupabase(true);
+      setHistoryMeta(getPickingListHistoryMeta());
       setRawItems((prev) => {
         const supabaseData = data || [];
         const pendingByKey = new Map<string, PickingListItem>();
@@ -1227,6 +1275,97 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       setLoading(false);
     }
   };
+
+  // Merge newly loaded archive/paginated rows into rawItems without overwriting active/pending local rows
+  const mergeArchiveRowsIntoRawItems = useCallback((incomingRows: PickingListItem[]): number => {
+    if (!Array.isArray(incomingRows) || incomingRows.length === 0) return 0;
+    let addedSjsCount = 0;
+    setRawItems((prev) => {
+      const existingByKey = new Map<string, PickingListItem>();
+      const existingSjs = new Set<string>();
+      prev.forEach((it) => {
+        const sjKey = (it.no_sj || '').toUpperCase().trim();
+        const skuKey = (it.sku || '').toUpperCase().trim();
+        if (sjKey) existingSjs.add(sjKey);
+        if (sjKey && skuKey) existingByKey.set(`${sjKey}__${skuKey}`, it);
+      });
+      const newlyDiscoveredSjs = new Set<string>();
+      incomingRows.forEach((row) => {
+        const sjKey = (row.no_sj || '').toUpperCase().trim();
+        const skuKey = (row.sku || '').toUpperCase().trim();
+        if (!sjKey || !skuKey) return;
+        const k = `${sjKey}__${skuKey}`;
+        if (!existingByKey.has(k)) {
+          existingByKey.set(k, row);
+          if (!existingSjs.has(sjKey)) newlyDiscoveredSjs.add(sjKey);
+        }
+      });
+      addedSjsCount = newlyDiscoveredSjs.size;
+      const merged = Array.from(existingByKey.values());
+      merged.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+      return merged;
+    });
+    return addedSjsCount;
+  }, []);
+
+  // Paginated on-demand history loader ("Muat Riwayat Lebih Lama")
+  const handleLoadMoreHistory = async () => {
+    if (isLoadingMoreHistory || !historyMeta.hasMore) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      onNotify('Koneksi internet diperlukan untuk memuat riwayat lama dari database.', 'warning');
+      return;
+    }
+    setIsLoadingMoreHistory(true);
+    try {
+      const page = await fetchPickingListHistoryPageSupabase(historyMeta.loadedOffset, 1000);
+      mergeArchiveRowsIntoRawItems(page.items);
+      setHistoryMeta({
+        totalRows: page.totalRows ?? historyMeta.totalRows,
+        loadedOffset: page.nextOffset,
+        hasMore: page.hasMore,
+      });
+      if (page.items.length > 0) {
+        onNotify(`✓ Berhasil memuat ${page.items.length} baris riwayat picking tambahan dari arsip.`, 'success');
+      } else {
+        onNotify('Semua riwayat picking dari database sudah dimuat.', 'info');
+      }
+    } catch (err) {
+      console.warn('Gagal memuat riwayat picking lebih lama:', err);
+      onNotify('Gagal memuat riwayat picking lebih lama. Coba lagi.', 'error');
+    } finally {
+      setIsLoadingMoreHistory(false);
+    }
+  };
+
+  // Debounced server-side archive search when user types >= 3 chars in View 1 search box
+  useEffect(() => {
+    if (activeSJ && !isMinimized) return;
+    const cleanQ = search.trim();
+    if (cleanQ.length < 3) {
+      lastArchiveSearchedQueryRef.current = '';
+      setIsSearchingArchive(false);
+      return;
+    }
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+    if (lastArchiveSearchedQueryRef.current.toLowerCase() === cleanQ.toLowerCase()) return;
+
+    const timer = setTimeout(async () => {
+      setIsSearchingArchive(true);
+      lastArchiveSearchedQueryRef.current = cleanQ;
+      try {
+        const archiveRows = await searchPickingListHistorySupabase(cleanQ);
+        if (archiveRows.length > 0) {
+          mergeArchiveRowsIntoRawItems(archiveRows);
+        }
+      } catch (err) {
+        console.warn('[PickingArchiveSearch] Gagal cari di arsip:', err);
+      } finally {
+        setIsSearchingArchive(false);
+      }
+    }, 450);
+
+    return () => clearTimeout(timer);
+  }, [search, activeSJ, isMinimized, mergeArchiveRowsIntoRawItems]);
 
   // Helper: Extract all locations for a given item / SKU (strictly warehouse area locations that actually have stock > 0)
   const getProductLocations = (sku: string, itemLokasi?: string): ProductLocationInfo[] => {
@@ -1576,7 +1715,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         if (draftEntry.rekapCatatan) g.catatan = draftEntry.rekapCatatan;
       }
 
-      // Collect all unique ACTIVE pickers currently working on non-SELESAI items in this SJ
+      // Collect all unique ACTIVE pickers currently working on SEDANG PICKING items in this SJ.
+      // Note: Rows with status === 'PENDING' that still carry historical picker_name (because someone picked
+      // part of the SJ earlier and left) MUST NOT be counted as actively working right now!
       const pickersList: string[] = [];
       const addPickerUnique = (rawName?: string) => {
         parsePickerNamesList(rawName).forEach((p) => {
@@ -1585,13 +1726,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           }
         });
       };
-      g.items.forEach((it) => {
-        if ((it.status || '').toUpperCase().trim() !== 'SELESAI') {
-          addPickerUnique(it.picker_name);
-        }
-      });
+      const activeUnpickedRows = g.items.filter(
+        (it) => (it.status || '').toUpperCase().trim() === 'SEDANG PICKING' && (Number(it.qty_picked) || 0) === 0
+      );
+      const activeSourceRows =
+        activeUnpickedRows.length > 0
+          ? activeUnpickedRows
+          : g.items.filter((it) => (it.status || '').toUpperCase().trim() === 'SEDANG PICKING');
+      activeSourceRows.forEach((it) => addPickerUnique(it.picker_name));
       g.unexpected_items.forEach((it) => {
-        if ((it.status || '').toUpperCase().trim() !== 'SELESAI') {
+        if ((it.status || '').toUpperCase().trim() === 'SEDANG PICKING') {
           addPickerUnique(it.picker_name);
         }
       });
@@ -2378,6 +2522,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           0,
           Number(draftItem?.prev_qty_picked ?? it.prev_qty_picked ?? 0) || 0
         );
+        const restoredSplits = normalizePickSplits(draftItem?.pick_splits || it.pick_splits);
+        const hasPickedOrKosong = qtyPicked > 0 || isKosong;
+        const resolvedItemPicker = hasPickedOrKosong
+          ? (draftItem?.picker_name || it.picker_name || mergedPickerStr)
+          : mergedPickerStr;
 
         return {
           ...it,
@@ -2386,6 +2535,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
           nama_produk: effectiveName,
           lokasi: itemLokasi,
           lokasi_picked: cleanLokasiPicked || undefined,
+          pick_splits: restoredSplits.length > 0 ? restoredSplits : undefined,
           qty_req: Math.max(1, Number(it.qty_req) || 1),
           qty_picked: qtyPicked,
           prev_qty_picked: prevPickedBaseline > 0 ? Math.min(qtyPicked, prevPickedBaseline) : undefined,
@@ -2395,7 +2545,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             : qtyPicked >= Math.max(1, Number(it.qty_req) || 1)
             ? ('SELESAI' as const)
             : ('SEDANG PICKING' as const),
-          picker_name: it.picker_name ? mergePickerNamesWithLastActor(it.picker_name, it.last_picked_by || currentUser) : mergedPickerStr,
+          picker_name: resolvedItemPicker,
           last_picked_by: it.last_picked_by || draftItem?.last_picked_by,
         };
       });
@@ -2429,13 +2579,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     playCategoryBeep();
 
     // Update rawItems immediately so queue reflects currentUser working on this SJ
+    // (preserving per-SKU picker_name on rows that already have qty_picked > 0 or KOSONG)
     setRawItems((prev) =>
       prev.map((item) => {
         if ((item.no_sj || '').toUpperCase().trim() !== cleanNoSj || item.status === 'SELESAI') return item;
+        const alreadyPickedOrKosong = (Number(item.qty_picked) || 0) > 0 || item.status === 'KOSONG';
         return {
           ...item,
           status: item.status === 'KOSONG' ? 'KOSONG' : 'SEDANG PICKING',
-          picker_name: mergedPickerStr,
+          picker_name: alreadyPickedOrKosong && item.picker_name ? item.picker_name : mergedPickerStr,
         };
       })
     );
@@ -2883,12 +3035,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       absoluteQty?: number;
       markKosong?: boolean;
       usedLocation: string;
+      pickSplits?: PickingSplitAllocation[];
+      nextPickerName?: string;
     }) => {
       if (!activeSJRef.current) return;
       const cleanNoSj = activeSJRef.current.no_sj.toUpperCase().trim();
       const cleanSku = params.targetItem.sku.toUpperCase().trim();
       pendingLocalSyncSkusRef.current.set(cleanSku, Date.now());
       markSjLocallyMutated(cleanNoSj, 4500);
+
+      const normalizedSplits = params.pickSplits ? normalizePickSplits(params.pickSplits) : undefined;
 
       // Persist mutation in durable per-item offline queue BEFORE attempting network sync
       enqueuePickingItemSyncMutation({
@@ -2899,15 +3055,24 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         absoluteQty: params.absoluteQty,
         markKosong: params.markKosong,
         lokasi_picked: params.usedLocation,
+        pick_splits: normalizedSplits,
         username: currentUser || 'Operator',
-        currentItem: params.targetItem,
+        currentItem: {
+          ...params.targetItem,
+          ...(normalizedSplits ? { pick_splits: normalizedSplits } : {}),
+          ...(params.nextPickerName ? { picker_name: params.nextPickerName } : {}),
+        },
       });
       setPendingItemSyncCount(getPendingPickingItemSyncCount());
 
-      // Broadcast optimistic update immediately for 0ms peer responsiveness
+      // Broadcast optimistic update immediately for 0ms peer responsiveness (including pick_splits & actor!)
       broadcastPickingCollabEvent('item_updated', {
         no_sj: cleanNoSj,
         sku: cleanSku,
+        lokasi_picked: params.usedLocation,
+        pick_splits: normalizedSplits,
+        picker_name: params.nextPickerName,
+        last_picked_by: currentUser || 'Operator',
       });
 
       if (typeof navigator !== 'undefined' && !navigator.onLine) return;
@@ -2917,7 +3082,116 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     [broadcastPickingCollabEvent, currentUser, markSjLocallyMutated, syncPendingPickingItemsAndApply]
   );
 
-  // Action: Petugas Klik Langsung Pill Lokasi pada Kartu SKU (Selalu 1 rak bersih + update item.lokasi_picked)
+  // Pure helper: apply a +delta or -delta pick on a specific rack location & actor while preserving other racks/actors!
+  const applySplitDeltaToItem = useCallback(
+    (
+      item: PickingListItem,
+      rawLoc: string,
+      delta: number,
+      actor: string,
+      fallbackLoc: string
+    ): {
+      nextSplits: PickingSplitAllocation[];
+      nextQty: number;
+      nextPickerName: string;
+      nextPrimaryLoc: string;
+    } => {
+      const cleanActor = String(actor || 'Operator').trim();
+      const cleanLoc =
+        resolvePrimarySingleLocation(rawLoc) ||
+        String(rawLoc || '').split(/[,/;\n|]+/)[0]?.trim().toUpperCase() ||
+        fallbackLoc ||
+        'A001';
+      const minBaseline = Math.max(0, Number(item.prev_qty_picked) || 0);
+      const currentTotal = Math.max(minBaseline, Number(item.qty_picked) || 0);
+      const currentSessionQty = Math.max(0, currentTotal - minBaseline);
+      const nextQty = Math.max(minBaseline, currentTotal + delta);
+      const effectiveDelta = nextQty - currentTotal;
+
+      // Seed existing splits from item.pick_splits; if legacy unsplit session qty existed, preserve it on item's previous rack & actor!
+      let workingSplits = normalizePickSplits(item.pick_splits);
+      const existingSplitSum = workingSplits.reduce((s, sp) => s + sp.qty, 0);
+      if (currentSessionQty > existingSplitSum) {
+        const unattributedQty = currentSessionQty - existingSplitSum;
+        const legacyLoc =
+          resolvePrimarySingleLocation(item.lokasi_picked || '') || fallbackLoc || cleanLoc;
+        const legacyPickers = parsePickerNamesList(item.picker_name);
+        const legacyActor =
+          item.last_picked_by ||
+          (legacyPickers.length === 1 ? legacyPickers[0] : cleanActor);
+        workingSplits = normalizePickSplits([
+          ...workingSplits,
+          { lokasi: legacyLoc, qty: unattributedQty, picker: legacyActor },
+        ]);
+      }
+
+      if (effectiveDelta > 0) {
+        workingSplits = normalizePickSplits([
+          ...workingSplits,
+          { lokasi: cleanLoc, qty: effectiveDelta, picker: cleanActor },
+        ]);
+      } else if (effectiveDelta < 0) {
+        let toRemove = Math.abs(effectiveDelta);
+        const mutable = workingSplits.map((sp) => ({ ...sp }));
+        // Priority 1: deduct from same (lokasi, actor)
+        for (let i = mutable.length - 1; i >= 0 && toRemove > 0; i--) {
+          if (
+            mutable[i].lokasi.toUpperCase() === cleanLoc.toUpperCase() &&
+            mutable[i].picker &&
+            isSameOperatorIdentity(mutable[i].picker, cleanActor)
+          ) {
+            const cut = Math.min(mutable[i].qty, toRemove);
+            mutable[i].qty -= cut;
+            toRemove -= cut;
+          }
+        }
+        // Priority 2: deduct from same lokasi (any actor)
+        for (let i = mutable.length - 1; i >= 0 && toRemove > 0; i--) {
+          if (mutable[i].lokasi.toUpperCase() === cleanLoc.toUpperCase() && mutable[i].qty > 0) {
+            const cut = Math.min(mutable[i].qty, toRemove);
+            mutable[i].qty -= cut;
+            toRemove -= cut;
+          }
+        }
+        // Priority 3: deduct from last entry
+        for (let i = mutable.length - 1; i >= 0 && toRemove > 0; i--) {
+          if (mutable[i].qty > 0) {
+            const cut = Math.min(mutable[i].qty, toRemove);
+            mutable[i].qty -= cut;
+            toRemove -= cut;
+          }
+        }
+        workingSplits = normalizePickSplits(mutable);
+      }
+
+      const splitPickers = getPickSplitsDistinctPickers(workingSplits);
+      let nextPickerName = cleanActor;
+      if (nextQty === 0) {
+        nextPickerName = (activeSJRef.current?.picker_name || cleanActor).trim();
+      } else if (splitPickers.length > 0) {
+        nextPickerName = splitPickers.join(', ');
+      } else if (currentTotal === 0 && nextQty > 0) {
+        nextPickerName = cleanActor;
+      } else {
+        nextPickerName = mergePickerNamesWithLastActor(item.picker_name, cleanActor);
+      }
+
+      const nextPrimaryLoc =
+        workingSplits.length > 0
+          ? workingSplits[workingSplits.length - 1].lokasi
+          : cleanLoc;
+
+      return {
+        nextSplits: workingSplits,
+        nextQty,
+        nextPickerName,
+        nextPrimaryLoc,
+      };
+    },
+    []
+  );
+
+  // Action: Petugas Klik Langsung Pill Lokasi pada Kartu SKU (Memilih target rak aktif TANPA menghapus split rak lain)
   const handleSelectItemLocation = (itemIndex: number, rawLoc: string) => {
     const locClean = resolvePrimarySingleLocation(rawLoc) || String(rawLoc || '').split(/[,/;\n|]+/)[0]?.trim().toUpperCase();
     if (!locClean || /[,/;\n|]/.test(locClean)) return;
@@ -2953,6 +3227,99 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       `📍 Rak aktif dipilih: ${locClean}${targetItem ? ` untuk SKU ${targetItem.sku}` : ''}!`,
       'info'
     );
+  };
+
+  // Action: 1-Tap Multi-Location Split +/- langsung per rak pada kartu SKU (misal +1 di A001 lalu +1 di A002)
+  const handleAdjustItemSplitQty = (itemIndex: number, rawLoc: string, delta: number) => {
+    const target = activeItems[itemIndex];
+    if (!target || delta === 0) return;
+    const locClean =
+      resolvePrimarySingleLocation(rawLoc) ||
+      String(rawLoc || '').split(/[,/;\n|]+/)[0]?.trim().toUpperCase() ||
+      resolveSingleItemLocation(target);
+    if (!locClean) return;
+
+    // If decrementing a specific rack, do not allow decrementing below 0 on that rack
+    if (delta < 0) {
+      const existingSplits = normalizePickSplits(target.pick_splits);
+      const rackPicked = existingSplits
+        .filter((sp) => sp.lokasi.toUpperCase() === locClean.toUpperCase())
+        .reduce((s, sp) => s + sp.qty, 0);
+      const minBaseline = Math.max(0, Number(target.prev_qty_picked) || 0);
+      const sessionTotal = Math.max(0, (Number(target.qty_picked) || 0) - minBaseline);
+      const fallbackRack = resolvePrimarySingleLocation(target.lokasi_picked || '') || resolveSingleItemLocation(target);
+      const effectiveRackQty =
+        existingSplits.length > 0
+          ? rackPicked
+          : fallbackRack.toUpperCase() === locClean.toUpperCase()
+          ? sessionTotal
+          : 0;
+      if (effectiveRackQty <= 0) return;
+    }
+
+    const fallbackLoc = resolveSingleItemLocation(target);
+    const prevPickedBy =
+      target.last_picked_by || parsePickerNamesList(target.picker_name).slice(-1)[0] || currentUser;
+
+    const { nextSplits, nextQty, nextPickerName } = applySplitDeltaToItem(
+      target,
+      locClean,
+      delta,
+      currentUser || 'Operator',
+      fallbackLoc
+    );
+    const effectiveDelta = nextQty - (Number(target.qty_picked) || 0);
+    if (effectiveDelta === 0) return;
+
+    setActiveLocation(locClean);
+
+    const updated: PickingListItem = {
+      ...target,
+      qty_picked: nextQty,
+      lokasi_picked: locClean,
+      pick_splits: nextSplits,
+      is_kosong: false,
+      status: (nextQty >= target.qty_req ? 'SELESAI' : nextQty > 0 ? 'SEDANG PICKING' : 'PENDING') as any,
+      picker_name: nextPickerName,
+      last_picked_by: nextQty > 0 ? currentUser : undefined,
+    };
+    const nextList = [...activeItems];
+    nextList[itemIndex] = updated;
+    setActiveItems(nextList);
+
+    if (effectiveDelta > 0 && nextQty > target.qty_req) {
+      playErrorBeep();
+      vibrateDevice([250, 100, 250, 100, 250]);
+      const lookup = lookupProductBySku(target.sku, catalogMap, target.nama_produk, target.size);
+      setOverPickAlertModal({
+        isOpen: true,
+        sku: target.sku,
+        nama_produk: lookup.nama_produk || target.nama_produk || target.sku,
+        size: target.size || lookup.size || '-',
+        lokasi: locClean,
+        qtyReq: target.qty_req,
+        newQty: nextQty,
+        excessQty: nextQty - target.qty_req,
+        previousPicker: prevPickedBy || currentUser,
+        itemIndex,
+      });
+    } else if (effectiveDelta > 0 && nextQty === target.qty_req) {
+      playSuccessBeep();
+      vibrateDevice(70);
+    } else {
+      playCategoryBeep();
+      vibrateDevice(35);
+    }
+
+    syncItemRealtimeAndCheckOverPick({
+      itemIndex,
+      targetItem: target,
+      delta: effectiveDelta,
+      markKosong: false,
+      usedLocation: locClean,
+      pickSplits: nextSplits,
+      nextPickerName,
+    });
   };
 
   // Unique list of target locations in the active SJ (including primary & alternative racks)
@@ -3072,20 +3439,28 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const singleFallback = resolveSingleItemLocation(targetItem);
       const usedLocation = effectiveLocation || singleFallback || 'A001';
       const prevPickedBy = targetItem.last_picked_by || parsePickerNamesList(targetItem.picker_name).slice(-1)[0] || currentUser;
-      const newPicked = Number(targetItem.qty_picked || 0) + 1;
 
       // Auto-set lokasi (SELALU single rak bersih, bukan CSV multi-lokasi!) jika sebelumnya belum scan lokasi
       if (!effectiveLocation && singleFallback) {
         setActiveLocation(singleFallback);
       }
 
+      const { nextSplits, nextQty: newPicked, nextPickerName } = applySplitDeltaToItem(
+        targetItem,
+        usedLocation,
+        1,
+        currentUser || 'Operator',
+        singleFallback
+      );
+
       const updatedItem: PickingListItem = {
         ...targetItem,
         qty_picked: newPicked,
         lokasi_picked: usedLocation,
+        pick_splits: nextSplits,
         is_kosong: false,
         status: (newPicked >= targetItem.qty_req ? 'SELESAI' : 'SEDANG PICKING') as any,
-        picker_name: mergePickerNamesWithLastActor(targetItem.picker_name, currentUser),
+        picker_name: nextPickerName,
         last_picked_by: currentUser,
       };
 
@@ -3190,6 +3565,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         delta: 1,
         markKosong: false,
         usedLocation,
+        pickSplits: nextSplits,
+        nextPickerName,
       });
     } else {
       // 2. Barcode TIDAK TERDAFTAR di Surat Jalan -> SALAH AMBIL
@@ -3213,6 +3590,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         qty_picked: 1,
         lokasi: pickedLoc,
         lokasi_picked: pickedLoc,
+        pick_splits: pickedLoc && pickedLoc !== '-' ? [{ lokasi: pickedLoc, qty: 1, picker: currentUser }] : undefined,
         status: 'SEDANG PICKING',
         picker_name: currentUser,
         last_picked_by: currentUser,
@@ -3222,8 +3600,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const existingUnexpIdx = unexpectedItems.findIndex((it) => it.sku === barcode);
       if (existingUnexpIdx !== -1) {
         const nextUnexp = [...unexpectedItems];
-        nextUnexp[existingUnexpIdx].qty_picked += 1;
-        nextUnexp[existingUnexpIdx].lokasi_picked = pickedLoc;
+        const cur = nextUnexp[existingUnexpIdx];
+        const nextSplits = normalizePickSplits([
+          ...(cur.pick_splits || (cur.lokasi_picked && cur.lokasi_picked !== '-' ? [{ lokasi: cur.lokasi_picked, qty: cur.qty_picked, picker: cur.picker_name || currentUser }] : [])),
+          ...(pickedLoc && pickedLoc !== '-' ? [{ lokasi: pickedLoc, qty: 1, picker: currentUser }] : []),
+        ]);
+        nextUnexp[existingUnexpIdx] = {
+          ...cur,
+          qty_picked: cur.qty_picked + 1,
+          lokasi_picked: pickedLoc,
+          pick_splits: nextSplits,
+          picker_name: getPickSplitsDistinctPickers(nextSplits).join(', ') || currentUser,
+          last_picked_by: currentUser,
+        };
         setUnexpectedItems(nextUnexp);
       } else {
         setUnexpectedItems([...unexpectedItems, unexpItem]);
@@ -3255,15 +3644,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setScanInput('');
   };
 
-  // Adjust manual counter (always sets clean single-rack lokasi_picked + atomic realtime sync & over-pick check)
+  // Adjust manual counter (preserves multi-location pick_splits & per-item picker attribution + realtime sync)
   const handleAdjustQty = (index: number, delta: number) => {
     const target = activeItems[index];
     if (!target) return;
     const prevPickedBy = target.last_picked_by || parsePickerNamesList(target.picker_name).slice(-1)[0] || currentUser;
-    const minBaseline = Math.max(0, Number(target.prev_qty_picked) || 0);
-    const newQty = Math.max(minBaseline, target.qty_picked + delta);
-    const effectiveDelta = newQty - target.qty_picked;
-    if (effectiveDelta === 0) return;
 
     const itemLocs = getProductLocations(target.sku, target.lokasi);
     const cleanActive = resolvePrimarySingleLocation(activeLocation || '');
@@ -3274,14 +3659,25 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const resolvedLoc =
       existingSingle || (activeBelongsToItem ? cleanActive : resolveSingleItemLocation(target));
 
+    const { nextSplits, nextQty: newQty, nextPickerName, nextPrimaryLoc } = applySplitDeltaToItem(
+      target,
+      resolvedLoc,
+      delta,
+      currentUser || 'Operator',
+      resolveSingleItemLocation(target)
+    );
+    const effectiveDelta = newQty - target.qty_picked;
+    if (effectiveDelta === 0) return;
+
     const updated: PickingListItem = {
       ...target,
       qty_picked: newQty,
-      lokasi_picked: newQty > 0 ? resolvedLoc : target.lokasi_picked,
+      lokasi_picked: newQty > 0 ? nextPrimaryLoc : target.lokasi_picked,
+      pick_splits: nextSplits,
       is_kosong: false,
       status: (newQty >= target.qty_req ? 'SELESAI' : newQty > 0 ? 'SEDANG PICKING' : 'PENDING') as any,
-      picker_name: mergePickerNamesWithLastActor(target.picker_name, currentUser),
-      last_picked_by: newQty > 0 ? currentUser : target.last_picked_by,
+      picker_name: nextPickerName,
+      last_picked_by: newQty > 0 ? currentUser : undefined,
     };
     const nextList = [...activeItems];
     nextList[index] = updated;
@@ -3296,7 +3692,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         sku: target.sku,
         nama_produk: lookup.nama_produk || target.nama_produk || target.sku,
         size: target.size || lookup.size || '-',
-        lokasi: resolvedLoc,
+        lokasi: nextPrimaryLoc,
         qtyReq: target.qty_req,
         newQty,
         excessQty: newQty - target.qty_req,
@@ -3313,7 +3709,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       targetItem: target,
       delta: effectiveDelta,
       markKosong: false,
-      usedLocation: resolvedLoc,
+      usedLocation: nextPrimaryLoc,
+      pickSplits: nextSplits,
+      nextPickerName,
     });
   };
 
@@ -3325,14 +3723,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     if (idx !== -1) {
       const target = activeItems[idx];
       const resolvedLoc = resolveSingleItemLocation(target);
+      const deltaToTrim = qtyReq - (Number(target.qty_picked) || 0);
+      const { nextSplits, nextPickerName, nextPrimaryLoc } = applySplitDeltaToItem(
+        target,
+        resolvedLoc,
+        deltaToTrim,
+        currentUser || 'Operator',
+        resolvedLoc
+      );
       const nextList = [...activeItems];
       nextList[idx] = {
         ...target,
         qty_picked: qtyReq,
-        lokasi_picked: resolvedLoc,
+        lokasi_picked: nextPrimaryLoc,
+        pick_splits: nextSplits,
         is_kosong: false,
         status: 'SELESAI',
-        picker_name: mergePickerNamesWithLastActor(target.picker_name, currentUser),
+        picker_name: nextPickerName,
         last_picked_by: currentUser,
       };
       setActiveItems(nextList);
@@ -3341,7 +3748,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         targetItem: target,
         absoluteQty: qtyReq,
         markKosong: false,
-        usedLocation: resolvedLoc,
+        usedLocation: nextPrimaryLoc,
+        pickSplits: nextSplits,
+        nextPickerName,
       });
       playSuccessBeep();
       onNotify(`✅ Kelebihan dikoreksi! SKU ${sku} diset pas ${qtyReq}/${qtyReq} Pcs.`, 'success');
@@ -3360,7 +3769,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     setUnexpectedItems(next);
   };
 
-  // Quick Action: Set picked to Max (Lengkap) with guaranteed single-rack resolution & realtime sync
+  // Quick Action: Set picked to Max (Lengkap) with smart multi-rack auto-split if 1 rack has insufficient stock!
   const handleSetItemMax = (index: number) => {
     const target = activeItems[index];
     if (!target) return;
@@ -3371,30 +3780,107 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       cleanActive && itemLocs.some((l) => l.lokasi.toUpperCase() === cleanActive.toUpperCase())
     );
     const existingSingle = resolvePrimarySingleLocation(target.lokasi_picked || '');
-    const resolvedLoc =
+    const preferredLoc =
       existingSingle || (activeBelongsToItem ? cleanActive : resolveSingleItemLocation(target));
+
+    const minBaseline = Math.max(0, Number(target.prev_qty_picked) || 0);
+    const currentTotal = Math.max(minBaseline, Number(target.qty_picked) || 0);
+    const neededDelta = target.qty_req - currentTotal;
+
+    let nextSplits = normalizePickSplits(target.pick_splits);
+    const currentSessionQty = Math.max(0, currentTotal - minBaseline);
+    const existingSplitSum = nextSplits.reduce((s, sp) => s + sp.qty, 0);
+    if (currentSessionQty > existingSplitSum) {
+      const legacyPickers = parsePickerNamesList(target.picker_name);
+      const legacyActor =
+        target.last_picked_by || (legacyPickers.length === 1 ? legacyPickers[0] : currentUser || 'Operator');
+      nextSplits = normalizePickSplits([
+        ...nextSplits,
+        { lokasi: preferredLoc, qty: currentSessionQty - existingSplitSum, picker: legacyActor },
+      ]);
+    }
+
+    if (neededDelta > 0) {
+      // Smart multi-location fill: if item has >1 rack with stock counts and preferred rack doesn't have enough
+      // for the remaining neededDelta, automatically distribute across racks in priority order!
+      let remaining = neededDelta;
+      const orderedRacks = [...itemLocs];
+      if (preferredLoc) {
+        const prefIdx = orderedRacks.findIndex((r) => r.lokasi.toUpperCase() === preferredLoc.toUpperCase());
+        if (prefIdx > 0) {
+          const [prefItem] = orderedRacks.splice(prefIdx, 1);
+          orderedRacks.unshift(prefItem);
+        }
+      }
+
+      if (orderedRacks.length > 1 && orderedRacks.every((r) => typeof r.qty === 'number' && r.qty > 0)) {
+        for (const r of orderedRacks) {
+          if (remaining <= 0) break;
+          const alreadyFromRack = nextSplits
+            .filter((sp) => sp.lokasi.toUpperCase() === r.lokasi.toUpperCase())
+            .reduce((s, sp) => s + sp.qty, 0);
+          const avail = Math.max(0, (Number(r.qty) || 0) - alreadyFromRack);
+          if (avail <= 0) continue;
+          const take = Math.min(remaining, avail);
+          nextSplits = normalizePickSplits([
+            ...nextSplits,
+            { lokasi: r.lokasi, qty: take, picker: currentUser || 'Operator' },
+          ]);
+          remaining -= take;
+        }
+      }
+
+      if (remaining > 0) {
+        nextSplits = normalizePickSplits([
+          ...nextSplits,
+          { lokasi: preferredLoc, qty: remaining, picker: currentUser || 'Operator' },
+        ]);
+      }
+    } else if (neededDelta < 0) {
+      const res = applySplitDeltaToItem(
+        target,
+        preferredLoc,
+        neededDelta,
+        currentUser || 'Operator',
+        preferredLoc
+      );
+      nextSplits = res.nextSplits;
+    }
+
+    const splitPickers = getPickSplitsDistinctPickers(nextSplits);
+    const nextPickerName =
+      splitPickers.length > 0
+        ? splitPickers.join(', ')
+        : currentTotal === 0
+        ? currentUser || 'Operator'
+        : mergePickerNamesWithLastActor(target.picker_name, currentUser || 'Operator');
+    const summaryLoc = summarizePickSplitsLocations(nextSplits) || preferredLoc;
+    const primaryLoc = nextSplits.length > 0 ? nextSplits[0].lokasi : preferredLoc;
 
     const nextList = [...activeItems];
     nextList[index] = {
       ...target,
       qty_picked: target.qty_req,
-      lokasi_picked: resolvedLoc,
+      lokasi_picked: primaryLoc,
+      pick_splits: nextSplits,
       is_kosong: false,
       status: 'SELESAI',
-      picker_name: mergePickerNamesWithLastActor(target.picker_name, currentUser),
+      picker_name: nextPickerName,
       last_picked_by: currentUser,
     };
     setActiveItems(nextList);
     playSuccessBeep();
     vibrateDevice(60);
-    onNotify(`✓ SKU ${target.sku} diset lengkap (${target.qty_req}/${target.qty_req} Pcs) · Rak ${resolvedLoc}`, 'success');
+    onNotify(`✓ SKU ${target.sku} diset lengkap (${target.qty_req}/${target.qty_req} Pcs) · Rak ${summaryLoc}`, 'success');
 
     syncItemRealtimeAndCheckOverPick({
       itemIndex: index,
       targetItem: target,
       absoluteQty: target.qty_req,
       markKosong: false,
-      usedLocation: resolvedLoc,
+      usedLocation: primaryLoc,
+      pickSplits: nextSplits,
+      nextPickerName,
     });
   };
 
@@ -3406,6 +3892,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const currentlyKosong = Boolean(target.is_kosong || target.status === 'KOSONG');
     const nextKosong = !currentlyKosong;
     const resolvedLoc = resolveSingleItemLocation(target);
+    const splitPickers = getPickSplitsDistinctPickers(target.pick_splits);
+    const nextPickerName =
+      splitPickers.length > 0
+        ? splitPickers.join(', ')
+        : (Number(target.qty_picked) || 0) === 0
+        ? currentUser || 'Operator'
+        : mergePickerNamesWithLastActor(target.picker_name, currentUser || 'Operator');
 
     const nextList = [...activeItems];
     nextList[index] = {
@@ -3416,7 +3909,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         : target.qty_picked >= target.qty_req
         ? 'SELESAI'
         : 'SEDANG PICKING',
-      picker_name: mergePickerNamesWithLastActor(target.picker_name, currentUser),
+      picker_name: nextPickerName,
       last_picked_by: currentUser,
     };
     setActiveItems(nextList);
@@ -3441,6 +3934,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       absoluteQty: target.qty_picked,
       markKosong: nextKosong,
       usedLocation: resolvedLoc,
+      pickSplits: target.pick_splits,
+      nextPickerName,
     });
   };
 
@@ -3450,12 +3945,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     if (!target) return;
     const minBaseline = Math.max(0, Number(target.prev_qty_picked) || 0);
     const resolvedLoc = resolveSingleItemLocation(target);
+    const nextPickerName = (activeSJRef.current?.picker_name || currentUser || 'Operator').trim();
     const nextList = [...activeItems];
     nextList[index] = {
       ...target,
       qty_picked: minBaseline,
+      pick_splits: [],
       is_kosong: false,
       status: minBaseline >= target.qty_req ? 'SELESAI' : 'SEDANG PICKING',
+      picker_name: minBaseline > 0 ? target.picker_name : nextPickerName,
+      last_picked_by: minBaseline > 0 ? target.last_picked_by : undefined,
     };
     setActiveItems(nextList);
     onNotify(
@@ -3471,6 +3970,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       absoluteQty: minBaseline,
       markKosong: false,
       usedLocation: resolvedLoc,
+      pickSplits: [],
+      nextPickerName: minBaseline > 0 ? target.picker_name : nextPickerName,
     });
   };
 
@@ -3483,7 +3984,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     onNotify(`Item salah ambil ${target?.sku || ''} telah dihapus / dikembalikan ke rak.`, 'info');
   };
 
-  // Open item edit dialog (for either regular or wrong pick item)
+  // Open item edit dialog (for either regular or wrong pick item — supports multi-location pick_splits!)
   const handleOpenEditItem = (type: 'REGULAR' | 'UNEXPECTED', index: number) => {
     const it = type === 'REGULAR' ? activeItems[index] : unexpectedItems[index];
     if (!it) return;
@@ -3491,6 +3992,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       resolvePrimarySingleLocation(it.lokasi_picked || '') ||
       resolvePrimarySingleLocation(activeLocation || '') ||
       resolveSingleItemLocation(it);
+    const prevBaseline = Math.max(0, Number(it.prev_qty_picked) || 0);
+    const sessionQty = Math.max(0, (Number(it.qty_picked) || 0) - prevBaseline);
+    const existingSplits = normalizePickSplits(it.pick_splits);
+    const initialSplits: PickingSplitAllocation[] =
+      existingSplits.length > 0
+        ? existingSplits
+        : sessionQty > 0 && defaultSingleLoc && defaultSingleLoc !== '-'
+        ? [{ lokasi: defaultSingleLoc, qty: sessionQty, picker: it.last_picked_by || currentUser || 'Operator' }]
+        : [];
+
     setEditingItemData({
       type,
       index,
@@ -3499,8 +4010,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       size: it.size || '-',
       qty_req: it.qty_req || 0,
       qty_picked: it.qty_picked || 0,
+      prev_qty_picked: prevBaseline,
       lokasi: it.lokasi && it.lokasi !== 'A-01' ? it.lokasi : '-',
       lokasi_picked: defaultSingleLoc && defaultSingleLoc !== 'A-01' ? defaultSingleLoc : '',
+      pick_splits: initialSplits,
       targetSJItemSku: '',
     });
     setIsEditItemModalOpen(true);
@@ -3509,8 +4022,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
   // Save changes from item edit dialog
   const handleSaveEditItem = () => {
     if (!editingItemData) return;
-    const { type, index, qty_picked, lokasi_picked, targetSJItemSku } = editingItemData;
+    const { type, index, qty_picked, lokasi_picked, pick_splits, targetSJItemSku } = editingItemData;
     const cleanSingleLoc = resolvePrimarySingleLocation(lokasi_picked || '') || lokasi_picked.trim().toUpperCase();
+    const cleanedSplits = normalizePickSplits(
+      (pick_splits || []).map((sp) => ({
+        ...sp,
+        picker: sp.picker || currentUser || 'Operator',
+      }))
+    );
 
     if (type === 'UNEXPECTED') {
       if (targetSJItemSku) {
@@ -3519,15 +4038,23 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         if (matchIdx !== -1) {
           const nextActive = [...activeItems];
           const target = nextActive[matchIdx];
-          const newPicked = Number(target.qty_picked || 0) + Number(qty_picked);
+          const addQty = Math.max(1, Number(qty_picked) || 1);
           const resolvedLoc = cleanSingleLoc || resolveSingleItemLocation(target);
+          const { nextSplits, nextQty: newPicked, nextPickerName } = applySplitDeltaToItem(
+            target,
+            resolvedLoc,
+            addQty,
+            currentUser || 'Operator',
+            resolveSingleItemLocation(target)
+          );
           nextActive[matchIdx] = {
             ...target,
             qty_picked: newPicked,
             lokasi_picked: resolvedLoc,
+            pick_splits: nextSplits,
             is_kosong: false,
             status: newPicked >= target.qty_req ? 'SELESAI' : 'SEDANG PICKING',
-            picker_name: mergePickerNamesWithLastActor(target.picker_name, currentUser),
+            picker_name: nextPickerName,
             last_picked_by: currentUser,
           };
           setActiveItems(nextActive);
@@ -3538,6 +4065,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             absoluteQty: newPicked,
             markKosong: false,
             usedLocation: resolvedLoc,
+            pickSplits: nextSplits,
+            nextPickerName,
           });
 
           // Remove from unexpected
@@ -3547,7 +4076,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
 
           playSuccessBeep();
           onNotify(
-            `✅ Berhasil mengalihkan ${qty_picked} pcs dari ${editingItemData.sku} ke SKU ${targetSJItemSku} pada Surat Jalan!`,
+            `✅ Berhasil mengalihkan ${addQty} pcs dari ${editingItemData.sku} ke SKU ${targetSJItemSku} pada Surat Jalan!`,
             'success'
           );
         }
@@ -3561,6 +4090,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             ...nextUnexp[index],
             qty_picked: Number(qty_picked),
             lokasi_picked: cleanSingleLoc,
+            pick_splits: cleanedSplits.length > 0 ? cleanedSplits : undefined,
           };
         }
         setUnexpectedItems(nextUnexp);
@@ -3570,15 +4100,37 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       // REGULAR ITEM
       const nextActive = [...activeItems];
       const target = nextActive[index];
-      const validPicked = Math.max(0, Number(qty_picked) || 0);
+      const minBaseline = Math.max(0, Number(target.prev_qty_picked) || 0);
+      const splitSum = cleanedSplits.reduce((s, sp) => s + sp.qty, 0);
+      const validPicked =
+        cleanedSplits.length > 0
+          ? minBaseline + splitSum
+          : Math.max(minBaseline, Number(qty_picked) || 0);
+      const finalSplits =
+        cleanedSplits.length > 0
+          ? cleanedSplits
+          : validPicked > minBaseline && cleanSingleLoc
+          ? [{ lokasi: cleanSingleLoc, qty: validPicked - minBaseline, picker: currentUser || 'Operator' }]
+          : [];
+      const splitPickers = getPickSplitsDistinctPickers(finalSplits);
+      const nextPickerName =
+        splitPickers.length > 0
+          ? splitPickers.join(', ')
+          : validPicked > 0
+          ? currentUser || 'Operator'
+          : (activeSJRef.current?.picker_name || currentUser || 'Operator').trim();
+      const primaryLoc =
+        finalSplits.length > 0 ? finalSplits[0].lokasi : cleanSingleLoc || resolveSingleItemLocation(target);
+
       nextActive[index] = {
         ...target,
         qty_picked: validPicked,
-        lokasi_picked: cleanSingleLoc,
+        lokasi_picked: primaryLoc,
+        pick_splits: finalSplits,
         is_kosong: false,
-        status: validPicked >= target.qty_req ? 'SELESAI' : 'SEDANG PICKING',
-        picker_name: mergePickerNamesWithLastActor(target.picker_name, currentUser),
-        last_picked_by: currentUser,
+        status: validPicked >= target.qty_req ? 'SELESAI' : validPicked > 0 ? 'SEDANG PICKING' : 'PENDING',
+        picker_name: nextPickerName,
+        last_picked_by: validPicked > 0 ? currentUser : undefined,
       };
       setActiveItems(nextActive);
       syncItemRealtimeAndCheckOverPick({
@@ -3586,9 +4138,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         targetItem: target,
         absoluteQty: validPicked,
         markKosong: false,
-        usedLocation: cleanSingleLoc,
+        usedLocation: primaryLoc,
+        pickSplits: finalSplits,
+        nextPickerName,
       });
-      onNotify(`SKU ${editingItemData.sku} diperbarui: ${validPicked}/${editingItemData.qty_req} pcs (Rak: ${cleanSingleLoc})`, 'success');
+      const locSummary = summarizePickSplitsLocations(finalSplits) || primaryLoc;
+      onNotify(`SKU ${editingItemData.sku} diperbarui: ${validPicked}/${editingItemData.qty_req} pcs (Rak: ${locSummary})`, 'success');
     }
 
     setIsEditItemModalOpen(false);
@@ -3957,27 +4512,46 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     const completedNoSj = activeSJ.no_sj;
     const cleanNoSj = completedNoSj.toUpperCase().trim();
 
-    // Combine all pickers who collaborated on this SJ
+    // Combine all pickers who collaborated on this SJ (for SJ-level header summary ONLY — NEVER overwrite individual SKU pickers!)
     const allPickersSet = new Set<string>();
     parsePickerNamesList(activeSJ.picker_name).forEach((p) => allPickersSet.add(p));
     activeItems.forEach((it) => {
+      getPickSplitsDistinctPickers(it.pick_splits).forEach((p) => allPickersSet.add(p));
       parsePickerNamesList(it.picker_name).forEach((p) => allPickersSet.add(p));
     });
     if (currentUser) allPickersSet.add(currentUser);
     const combinedPickerNames = Array.from(allPickersSet).join(', ') || currentUser || 'Operator';
 
-    const sanitizedItems = activeItems.map((it) => ({
-      ...it,
-      picker_name: combinedPickerNames,
-      lokasi_picked: resolveSingleItemLocation(it),
-    }));
-    const sanitizedUnexpected = unexpectedItems.map((unexp) => ({
-      ...unexp,
-      picker_name: combinedPickerNames,
-      lokasi_picked: resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
-    }));
+    // HARD INVARIANT (Per-Item / Per-Split Picker Attribution):
+    // Preserve each item's exact picker(s) & multi-location pick_splits so `log_produk` #OUT records
+    // the exact operator who picked each SKU/split (e.g. SKU1 -> Vina, SKU2 -> Yesi)!
+    const sanitizedItems = activeItems.map((it) => {
+      const normSplits = normalizePickSplits(it.pick_splits);
+      const itemActualPicker = resolvePickingItemActualPicker(it, currentUser || combinedPickerNames);
+      const singleLoc =
+        normSplits.length > 0 ? normSplits[0].lokasi : resolveSingleItemLocation(it);
+      return {
+        ...it,
+        picker_name: itemActualPicker,
+        lokasi_picked: singleLoc,
+        pick_splits: normSplits.length > 0 ? normSplits : undefined,
+      };
+    });
+    const sanitizedUnexpected = unexpectedItems.map((unexp) => {
+      const normSplits = normalizePickSplits(unexp.pick_splits);
+      const unexpActualPicker = resolvePickingItemActualPicker(unexp, currentUser || combinedPickerNames);
+      return {
+        ...unexp,
+        picker_name: unexpActualPicker,
+        lokasi_picked:
+          normSplits.length > 0
+            ? normSplits[0].lokasi
+            : resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') || '-',
+        pick_splits: normSplits.length > 0 ? normSplits : undefined,
+      };
+    });
 
-    // Deteksi stok rak yang berpotensi minus setelah pencatatan OUT jujur (untuk notif rekomendasi Stock Opname)
+    // Deteksi stok rak yang berpotensi minus setelah pencatatan OUT jujur (per-split rak untuk multi-lokasi!)
     const negativeStockAlerts: Array<{
       sku: string;
       lokasi: string;
@@ -3990,22 +4564,48 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         .filter((x) => (Number(x.qty_picked) || 0) > 0)
         .forEach((it) => {
           const skuKey = (it.sku || '').toUpperCase().trim();
-          const actualLoc = resolvePrimarySingleLocation(it.lokasi_picked || it.lokasi || '') || '';
-          if (!skuKey || !actualLoc || actualLoc === '-' || !(skuKey in realtimeSkuStocks)) return;
+          if (!skuKey || !(skuKey in realtimeSkuStocks)) return;
           const rackList = realtimeSkuStocks[skuKey] || [];
-          const rackMatch = rackList.find(
-            (s) => (s.lokasi || '').trim().toUpperCase() === actualLoc.toUpperCase()
-          );
-          const currentQty = Number(rackMatch?.qty || 0);
-          const pickedQty = Number(it.qty_picked) || 0;
-          if (currentQty - pickedQty < 0) {
-            negativeStockAlerts.push({
-              sku: skuKey,
-              lokasi: actualLoc,
-              currentQty,
-              pickedQty,
-              projectedQty: currentQty - pickedQty,
+          const splits = normalizePickSplits(it.pick_splits);
+
+          if (splits.length > 0) {
+            const qtyByRack = new Map<string, number>();
+            splits.forEach((sp) => {
+              const rKey = sp.lokasi.toUpperCase();
+              qtyByRack.set(rKey, (qtyByRack.get(rKey) || 0) + sp.qty);
             });
+            qtyByRack.forEach((pickedOnRack, rackCode) => {
+              const rackMatch = rackList.find(
+                (s) => (s.lokasi || '').trim().toUpperCase() === rackCode
+              );
+              const currentQty = Number(rackMatch?.qty || 0);
+              if (currentQty - pickedOnRack < 0) {
+                negativeStockAlerts.push({
+                  sku: skuKey,
+                  lokasi: rackCode,
+                  currentQty,
+                  pickedQty: pickedOnRack,
+                  projectedQty: currentQty - pickedOnRack,
+                });
+              }
+            });
+          } else {
+            const actualLoc = resolvePrimarySingleLocation(it.lokasi_picked || it.lokasi || '') || '';
+            if (!actualLoc || actualLoc === '-') return;
+            const rackMatch = rackList.find(
+              (s) => (s.lokasi || '').trim().toUpperCase() === actualLoc.toUpperCase()
+            );
+            const currentQty = Number(rackMatch?.qty || 0);
+            const pickedQty = Number(it.qty_picked) || 0;
+            if (currentQty - pickedQty < 0) {
+              negativeStockAlerts.push({
+                sku: skuKey,
+                lokasi: actualLoc,
+                currentQty,
+                pickedQty,
+                projectedQty: currentQty - pickedQty,
+              });
+            }
           }
         });
     }
@@ -4075,19 +4675,22 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       setRekapCatatan('');
       setDraftsRevision((r) => r + 1);
 
-      // Optimistically update rawItems so SJ moves from Belum Selesai to Selesai immediately
+      // Optimistically update rawItems preserving per-SKU picker_name & multi-location rack breakdown
       setRawItems((prev) => {
         const updated = prev.map((item) => {
           if ((item.no_sj || '').toUpperCase().trim() === cleanNoSj) {
             const matchedActive = sanitizedItems.find(
               (it) => it.sku.toUpperCase().trim() === (item.sku || '').toUpperCase().trim()
             );
+            const splitLocText = matchedActive ? summarizePickSplitsLocations(matchedActive.pick_splits) : '';
             return {
               ...item,
               status: 'SELESAI' as const,
               qty_picked: matchedActive ? matchedActive.qty_picked : item.qty_picked,
+              lokasi: splitLocText || (matchedActive && (Number(matchedActive.qty_picked) || 0) > 0 && matchedActive.lokasi_picked ? matchedActive.lokasi_picked : item.lokasi),
               lokasi_picked: matchedActive ? matchedActive.lokasi_picked : item.lokasi_picked,
-              picker_name: combinedPickerNames,
+              pick_splits: matchedActive ? matchedActive.pick_splits : item.pick_splits,
+              picker_name: matchedActive?.picker_name || item.picker_name || combinedPickerNames,
               catatan: rekapCatatan || item.catatan,
             };
           }
@@ -5024,6 +5627,51 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               : (lookup.size !== '-' ? lookup.size : 'ALL');
             const itemPickers = parsePickerNamesList(item.picker_name);
             const lastPickedBy = item.last_picked_by || (itemPickers.length > 0 ? itemPickers[itemPickers.length - 1] : '');
+            const itemSplits = normalizePickSplits(item.pick_splits);
+            const splitQtyByRack = new Map<string, number>();
+            itemSplits.forEach((sp) => {
+              const rk = sp.lokasi.trim().toUpperCase();
+              splitQtyByRack.set(rk, (splitQtyByRack.get(rk) || 0) + sp.qty);
+            });
+            const splitPickers = getPickSplitsDistinctPickers(itemSplits);
+            const resolvedItemPickerText =
+              splitPickers.length > 0
+                ? splitPickers.map((p) => formatOperatorWithPersonName(p)).join(', ')
+                : itemPickers.length > 1
+                ? itemPickers.map((p) => formatOperatorWithPersonName(p)).join(', ')
+                : lastPickedBy
+                ? formatOperatorWithPersonName(lastPickedBy)
+                : '';
+
+            const splitStripRacks: Array<{ lokasi: string; stockQty?: number; isManual?: boolean }> = [];
+            const seenSplitRacks = new Set<string>();
+            productLocs.forEach((l) => {
+              const rk = l.lokasi.trim().toUpperCase();
+              if (rk && !seenSplitRacks.has(rk)) {
+                seenSplitRacks.add(rk);
+                splitStripRacks.push({ lokasi: rk, stockQty: l.qty });
+              }
+            });
+            itemSplits.forEach((sp) => {
+              const rk = sp.lokasi.trim().toUpperCase();
+              if (rk && !seenSplitRacks.has(rk)) {
+                seenSplitRacks.add(rk);
+                splitStripRacks.push({ lokasi: rk, isManual: true });
+              }
+            });
+            const pickedManualSingle = resolvePrimarySingleLocation(item.lokasi_picked || '');
+            if (
+              pickedManualSingle &&
+              pickedManualSingle !== '-' &&
+              pickedManualSingle !== 'A-01' &&
+              !seenSplitRacks.has(pickedManualSingle.toUpperCase())
+            ) {
+              seenSplitRacks.add(pickedManualSingle.toUpperCase());
+              splitStripRacks.push({ lokasi: pickedManualSingle.toUpperCase(), isManual: true });
+            }
+            const showMultiRackSplitStrip =
+              !isPriorCompleted &&
+              (splitStripRacks.length > 1 || itemSplits.length > 1);
 
             const isScanOnlyMode = inputMode === 'fisik' || inputMode === 'kamera';
 
@@ -5063,6 +5711,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             const loc = locInfo.lokasi;
                             const isThisCurrentShelf =
                               activeLocation && loc.toUpperCase() === activeLocation.toUpperCase();
+                            const rackPicked = splitQtyByRack.get(loc.toUpperCase()) || 0;
                             return (
                               <button
                                 key={locIdx}
@@ -5071,15 +5720,24 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                 className={`px-2 py-0.5 rounded-lg font-mono font-black text-xs inline-flex items-center gap-1 transition-all cursor-pointer ${
                                   isThisCurrentShelf
                                     ? 'bg-indigo-600 text-white border border-indigo-600'
+                                    : rackPicked > 0
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-400 dark:border-emerald-700'
                                     : 'bg-slate-100 dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300/70 dark:border-emerald-700'
                                 }`}
-                                title={`Klik untuk pilih rak ${loc}`}
+                                title={`Klik untuk pilih rak ${loc} (scan SKU berikutnya akan dicatat dari rak ini)`}
                               >
                                 <MapPin className="w-3 h-3 shrink-0" />
                                 <span>{loc}</span>
                                 {locInfo.qty !== undefined && locInfo.qty !== null && (
                                   <span className="text-[10px] font-sans font-semibold opacity-75">
                                     ({locInfo.qty})
+                                  </span>
+                                )}
+                                {rackPicked > 0 && (
+                                  <span className={`px-1 rounded text-[10px] font-mono font-black ${
+                                    isThisCurrentShelf ? 'bg-white/25 text-white' : 'bg-emerald-600 text-white'
+                                  }`}>
+                                    ✓{rackPicked}
                                   </span>
                                 )}
                               </button>
@@ -5101,6 +5759,22 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                           </span>
                         )}
                       </div>
+
+                      {(itemSplits.length > 1 || (!isKosong && pickedQty > 0 && resolvedItemPickerText)) && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          {itemSplits.length > 1 && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                              📍 {summarizePickSplitsLocations(itemSplits)}
+                            </span>
+                          )}
+                          {!isKosong && pickedQty > 0 && resolvedItemPickerText && (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
+                              <Users className="w-3 h-3 text-indigo-500 shrink-0" />
+                              <span>{resolvedItemPickerText}</span>
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     {/* Right: Qty (picked / target) */}
@@ -5157,6 +5831,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         const loc = locInfo.lokasi;
                         const isThisCurrentShelf = activeLocation && loc.toUpperCase() === activeLocation.toUpperCase();
                         const hasQty = locInfo.qty !== undefined && locInfo.qty !== null;
+                        const rackPicked = splitQtyByRack.get(loc.toUpperCase()) || 0;
                         return (
                           <button
                             key={locIdx}
@@ -5165,6 +5840,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             className={`h-9 px-3 rounded-xl font-mono font-black text-sm sm:text-base inline-flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 max-w-full ${
                               isThisCurrentShelf
                                 ? 'bg-indigo-600 text-white border border-indigo-600 shadow-2xs'
+                                : rackPicked > 0
+                                ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-200 border border-emerald-400 dark:border-emerald-700'
                                 : 'bg-white dark:bg-slate-800 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
                             }`}
                             title={`Klik untuk pilih rak ${loc} (Sisa stok sistem di rak: ${locInfo.qty ?? 0} pcs • Target ambil: ${reqQty} pcs)`}
@@ -5174,6 +5851,17 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             {hasQty && (
                               <span className="text-[11px] font-sans font-medium opacity-70">
                                 (stok {locInfo.qty})
+                              </span>
+                            )}
+                            {rackPicked > 0 && (
+                              <span
+                                className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-black leading-none ${
+                                  isThisCurrentShelf
+                                    ? 'bg-white/25 text-white'
+                                    : 'bg-emerald-600 text-white'
+                                }`}
+                              >
+                                ✓ {rackPicked}
                               </span>
                             )}
                           </button>
@@ -5371,6 +6059,75 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   </div>
                 </div>
 
+                {/* BAND 1B — INLINE MULTI-LOCATION SPLIT CONTROLS (Saat produk tersedia di >1 lokasi rak) */}
+                {showMultiRackSplitStrip && (
+                  <div className="px-3 sm:px-4 py-2 bg-indigo-50/40 dark:bg-indigo-950/20 border-b border-indigo-100 dark:border-indigo-900/50 space-y-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-1">
+                      <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                        <MapPin className="w-3 h-3 shrink-0" />
+                        <span>Ambil Multi-Lokasi Rak (Tap - / + per rak):</span>
+                      </span>
+                      {itemSplits.length > 0 && (
+                        <span className="text-[10px] font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                          Terbagi: {summarizePickSplitsLocations(itemSplits)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {splitStripRacks.map((rk) => {
+                        const pickedOnRack = splitQtyByRack.get(rk.lokasi) || 0;
+                        return (
+                          <div
+                            key={rk.lokasi}
+                            className={`inline-flex items-center gap-1 pl-2 pr-1 py-1 rounded-xl border transition-all ${
+                              pickedOnRack > 0
+                                ? 'bg-white dark:bg-[#0f172a] border-emerald-400 dark:border-emerald-700 shadow-2xs'
+                                : 'bg-white/80 dark:bg-[#0f172a]/70 border-slate-200 dark:border-slate-700'
+                            }`}
+                          >
+                            <div className="pr-1">
+                              <span className="font-mono text-xs font-black text-slate-900 dark:text-white">
+                                {rk.lokasi}
+                              </span>
+                              {rk.stockQty !== undefined && rk.stockQty !== null && (
+                                <span className="ml-1 text-[10px] font-semibold text-slate-400">
+                                  ({rk.stockQty})
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              disabled={pickedOnRack <= 0}
+                              onClick={() => handleAdjustItemSplitQty(index, rk.lokasi, -1)}
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-35 disabled:cursor-not-allowed font-black text-sm flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                              title={`Kurangi 1 pcs dari rak ${rk.lokasi}`}
+                            >
+                              -
+                            </button>
+                            <span
+                              className={`min-w-[20px] text-center font-mono text-xs font-black tabular-nums ${
+                                pickedOnRack > 0
+                                  ? 'text-emerald-700 dark:text-emerald-300'
+                                  : 'text-slate-400'
+                              }`}
+                            >
+                              {pickedOnRack}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleAdjustItemSplitQty(index, rk.lokasi, 1)}
+                              className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:border-indigo-400 hover:text-indigo-600 font-black text-sm flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                              title={`Tambah 1 pcs dari rak ${rk.lokasi}`}
+                            >
+                              +
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* BAND 2 — PRODUCT IDENTITY BODY: BIG PRODUCT NAME + BIG SIZE BOX */}
                 <div className="px-3 sm:px-4 py-3 space-y-2">
                   <div className="flex items-start justify-between gap-3">
@@ -5398,11 +6155,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                             <span>Kosong {lastPickedBy ? `(${formatOperatorWithPersonName(lastPickedBy)})` : ''}</span>
                           </span>
                         )}
-                        {!isKosong && pickedQty > 0 && lastPickedBy && (
+                        {!isKosong && pickedQty > 0 && resolvedItemPickerText && (
                           <span className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800">
                             <Users className="w-3 h-3 text-indigo-500 shrink-0" />
                             <span>
-                              Diambil: {itemPickers.length > 1 ? itemPickers.map((p) => formatOperatorWithPersonName(p)).join(', ') : formatOperatorWithPersonName(lastPickedBy)}
+                              Diambil:{' '}
+                              {itemSplits.length > 1 && splitPickers.length > 1
+                                ? itemSplits
+                                    .map(
+                                      (sp) =>
+                                        `${sp.lokasi}:${sp.qty} (${formatOperatorWithPersonName(sp.picker || '')})`
+                                    )
+                                    .join(' · ')
+                                : resolvedItemPickerText}
                             </span>
                           </span>
                         )}
@@ -5440,7 +6205,16 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     </div>
                   )}
 
-                  {item.lokasi &&
+                  {itemSplits.length > 1 ? (
+                    <div className="text-xs text-emerald-800 dark:text-emerald-300 font-bold bg-emerald-50/80 dark:bg-emerald-950/35 px-2.5 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800 flex flex-wrap items-center gap-1.5">
+                      <span>📍 Diambil dari {itemSplits.length} rak:</span>
+                      <span className="font-mono font-black">{summarizePickSplitsLocations(itemSplits)}</span>
+                      <span className="text-[10px] font-semibold opacity-75">
+                        (Log #OUT otomatis tercatat terpisah per rak)
+                      </span>
+                    </div>
+                  ) : (
+                    item.lokasi &&
                     item.lokasi !== '-' &&
                     item.lokasi !== 'A-01' &&
                     item.lokasi !== 'KOSONG' &&
@@ -5448,9 +6222,10 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     item.lokasi_picked !== item.lokasi &&
                     item.lokasi_picked !== 'KOSONG' && (
                       <div className="text-xs text-amber-800 dark:text-amber-300 font-bold bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-lg border border-amber-200 dark:border-amber-800">
-                        ⚠️ Diambil dari rak: <b>{item.lokasi_picked}</b> (Target SJ: {item.lokasi})
+                        ⚠️ Diambil dari rak: <b className="font-mono">{item.lokasi_picked}</b> (Target SJ: <span className="font-mono">{item.lokasi}</span>)
                       </div>
-                    )}
+                    )
+                  )}
                 </div>
 
                 {/* BAND 3 — THUMB-FRIENDLY ACTION FOOTER (HP & DESKTOP) */}
@@ -5850,9 +6625,19 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     {activeItems.map((it, idx) => {
                       const selisih = it.qty_picked - it.qty_req;
                       const isItemKosong = Boolean(it.is_kosong || it.status === 'KOSONG');
+                      const itSplits = normalizePickSplits(it.pick_splits);
+                      const locDisplay =
+                        summarizePickSplitsLocations(itSplits) ||
+                        resolvePrimarySingleLocation(it.lokasi_picked || '') ||
+                        it.lokasi ||
+                        '-';
+                      const actualPicker =
+                        it.qty_picked > 0 || isItemKosong
+                          ? resolvePickingItemActualPicker(it, '')
+                          : '';
                       return (
-                        <div key={idx} className="p-3 flex justify-between items-center text-xs">
-                          <div>
+                        <div key={idx} className="p-3 flex justify-between items-center gap-2 text-xs">
+                          <div className="min-w-0">
                             <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
                               <span>{resolveProductName(it.sku, it.nama_produk)}</span>
                               {isItemKosong && (
@@ -5861,12 +6646,29 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] font-mono text-slate-400">
-                              {it.sku} {it.size ? `• Size: ${it.size}` : ''} • 📍 {it.lokasi}
-                              {it.picker_name ? ` • 👷 ${formatOperatorWithPersonName(it.picker_name)}` : ''}
+                            <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                              <span>{it.sku}</span>
+                              {it.size ? <span>• Size: {it.size}</span> : null}
+                              <span>• 📍 {locDisplay}</span>
+                              {actualPicker && (
+                                <span className="font-sans font-bold text-indigo-600 dark:text-indigo-400">
+                                  • 👷 {parsePickerNamesList(actualPicker).map((p) => formatOperatorWithPersonName(p)).join(', ')}
+                                </span>
+                              )}
                             </div>
+                            {itSplits.length > 1 && (
+                              <div className="text-[10px] font-mono text-emerald-700 dark:text-emerald-400 mt-0.5">
+                                Split #OUT:{' '}
+                                {itSplits
+                                  .map(
+                                    (sp) =>
+                                      `${sp.lokasi} (${sp.qty} pcs${sp.picker ? ` · ${formatOperatorWithPersonName(sp.picker)}` : ''})`
+                                  )
+                                  .join(' + ')}
+                              </div>
+                            )}
                           </div>
-                          <div className="text-right">
+                          <div className="text-right shrink-0">
                             <div className="font-mono font-black text-sm">
                               {it.qty_picked} / {it.qty_req} Pcs
                             </div>
@@ -6224,9 +7026,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Cari Nomor SJ / Tujuan / SKU / Nama Produk..."
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-800 dark:text-white focus:border-primary-500 outline-none"
+              placeholder="Cari No SJ / Tujuan / SKU / Produk / Picker (otomatis cari arsip lama)..."
+              className="w-full pl-10 pr-28 py-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-medium text-slate-800 dark:text-white focus:border-primary-500 outline-none"
             />
+            {isSearchingArchive && (
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-300 text-[10px] font-bold">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                <span>Cari arsip...</span>
+              </span>
+            )}
           </div>
           <div className="flex gap-2">
             <button
@@ -6256,7 +7064,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               Tidak ada Surat Jalan dalam kategori ini
             </h3>
             <p className="text-xs text-slate-400 mt-1 mb-2">
-              Belum ada tugas picking atau semua Surat Jalan sudah diselesaikan.
+              {search.trim().length >= 3 && isSearchingArchive
+                ? 'Sedang mencari di seluruh arsip riwayat database...'
+                : 'Belum ada tugas picking atau semua Surat Jalan sudah diselesaikan.'}
             </p>
             {sjGroups.length === 0 && (
               <button
@@ -6268,7 +7078,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             )}
           </div>
         ) : (
-          filteredSJs.slice(0, 100).map((group) => {
+          filteredSJs.map((group) => {
             const isDone = group.status === 'SELESAI';
             const sjUpper = (group.no_sj || '').toUpperCase().trim();
             const isCurrentlyMinimizedSj = Boolean(
@@ -6586,6 +7396,49 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
             );
           })
         )}
+
+        {/* Paginated Picking History Footer (Hemat Egress + Akses Penuh Arsip Lama) */}
+        {historyMeta.totalRows > 0 && (historyMeta.hasMore || statusFilter !== 'ACTIVE') && (
+          <div className="p-3.5 rounded-2xl bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-2xs">
+            <div className="text-xs text-slate-600 dark:text-slate-300 space-y-0.5">
+              <div className="font-bold text-slate-800 dark:text-slate-100">
+                Riwayat Termuat:{' '}
+                <span className="font-mono font-black text-indigo-600 dark:text-indigo-400">
+                  {sjGroups.length} Surat Jalan
+                </span>{' '}
+                <span className="text-slate-400 font-normal">
+                  ({Math.min(historyMeta.loadedOffset, historyMeta.totalRows).toLocaleString('id-ID')} /{' '}
+                  {historyMeta.totalRows.toLocaleString('id-ID')} baris item)
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {historyMeta.hasMore
+                  ? 'Riwayat lama tetap tersimpan aman di database. Klik tombol di samping untuk memuat arsip lebih lama, atau ketik No SJ / SKU di kotak pencarian (min. 3 karakter).'
+                  : 'Seluruh arsip riwayat tugas picking di database sudah dimuat.'}
+              </p>
+            </div>
+            {historyMeta.hasMore && (
+              <button
+                type="button"
+                disabled={isLoadingMoreHistory}
+                onClick={handleLoadMoreHistory}
+                className="px-4 py-2.5 rounded-xl bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95 disabled:opacity-50 transition-all"
+              >
+                {isLoadingMoreHistory ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Memuat Arsip...</span>
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Muat Riwayat Lebih Lama (+1.000 Baris)</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
     )}
@@ -6602,7 +7455,12 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 <h2 className="text-lg font-black text-slate-800 dark:text-white uppercase">
                   {viewCompletedSJ.no_sj}
                 </h2>
-                <p className="text-xs text-slate-500 font-medium">Tujuan: {viewCompletedSJ.tujuan} • Picker: {formatOperatorWithPersonName(viewCompletedSJ.picker_name)}</p>
+                <p className="text-xs text-slate-500 font-medium">
+                  Tujuan: {viewCompletedSJ.tujuan} • Picker:{' '}
+                  {parsePickerNamesList(viewCompletedSJ.picker_name)
+                    .map((p) => formatOperatorWithPersonName(p))
+                    .join(', ') || '-'}
+                </p>
               </div>
               <button
                 onClick={() => setViewCompletedSJ(null)}
@@ -6622,9 +7480,13 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                   {viewCompletedSJ.items.map((it, idx) => {
                     const selisih = it.qty_picked - it.qty_req;
                     const isItemKosong = Boolean(it.is_kosong || it.status === 'KOSONG');
+                    const itemPickerList =
+                      it.qty_picked > 0 || isItemKosong
+                        ? parsePickerNamesList(it.picker_name)
+                        : [];
                     return (
-                      <div key={idx} className="p-3 flex justify-between items-center text-xs">
-                        <div>
+                      <div key={idx} className="p-3 flex justify-between items-center gap-2 text-xs">
+                        <div className="min-w-0">
                           <div className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5 flex-wrap">
                             <span>{resolveProductName(it.sku, it.nama_produk)}</span>
                             {isItemKosong && (
@@ -6633,8 +7495,14 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                               </span>
                             )}
                           </div>
-                          <div className="text-[11px] font-mono text-slate-400">
-                            {it.sku} • 📍 {it.lokasi}
+                          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                            <span>{it.sku}</span>
+                            <span>• 📍 {it.lokasi || '-'}</span>
+                            {itemPickerList.length > 0 && (
+                              <span className="font-sans font-bold text-indigo-600 dark:text-indigo-400">
+                                • 👷 {itemPickerList.map((p) => formatOperatorWithPersonName(p)).join(', ')}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <div className="text-right">
@@ -7008,127 +7876,268 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                 </div>
               )}
 
-              {/* Adjust Qty Picked */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Jumlah yang Dipick (Pcs)
-                  </label>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingItemData({
-                          ...editingItemData,
-                          qty_picked: Math.max(0, Number(editingItemData.qty_picked || 0) - 1),
-                        })
-                      }
-                      className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold"
-                    >
-                      -
-                    </button>
-                    <NumberInput
-                      min={0}
-                      value={editingItemData.qty_picked}
-                      selectOnFocus
-                      onValueChange={(val) =>
-                        setEditingItemData({
-                          ...editingItemData,
-                          qty_picked: val,
-                        })
-                      }
-                      className="flex-1 py-2 text-center bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setEditingItemData({
-                          ...editingItemData,
-                          qty_picked: Number(editingItemData.qty_picked || 0) + 1,
-                        })
-                      }
-                      className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+              {editingItemData.type === 'REGULAR' ? (
+                /* MULTI-LOCATION SPLIT ALLOCATION EDITOR FOR REGULAR SJ ITEMS */
+                (() => {
+                  const prevBase = Math.max(0, Number(editingItemData.prev_qty_picked) || 0);
+                  const currentSplits = editingItemData.pick_splits || [];
+                  const splitTotal = currentSplits.reduce((s, sp) => s + Math.max(0, Number(sp.qty) || 0), 0);
+                  const totalPickedDisplay = prevBase + splitTotal;
+                  const itemLocs = getProductLocations(editingItemData.sku, editingItemData.lokasi);
 
-                <div>
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                    Lokasi Rak Pengambilan
-                  </label>
-                  <input
-                    type="text"
-                    value={editingItemData.lokasi_picked || ''}
-                    onChange={(e) =>
-                      setEditingItemData({
-                        ...editingItemData,
-                        lokasi_picked: e.target.value,
-                      })
+                  const updateSplits = (nextSplits: PickingSplitAllocation[]) => {
+                    const sum = nextSplits.reduce((s, sp) => s + Math.max(0, Number(sp.qty) || 0), 0);
+                    setEditingItemData({
+                      ...editingItemData,
+                      pick_splits: nextSplits,
+                      qty_picked: prevBase + sum,
+                      lokasi_picked: nextSplits[0]?.lokasi || editingItemData.lokasi_picked || '',
+                    });
+                  };
+
+                  const addOrIncrementRack = (rackCode: string) => {
+                    const cleanRack = rackCode.trim().toUpperCase();
+                    if (!cleanRack) return;
+                    const existingIdx = currentSplits.findIndex(
+                      (sp) => sp.lokasi.trim().toUpperCase() === cleanRack
+                    );
+                    if (existingIdx >= 0) {
+                      const next = currentSplits.map((sp, i) =>
+                        i === existingIdx ? { ...sp, qty: (Number(sp.qty) || 0) + 1 } : sp
+                      );
+                      updateSplits(next);
+                    } else {
+                      updateSplits([
+                        ...currentSplits,
+                        { lokasi: cleanRack, qty: 1, picker: currentUser || 'Operator' },
+                      ]);
                     }
-                    placeholder="Contoh: A-01"
-                    className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-primary-500"
-                  />
-                </div>
-              </div>
+                  };
 
-              {/* Pilihan Cepat Semua Lokasi Terdeteksi untuk SKU Ini */}
-              {(() => {
-                const itemLocs = editingItemData
-                  ? getProductLocations(editingItemData.sku, editingItemData.lokasi)
-                  : [];
-                if (itemLocs.length <= 1) return null;
+                  return (
+                    <div className="space-y-3">
+                      <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+                        <div>
+                          <span className="text-[10px] font-bold uppercase text-slate-400 block">
+                            Target vs Total Diambil
+                          </span>
+                          <span className="font-mono font-black text-base text-slate-900 dark:text-white">
+                            {totalPickedDisplay} / {editingItemData.qty_req} Pcs
+                          </span>
+                          {prevBase > 0 && (
+                            <span className="ml-2 text-[10px] font-bold text-slate-500">
+                              (Sesi lalu: {prevBase} pcs)
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateSplits([
+                              ...currentSplits,
+                              { lokasi: '', qty: 1, picker: currentUser || 'Operator' },
+                            ])
+                          }
+                          className="px-3 py-1.5 rounded-xl bg-white dark:bg-slate-800 border border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold inline-flex items-center gap-1 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Tambah Rak</span>
+                        </button>
+                      </div>
 
-                return (
-                  <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 space-y-2">
-                    <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                      <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                      <span>Pilihan Cepat Lokasi Rak ({itemLocs.length} Lokasi Terdeteksi):</span>
+                      {/* Daftar Split Per Rak */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">
+                          Alokasi Pengambilan Per Lokasi Rak (Bisa Lebih Dari 1 Rak)
+                        </label>
+                        {currentSplits.length === 0 ? (
+                          <div className="p-3 rounded-xl border border-dashed border-slate-300 dark:border-slate-700 text-center text-xs text-slate-500">
+                            Belum ada qty terpilih (0 pcs). Klik rak di bawah atau klik <b>+ Tambah Rak</b> untuk mengisi pengambilan.
+                          </div>
+                        ) : (
+                          currentSplits.map((sp, spIdx) => (
+                            <div
+                              key={spIdx}
+                              className="p-2.5 rounded-xl bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 flex items-center gap-2"
+                            >
+                              <input
+                                type="text"
+                                value={sp.lokasi}
+                                onChange={(e) => {
+                                  const next = currentSplits.map((row, i) =>
+                                    i === spIdx ? { ...row, lokasi: e.target.value.toUpperCase() } : row
+                                  );
+                                  updateSplits(next);
+                                }}
+                                placeholder="Rak (A001)"
+                                className="flex-1 min-w-0 px-2.5 py-2 bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-black uppercase text-slate-900 dark:text-white outline-none focus:border-indigo-500"
+                              />
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const nextQty = Math.max(0, (Number(sp.qty) || 0) - 1);
+                                    if (nextQty <= 0) {
+                                      updateSplits(currentSplits.filter((_, i) => i !== spIdx));
+                                    } else {
+                                      updateSplits(
+                                        currentSplits.map((row, i) =>
+                                          i === spIdx ? { ...row, qty: nextQty } : row
+                                        )
+                                      );
+                                    }
+                                  }}
+                                  className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-black cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <NumberInput
+                                  min={0}
+                                  value={sp.qty}
+                                  selectOnFocus
+                                  onValueChange={(val) => {
+                                    const next = currentSplits.map((row, i) =>
+                                      i === spIdx ? { ...row, qty: Math.max(0, val) } : row
+                                    );
+                                    updateSplits(next);
+                                  }}
+                                  className="w-12 h-8 text-center bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono font-black text-slate-900 dark:text-white outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const next = currentSplits.map((row, i) =>
+                                      i === spIdx ? { ...row, qty: (Number(row.qty) || 0) + 1 } : row
+                                    );
+                                    updateSplits(next);
+                                  }}
+                                  className="w-8 h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-black cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => updateSplits(currentSplits.filter((_, i) => i !== spIdx))}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer shrink-0"
+                                title="Hapus baris rak ini"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+
+                      {/* Pilihan Cepat Tambah Rak Terdeteksi */}
+                      {itemLocs.length > 0 && (
+                        <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 space-y-2">
+                          <div className="text-[11px] font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <span>Tap Rak untuk Menambah +1 Pcs ({itemLocs.length} Lokasi Terdeteksi):</span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {itemLocs.map((locInfo, lIdx) => {
+                              const pickedOnThis = currentSplits
+                                .filter((sp) => sp.lokasi.trim().toUpperCase() === locInfo.lokasi.toUpperCase())
+                                .reduce((s, sp) => s + (Number(sp.qty) || 0), 0);
+                              return (
+                                <button
+                                  key={lIdx}
+                                  type="button"
+                                  onClick={() => addOrIncrementRack(locInfo.lokasi)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                                    pickedOnThis > 0
+                                      ? 'bg-indigo-600 text-white shadow-sm'
+                                      : 'bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/70 text-slate-800 dark:text-slate-200 hover:bg-amber-100 dark:hover:bg-amber-900/40'
+                                  }`}
+                                >
+                                  <span>📍 {locInfo.lokasi}</span>
+                                  {locInfo.qty !== undefined && (
+                                    <span className="text-[10px] opacity-80 font-sans font-semibold">
+                                      (stok {locInfo.qty})
+                                    </span>
+                                  )}
+                                  {pickedOnThis > 0 && (
+                                    <span className="px-1.5 py-0.5 rounded bg-white/25 text-white text-[10px] font-black">
+                                      +{pickedOnThis}
+                                    </span>
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {itemLocs.map((locInfo, lIdx) => {
-                        const isSelected =
-                          (editingItemData.lokasi_picked || '').toUpperCase() === locInfo.lokasi.toUpperCase();
-                        return (
-                          <button
-                            key={lIdx}
-                            type="button"
-                            onClick={() =>
-                              setEditingItemData({
-                                ...editingItemData,
-                                lokasi_picked: locInfo.lokasi,
-                              })
-                            }
-                            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
-                              isSelected
-                                ? 'bg-primary-500 text-white shadow-sm ring-2 ring-primary-500/30'
-                                : 'bg-white dark:bg-[#131d31] border border-amber-300 dark:border-amber-700/70 text-slate-800 dark:text-slate-200 hover:bg-amber-100 dark:hover:bg-amber-900/40'
-                            }`}
-                          >
-                            <span>📍 {locInfo.lokasi}</span>
-                            {locInfo.qty !== undefined && (
-                              <span className="text-[10px] opacity-80 font-sans font-semibold">
-                                (stok {locInfo.qty})
-                              </span>
-                            )}
-                            {locInfo.isPrimary && (
-                              <span className="text-[9px] px-1 bg-black/10 rounded font-sans uppercase font-extrabold">
-                                Utama
-                              </span>
-                            )}
-                            {!locInfo.isPrimary && (
-                              <span className="text-[9px] px-1 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded font-sans uppercase font-extrabold">
-                                Lain
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
+                  );
+                })()
+              ) : (
+                /* UNEXPECTED / SALAH AMBIL SINGLE-RACK EDITOR */
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                      Jumlah yang Dipick (Pcs)
+                    </label>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingItemData({
+                            ...editingItemData,
+                            qty_picked: Math.max(0, Number(editingItemData.qty_picked || 0) - 1),
+                          })
+                        }
+                        className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold"
+                      >
+                        -
+                      </button>
+                      <NumberInput
+                        min={0}
+                        value={editingItemData.qty_picked}
+                        selectOnFocus
+                        onValueChange={(val) =>
+                          setEditingItemData({
+                            ...editingItemData,
+                            qty_picked: val,
+                          })
+                        }
+                        className="flex-1 py-2 text-center bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-sm font-bold text-slate-800 dark:text-white outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setEditingItemData({
+                            ...editingItemData,
+                            qty_picked: Number(editingItemData.qty_picked || 0) + 1,
+                          })
+                        }
+                        className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
-                );
-              })()}
+
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                      Lokasi Rak Pengambilan
+                    </label>
+                    <input
+                      type="text"
+                      value={editingItemData.lokasi_picked || ''}
+                      onChange={(e) =>
+                        setEditingItemData({
+                          ...editingItemData,
+                          lokasi_picked: e.target.value,
+                        })
+                      }
+                      placeholder="Contoh: A001"
+                      className="w-full p-2.5 bg-slate-50 dark:bg-[#0f172a] border border-slate-200 dark:border-slate-800 rounded-xl text-xs font-mono font-bold text-slate-800 dark:text-white outline-none focus:border-primary-500"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#0f172a] flex justify-between items-center">

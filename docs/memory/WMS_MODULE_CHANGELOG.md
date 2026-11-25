@@ -4,12 +4,18 @@
 
 ---
 
-## v2.29.2 — 24 November 2026
-**Modul**: Keranjang Order Picking & Distribusi Picking (`src/components/inventory/InventoryPickingCartDrawer.tsx`, `src/components/InventoryView.tsx`, `src/components/PesananSaya/DistribusiPickingModal.tsx`, `src/types.ts`)
-- **Filter Area Sumber Picking pada Keranjang Order**:
-  - Menambahkan pemilih **Area Sumber Picking** (`Semua Area Normal`, `Warehouse`, `Blok F`, `Kolian`, `Aksesoris`, `Transit`, `Perbaikan`, `Anomali`) beserta jumlah SKU aktif per area di bagian atas `InventoryPickingCartDrawer`.
-  - Saat area tertentu dipilih (mis. `Warehouse`, `Blok F`, atau `Perbaikan`), **Pencarian Cepat Produk**, **Impor CSV/Excel/Paste**, serta **Lokasi Rak & Qty item di Keranjang** otomatis hanya menampilkan produk, rak, dan stok dari area tersebut.
-  - Meneruskan `source_area` ke `PengecekanSJDraft` dan `DistribusiPickingModal` (`isLocationEligibleForDraft`) agar seluruh hasil picking (Preview, Tugas Picking App, Pesan WA Grup, & Cetak A4) ketat mengikuti lokasi area yang dipilih — sementara Pengecekan SJ Distribusi Store normal (tanpa `source_area`) tetap menjaga aturan baku `isPickingEligibleForPengecekan` (Priority 1 & 2).
+## v2.30.0 — 24 November 2026
+**Modul**: Tugas Picking (`PickingTasksView.tsx`, `supabase.ts`, `scannerOutboxService.ts`, `types.ts`) + Upgrade Skill (`.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md`)
+- **Riwayat Tugas Picking Lengkap (Paginated On-Demand + Pencarian Arsip Cloud + Tail-SJ Guard)**:
+  - Menangani kasus tampilan awal hanya memuat ~10 SJ terbaru (akibat 4 SJ besar 24 Nov 2026 berisi 794 baris yang memenuhi batas `limit=800`, sementara seluruh 8.794 baris riwayat tetap aman di database).
+  - Meningkatkan halaman awal menjadi `1.000` baris terbaru + seluruh tugas aktif (`status=neq.SELESAI`) disertai **Tail-SJ Boundary Guard** agar SJ pada batas halaman tidak pernah terpotong.
+  - Menambahkan tombol **"Muat Riwayat Lebih Lama (+1.000 Baris)"** (`fetchPickingListHistoryPageSupabase`), pencarian arsip otomatis ke database (`searchPickingListHistorySupabase`, debounce 400ms, min. 3 karakter), serta menghapus batas potong `.slice(0, 100)` pada daftar kartu SJ.
+- **Multi-Lokasi Split Picking (Ambil 1 SKU dari >1 Lokasi Rak)**:
+  - Menambahkan struktur `pick_splits` (`PickingSplitAllocation[]`) yang mendukung pengambilan 1 SKU dari beberapa rak sekaligus (mis. `1 pcs A001` + `1 pcs A002`) melalui 4 jalur: **strip inline `- / +` per rak** pada kartu SKU, **scan barcode `#LOK` bergantian**, tombol **`Ambil Pas` smart auto-split** mengikuti ketersediaan stok rak, serta **editor Multi-Lokasi di modal Edit Item**.
+  - Saat SJ diselesaikan (online maupun outbox offline), `buildOutLogEntriesForPickingItem` otomatis mencatat baris mutasi `#OUT` di `log_produk` secara **terpisah per lokasi rak** (tetap patuh anti-double `#OUT` delta) dan menyimpan ringkasan multi-rak (`A001 (1), A002 (1)`) di `picking_list.lokasi`.
+- **Atribusi Picker Per-Produk / Per-Split pada Picking Kolaboratif**:
+  - Memperbaiki alur join/leave (`claimOrJoinPickingSJSupabase`, `leavePickingSJSupabase`), sync realtime per-item (`syncSinglePickingItemRealtimeSupabase`), dan penyelesaian SJ (`completePickingSuratJalanSupabase`, `syncAllPickingOutboxBatches`) agar **setiap SKU & split rak mencatat nama operator yang benar-benar mengambil barang tersebut** (mis. SKU1 oleh `Vina`, SKU2 oleh `Yesi` dalam 1 SJ yang sama — tidak lagi ditimpa seragam `"Vina, Yesi"` pada `picking_list.picker_name` maupun `log_produk.operator`).
+  - Menampilkan badge atribusi picker per-SKU di kartu picking aktif, modal Rekap sebelum submit, dan modal Detail Rekap SJ Selesai.
 
 ---
 
