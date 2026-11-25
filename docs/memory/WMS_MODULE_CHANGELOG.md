@@ -4,6 +4,14 @@
 
 ---
 
+## v2.31.1 — 25 November 2026
+**Modul**: Peminjaman Barang (SPS) (`src/components/PeminjamanView.tsx`)
+- **Hapus Kolom Lokasi pada Cetak Surat Jalan (PDF) SPS**:
+  - Menghapus kolom **Lokasi** (dan query `fetchStockForSkus` yang tidak diperlukan) dari cetakan A4 `Surat Peminjaman Sementara (SPS)` karena Surat Jalan adalah dokumen serah terima ke PIC/Peminjam (bukan Picking List), sekaligus menambahkan baris ringkasan **Total Qty** di footer tabel.
+  - Notifikasi **1. Picking List ke Grup Gudang** tetap menampilkan lokasi rak live untuk petugas gudang.
+
+---
+
 ## v2.31.0 — 25 November 2026
 **Modul**: Penerimaan Produksi — Fitur Scanner & Perbaikan Massal Batch Susulan (`src/components/penerimaan/MultiBatchAuditScannerModal.tsx`, `src/components/penerimaan/AuditHitungUlangTab.tsx`, `src/services/gasProduksiSync.ts`)
 - **Fitur Baru "Cek & Perbaiki Batch Susulan" (Multi-Batch Audit Scanner & Auto-Fixer)**:

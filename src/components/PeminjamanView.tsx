@@ -1791,85 +1791,27 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
     }
   };
 
-  // Print Surat Jalan (Always fetches live locations from Supabase stok_real_fisik to prevent stale cache)
-  const handlePrintSJ = async (record: PeminjamanRecord) => {
+  // Print Surat Jalan SPS (Dokumen serah terima ke PIC/Peminjam — tanpa kolom Lokasi Rak)
+  const handlePrintSJ = (record: PeminjamanRecord) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       onShowToast('Popup terblokir, izinkan popup browser untuk cetak PDF', 'warning');
       return;
     }
 
-    const skus = Array.from(new Set((record.items || []).map((it) => String(it.sku || '').trim().toUpperCase()).filter(Boolean)));
-    const liveMap: Record<string, StockRealtimeItem[]> = { ...realtimeSkuStocks };
-    if (skus.length > 0) {
-      try {
-        const freshStocks = await fetchStockForSkus(skus);
-        skus.forEach((s) => { liveMap[s] = []; });
-        freshStocks.forEach((stk) => {
-          const key = String(stk.sku || '').trim().toUpperCase();
-          if (!liveMap[key]) liveMap[key] = [];
-          liveMap[key].push(stk);
-        });
-        setRealtimeSkuStocks((prev) => ({ ...prev, ...liveMap }));
-      } catch (err) {
-        console.warn('Gagal memuat lokasi live sebelum cetak SJ SPS:', err);
-      }
-    }
-
-    const itemsRows = record.items
-      .map((it, idx) => {
-        const cleanSku = (it.sku || '').toUpperCase().trim();
-        let locText = it.lokasi || '-';
-        let isKosong = false;
-
-        if (cleanSku in liveMap) {
-          const stkList = liveMap[cleanSku] || [];
-          const locMap = new Map<string, { lokasi: string; qty: number; area?: string }>();
-          const emptyRacks: string[] = [];
-          stkList.forEach((stk) => {
-            const loc = String(stk.lokasi || '').trim().toUpperCase();
-            const qty = Number(stk.sisa_stok) || 0;
-            if (!loc || loc === '-' || loc === '--' || !isWarehouseLocation(loc, stk.area)) return;
-            if (qty > 0) {
-              const prev = locMap.get(loc);
-              if (prev) prev.qty += qty;
-              else locMap.set(loc, { lokasi: loc, qty, area: stk.area });
-            } else if (!emptyRacks.includes(loc)) {
-              emptyRacks.push(loc);
-            }
-          });
-          const sorted = Array.from(locMap.values()).sort((a, b) => {
-            const pA = getPickingPriority(a.lokasi, a.area);
-            const pB = getPickingPriority(b.lokasi, b.area);
-            if (pA !== pB) return pA - pB;
-            return b.qty - a.qty;
-          });
-          if (sorted.length > 0) {
-            locText = sorted.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ');
-          } else {
-            locText = emptyRacks.length > 0 ? `KOSONG (Rak: ${emptyRacks.join(', ')})` : 'KOSONG (0 pcs)';
-            isKosong = true;
-          }
-        } else {
-          const locs = getProductLocations(cleanSku, it.lokasi);
-          if (locs.length > 0) {
-            locText = locs.map((l) => `${l.lokasi} (${l.qty || 0} pcs)`).join(', ');
-          } else if (it.lokasi && it.lokasi.includes('KOSONG')) {
-            isKosong = true;
-          }
-        }
-
-        return `
+    const totalQty = (record.items || []).reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+    const itemsRows = (record.items || [])
+      .map(
+        (it, idx) => `
       <tr>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${idx + 1}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.produk}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1;">${it.size}</td>
         <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace;">${it.sku}</td>
         <td style="text-align:center; padding: 6px; border: 1px solid #cbd5e1; font-weight: bold;">${it.qty}</td>
-        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: 700; color: ${isKosong ? '#e11d48' : '#047857'};">${locText}</td>
       </tr>
-    `;
-      })
+    `
+      )
       .join('');
 
     const qrText = encodeURIComponent(`#OUT "Peminjaman Invoice ${record.noPeminjaman}"`);
@@ -1891,6 +1833,7 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
           .label { width: 160px; color: #64748b; font-weight: 600; }
           .items-table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 12px; }
           .items-table th { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 8px 6px; text-align: left; text-transform: uppercase; font-size: 11px; }
+          .items-table tfoot td { background: #f8fafc; border: 1px solid #cbd5e1; padding: 7px 6px; font-weight: 800; }
           .footer-sign { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; text-align: center; margin-top: 40px; font-size: 12px; }
           .sign-box { height: 65px; }
         </style>
@@ -1924,17 +1867,22 @@ export const PeminjamanView: React.FC<PeminjamanViewProps> = React.memo(({
         <table class="items-table">
           <thead>
             <tr>
-              <th style="width:35px; text-align:center;">No</th>
+              <th style="width:40px; text-align:center;">No</th>
               <th>Nama Produk</th>
-              <th style="width:55px; text-align:center;">Size</th>
-              <th style="width:110px;">SKU</th>
-              <th style="width:45px; text-align:center;">Qty</th>
-              <th style="width:110px;">Lokasi</th>
+              <th style="width:70px; text-align:center;">Size</th>
+              <th style="width:140px;">SKU</th>
+              <th style="width:65px; text-align:center;">Qty</th>
             </tr>
           </thead>
           <tbody>
             ${itemsRows}
           </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" style="text-align:right; text-transform:uppercase; font-size:11px; color:#475569;">Total Qty</td>
+              <td style="text-align:center;">${totalQty}</td>
+            </tr>
+          </tfoot>
         </table>
 
         <div class="footer-sign">

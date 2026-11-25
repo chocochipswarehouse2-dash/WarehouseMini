@@ -15,11 +15,11 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.31.0",
-  "versionCode": 510,
+  "version": "v2.31.1",
+  "versionCode": 511,
   "buildDate": "25 November 2026",
-  "buildHash": "wms-261125-v510-1810",
-  "releaseTitle": "WMS v2.31.0 — Scanner Batch Susulan Massal & Perbaikan Layout Panel Samping",
+  "buildHash": "wms-261125-v511-1840",
+  "releaseTitle": "WMS v2.31.1 — Cetak Surat Jalan SPS Tanpa Kolom Lokasi",
   "releaseNotes": [
     "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
   ],
@@ -27,6 +27,17 @@ export const CURRENT_APP_VERSION_INFO: VersionInfo = {
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.31.0",
+    "versionCode": 510,
+    "buildDate": "25 November 2026",
+    "buildHash": "wms-261125-v510-1810",
+    "releaseTitle": "WMS v2.31.0 — Scanner Batch Susulan Massal & Perbaikan Layout Panel Samping",
+    "releaseNotes": [
+      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.30.1",
     "versionCode": 501,
@@ -107,19 +118,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "buildDate": "23 November 2026",
     "buildHash": "wms-261123-v481-2253",
     "releaseTitle": "WMS v2.28.1 — Pembaruan Sistem & Optimasi Operasional",
-    "releaseNotes": [
-      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
-      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
-      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.28.0",
-    "versionCode": 480,
-    "buildDate": "23 November 2026",
-    "buildHash": "wms-261123-v480-1521",
-    "releaseTitle": "WMS v2.28.0 — Pembaruan Sistem & Optimasi Operasional",
     "releaseNotes": [
       "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
       "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",

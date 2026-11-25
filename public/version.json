@@ -1,9 +1,9 @@
 {
-  "version": "v2.31.0",
-  "versionCode": 510,
+  "version": "v2.31.1",
+  "versionCode": 511,
   "buildDate": "25 November 2026",
-  "buildHash": "wms-261125-v510-1810",
-  "releaseTitle": "WMS v2.31.0 — Scanner Batch Susulan Massal & Perbaikan Layout Panel Samping",
+  "buildHash": "wms-261125-v511-1840",
+  "releaseTitle": "WMS v2.31.1 — Cetak Surat Jalan SPS Tanpa Kolom Lokasi",
   "releaseNotes": [
     "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
   ],
