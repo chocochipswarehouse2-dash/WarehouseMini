@@ -271,15 +271,43 @@ export function enrichBlocksWithRecountAudit(
     const arrivalDates = Array.from(
       new Set((b.dateSlots || []).map((d) => extractIsoDateFromSlot(d)).filter(Boolean))
     );
+    const savedAuditedDates: string[] = Array.isArray(auditRec?.audited_dates)
+      ? auditRec.audited_dates.map((d: any) => extractIsoDateFromSlot(String(d || ''))).filter(Boolean)
+      : [];
+
+    // Kumpulkan tanggal yang benar-benar sudah diaudit vs belum diaudit di tingkat blok
+    const blockAuditedDateSet = new Set<string>(savedAuditedDates);
+    const blockPendingDateSet = new Set<string>();
+    (b.colorGroups || []).forEach((cg: any) => {
+      (cg.sizes || []).forEach((sz: any) => {
+        if (Array.isArray(sz.recountAuditedDates)) {
+          sz.recountAuditedDates.forEach((d: string) => {
+            const iso = extractIsoDateFromSlot(d);
+            if (iso) blockAuditedDateSet.add(iso);
+          });
+        }
+        if (Array.isArray(sz.recountPendingDates)) {
+          sz.recountPendingDates.forEach((d: string) => {
+            const iso = extractIsoDateFromSlot(d);
+            if (iso) blockPendingDateSet.add(iso);
+          });
+        }
+      });
+    });
 
     let blockHasRecount = false;
     let blockRecountFisik: number | null = null;
     let blockRecountSelisih: number | null = null;
     let blockHasDiff = false;
+    let totalSizeRows = 0;
+    let countedSizeRows = 0;
+    let anyRowPendingBatch = false;
+    let pendingFollowUpQty = 0;
 
     const updatedColorGroups = (b.colorGroups || []).map((cg: any) => {
       const colorName = normAuditKeyPart(cg.color || cg.colorName, 'DEFAULT');
       const updatedSizes = (cg.sizes || []).map((sz: any) => {
+        totalSizeRows++;
         const sizeName = normAuditKeyPart(sz.size || sz.sizeName, 'DEFAULT');
         const matchedVar =
           variantLookup.get(`${colorName}___${sizeName}`) ||
@@ -303,34 +331,85 @@ export function enrichBlocksWithRecountAudit(
           : (auditFisik !== null && !isNaN(auditFisik) ? auditFisik : null);
 
         const baseSizeQty = Number(sz.totalSizeQty) || 0;
-        const finalSelisih = finalFisik !== null ? finalFisik - baseSizeQty : null;
+
+        // Deteksi batch susulan per baris:
+        // 1) Ada item penerimaan baru pada varian ini yang belum punya recount_qty (sz.recountPendingBatch), ATAU
+        // 2) Record audit sebelumnya menyimpan qty_asli yang lebih kecil dari totalSizeQty saat ini
+        const matchedVarAsli =
+          matchedVar && matchedVar.qty_asli !== undefined && matchedVar.qty_asli !== null
+            ? Number(matchedVar.qty_asli)
+            : null;
+        const isRowPendingBatch =
+          finalFisik !== null &&
+          (Boolean(sz.recountPendingBatch) || (matchedVarAsli !== null && matchedVarAsli < baseSizeQty));
+        const rowPendingQty =
+          isRowPendingBatch
+            ? (Number(sz.recountPendingQty) > 0
+                ? Number(sz.recountPendingQty)
+                : matchedVarAsli !== null
+                  ? Math.max(0, baseSizeQty - matchedVarAsli)
+                  : 0)
+            : (finalFisik === null ? baseSizeQty : 0);
+
+        if (isRowPendingBatch) {
+          anyRowPendingBatch = true;
+          pendingFollowUpQty += rowPendingQty;
+        }
+
+        const rowPendingDates: string[] = Array.isArray(sz.recountPendingDates) && sz.recountPendingDates.length > 0
+          ? sz.recountPendingDates
+          : Array.from(blockPendingDateSet);
+
+        // Gunakan tanggal kedatangan yang BENAR-BENAR sudah diaudit agar log tidak menyesatkan
+        const rowAuditedDates: string[] =
+          Array.isArray(sz.recountAuditedDates) && sz.recountAuditedDates.length > 0
+            ? sz.recountAuditedDates
+            : blockAuditedDateSet.size > 0
+              ? Array.from(blockAuditedDateSet)
+              : isRowPendingBatch && rowPendingDates.length > 0
+                ? arrivalDates.filter((d) => !rowPendingDates.includes(d))
+                : arrivalDates;
+
+        const finalSelisih =
+          finalFisik !== null && !isRowPendingBatch ? finalFisik - baseSizeQty : null;
         const finalStatus =
-          finalSelisih === null
+          finalFisik === null
             ? ''
-            : finalSelisih === 0
-              ? 'MATCH'
-              : finalSelisih < 0
-                ? 'KURANG'
-                : 'LEBIH';
+            : isRowPendingBatch
+              ? 'BELUM LENGKAP'
+              : finalSelisih === 0
+                ? 'MATCH'
+                : (finalSelisih || 0) < 0
+                  ? 'KURANG'
+                  : 'LEBIH';
 
         const finalRound = sz.recountRound ?? auditRec?.round ?? (finalFisik !== null ? 1 : undefined);
         const finalNotes = sz.recountNotes || matchedVar?.note || matchedVar?.catatan || auditRec?.catatan || '';
         const finalAuditor = sz.recountAuditor || auditRec?.auditor || '';
         const finalUpdatedAt = sz.recountUpdatedAt || auditRec?.updated_at || auditRec?.tanggal_audit || '';
-        const finalLog =
+        const baseLog =
           finalFisik !== null
             ? (sz.recountLog ||
                 formatRecountLogEntry({
                   round: finalRound,
                   updatedAt: finalUpdatedAt,
-                  arrivalDates,
+                  arrivalDates: rowAuditedDates,
                   auditor: finalAuditor,
                   notes: finalNotes,
                 }))
             : (sz.recountLog || '');
+        const pendingSuffix =
+          isRowPendingBatch && rowPendingQty > 0
+            ? ` — ⚠ +${rowPendingQty} pcs${rowPendingDates.length > 0 ? ` (${formatDatesSummary(rowPendingDates)})` : ''} belum diaudit`
+            : '';
+        const finalLog =
+          baseLog && pendingSuffix && !baseLog.includes('belum diaudit')
+            ? `${baseLog}${pendingSuffix}`
+            : baseLog;
 
         if (finalFisik !== null) {
           blockHasRecount = true;
+          countedSizeRows++;
           blockRecountFisik = (blockRecountFisik || 0) + finalFisik;
           if (finalSelisih !== null) {
             blockRecountSelisih = (blockRecountSelisih || 0) + finalSelisih;
@@ -349,6 +428,10 @@ export function enrichBlocksWithRecountAudit(
           recountAuditor: finalAuditor || undefined,
           recountUpdatedAt: finalUpdatedAt || undefined,
           recountLog: finalLog || undefined,
+          recountPendingBatch: isRowPendingBatch,
+          recountPendingQty: rowPendingQty,
+          recountPendingDates: rowPendingDates,
+          recountAuditedDates: rowAuditedDates,
         };
       });
 
@@ -358,19 +441,55 @@ export function enrichBlocksWithRecountAudit(
       };
     });
 
+    // Jika sebagian baris terisi audit dan sebagian masih kosong (varian baru dari batch susulan), tambahkan qty-nya
+    if (blockHasRecount && countedSizeRows < totalSizeRows) {
+      updatedColorGroups.forEach((cg: any) => {
+        (cg.sizes || []).forEach((sz: any) => {
+          if (sz.recountFisik === null || sz.recountFisik === undefined) {
+            pendingFollowUpQty += Number(sz.totalSizeQty) || 0;
+            Object.keys(sz.qtyByDate || {}).forEach((slot) => {
+              const iso = extractIsoDateFromSlot(slot);
+              if (iso && !blockAuditedDateSet.has(iso)) blockPendingDateSet.add(iso);
+            });
+          }
+        });
+      });
+    }
+
+    const auditRecTotalAsli =
+      auditRec && auditRec.total_asli !== undefined && auditRec.total_asli !== null
+        ? Number(auditRec.total_asli)
+        : null;
+    const blockHasPendingFollowUpBatch =
+      blockHasRecount &&
+      (anyRowPendingBatch ||
+        countedSizeRows < totalSizeRows ||
+        (auditRecTotalAsli !== null && auditRecTotalAsli > 0 && auditRecTotalAsli < b.totalNet));
+
+    if (blockHasPendingFollowUpBatch && pendingFollowUpQty === 0 && auditRecTotalAsli !== null && auditRecTotalAsli < b.totalNet) {
+      pendingFollowUpQty = Math.max(0, b.totalNet - auditRecTotalAsli);
+    }
+
     const hasNota = b.qtyNota !== undefined && b.qtyNota !== null && !isNaN(Number(b.qtyNota));
-    const effectiveTotal = blockHasRecount && blockRecountFisik !== null ? blockRecountFisik : b.totalNet;
+    // Anti False-Alarm: jangan bandingkan angka audit parsial dengan Qty Nota!
+    // Gunakan totalRecountFisik hanya jika seluruh batch & varian sudah selesai diaudit.
+    const isCompleteAudit = blockHasRecount && blockRecountFisik !== null && !blockHasPendingFollowUpBatch;
+    const effectiveTotal = isCompleteAudit ? blockRecountFisik! : b.totalNet;
     const updatedSelisihNota = hasNota
       ? effectiveTotal - Number(b.qtyNota)
-      : (blockHasRecount && blockRecountFisik !== null ? blockRecountFisik - b.totalNet : b.selisihNota ?? null);
+      : (isCompleteAudit ? blockRecountFisik! - b.totalNet : b.selisihNota ?? null);
 
     return {
       ...b,
       colorGroups: updatedColorGroups,
       hasRecount: blockHasRecount || b.hasRecount,
       totalRecountFisik: blockHasRecount ? blockRecountFisik : b.totalRecountFisik ?? null,
-      totalRecountSelisih: blockHasRecount ? blockRecountSelisih : b.totalRecountSelisih ?? null,
-      hasDiff: blockHasRecount ? blockHasDiff : b.hasDiff,
+      totalRecountSelisih: isCompleteAudit ? blockRecountSelisih : null,
+      hasDiff: isCompleteAudit ? blockHasDiff : false,
+      hasPendingFollowUpBatch: blockHasPendingFollowUpBatch,
+      pendingFollowUpQty: blockHasPendingFollowUpBatch ? pendingFollowUpQty : 0,
+      pendingFollowUpDates: Array.from(blockPendingDateSet).sort(),
+      auditedDates: Array.from(blockAuditedDateSet).sort(),
       selisihNota: updatedSelisihNota,
     };
   });
@@ -1071,8 +1190,34 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
         cgTotal += szTotal;
         cgRetur += szRetur;
 
-        const recountSource = szItems.find((it) => it.recount_qty !== undefined && it.recount_qty !== null);
+        const incomingSzItems = szItems.filter((it) => {
+          const isReturItem =
+            (it.no_surat_jalan && it.no_surat_jalan.toUpperCase().startsWith('RETUR-')) ||
+            (it.keterangan && it.keterangan.includes('RETUR_CMT:'));
+          return !isReturItem && (Number(it.qty) || 0) > 0;
+        });
+        const auditedSzItems = incomingSzItems.filter(
+          (it) => it.recount_qty !== undefined && it.recount_qty !== null
+        );
+        const unauditedSzItems = incomingSzItems.filter(
+          (it) => it.recount_qty === undefined || it.recount_qty === null
+        );
+        const recountSource =
+          auditedSzItems.length > 0
+            ? auditedSzItems.reduce((latest, cur) =>
+                (Number(cur.recount_round) || 0) >= (Number(latest.recount_round) || 0) ? cur : latest
+              )
+            : szItems.find((it) => it.recount_qty !== undefined && it.recount_qty !== null);
         const rFisik = recountSource ? Number(recountSource.recount_qty) : null;
+        const pendingBatchQty = unauditedSzItems.reduce((acc, it) => acc + (Number(it.qty) || 0), 0);
+        const isPendingBatch = auditedSzItems.length > 0 && unauditedSzItems.length > 0 && pendingBatchQty > 0;
+        const auditedDates = Array.from(
+          new Set(auditedSzItems.map((it) => extractIsoDateFromSlot(it.tanggal_penerimaan || '')).filter(Boolean))
+        );
+        const pendingDates = Array.from(
+          new Set(unauditedSzItems.map((it) => extractIsoDateFromSlot(it.tanggal_penerimaan || '')).filter(Boolean))
+        );
+
         sizes.push({
           id: szItems[0]?.id,
           size: szName,
@@ -1082,11 +1227,15 @@ export function buildMatrixBlocksFromItems(items: PenerimaanProduksiItem[], isCM
           totalSizeRetur: szRetur,
           recountFisik: rFisik,
           recountQty: rFisik,
-          recountSelisih: rFisik !== null ? rFisik - szTotal : null,
+          recountSelisih: rFisik !== null && !isPendingBatch ? rFisik - szTotal : null,
           recountRound: recountSource?.recount_round,
           recountNotes: recountSource?.recount_notes,
           recountAuditor: recountSource?.recount_auditor,
           recountUpdatedAt: recountSource?.recount_updated_at,
+          recountPendingBatch: isPendingBatch,
+          recountPendingQty: pendingBatchQty,
+          recountPendingDates: pendingDates,
+          recountAuditedDates: auditedDates,
         });
       }
 

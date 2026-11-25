@@ -714,6 +714,7 @@ export async function saveRecountAuditRecord(record: {
   auditor?: string;
   catatan?: string;
   updated_at?: string;
+  audited_dates?: string[];
   variants: Array<{
     warna: string;
     size: string;

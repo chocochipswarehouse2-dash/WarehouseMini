@@ -1259,6 +1259,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
 
   var selisihRangesForCF = [];
   var statusRangesForCF = [];
+  var totalHitungRangesForCF = [];
   var maxTotalColsUsed = 20;
 
   for (var b = 0; b < blocks.length; b++) {
@@ -1450,6 +1451,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
     }
 
     var isFirstRowWritten = false;
+    var pendingRowMetaByRow = {};
 
     for (var c = 0; c < colorGroups.length; c++) {
       var cg = colorGroups[c];
@@ -1548,8 +1550,14 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
                 ? Number(oldRecord.fisik)
                 : '');
 
-          var rSelisih = rQty !== '' ? (rQty - rowNet) : '';
-          var rStatus = rQty !== '' ? (rSelisih === 0 ? 'MATCH' : (rSelisih < 0 ? 'KURANG' : 'LEBIH')) : '';
+          var isRowPendingBatch = Boolean(sz.recountPendingBatch) && rQty !== '';
+          if (isRowPendingBatch) {
+            pendingRowMetaByRow[currentRow] = { isPendingBatch: true, auditedQty: Number(rQty) };
+          }
+          var rSelisih = (rQty !== '' && !isRowPendingBatch) ? (rQty - rowNet) : '';
+          var rStatus = rQty !== ''
+            ? (isRowPendingBatch ? 'BELUM LENGKAP' : (rSelisih === 0 ? 'MATCH' : (rSelisih < 0 ? 'KURANG' : 'LEBIH')))
+            : '';
           var rLog = sz.recountLog || (hasPayloadRecount
             ? ('Rev ' + (sz.recountRound || 1) + ' [' + formatDateIndo(sz.recountUpdatedAt || new Date().toISOString()) + '] (' + (sz.recountAuditor || 'Auditor') + ')' + (sz.recountNotes ? ': ' + sz.recountNotes : ''))
             : (oldRecord ? oldRecord.log : ''));
@@ -1647,35 +1655,55 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
       var totalAwalCellRef = colToLetter(colTotalAwal) + startDataRowIndex;
       var qtyNotaCellRef = colToLetter(colQtyNota) + startDataRowIndex;
 
-      // 3. Pasang Formula TOTAL HITUNG ULANG & SELISIH NOTA 4 KONDISI
+      // 3. Pasang Formula TOTAL HITUNG ULANG & SELISIH NOTA 4 KONDISI (Anti False-Alarm Parsial / Batch Susulan)
       if (!isSpecificDate) {
         var colFisikLetter = colToLetter(colFisik);
         var fisikRange = colFisikLetter + startDataRowIndex + ':' + colFisikLetter + endDataRowIndex;
         var totalHitungCellRef = colToLetter(colTotalHitung) + startDataRowIndex;
+        var hasBlockPending = Boolean(block.hasPendingFollowUpBatch);
+        var prevBlockAuditSum = (block.totalRecountFisik !== undefined && block.totalRecountFisik !== null && block.totalRecountFisik !== '')
+          ? Number(block.totalRecountFisik)
+          : null;
 
-        // TOTAL HITUNG ULANG = sum seluruh QTY HITUNG ULANG jika ada yang diisi
-        sheet.getRange(startDataRowIndex, colTotalHitung).setFormula(
-          '=IF(COUNT(' + fisikRange + ')>0, SUM(' + fisikRange + '), "")'
-        ).setNumberFormat('0').setFontWeight('bold').setFontSize(11).setBackground('#F0FDF4').setFontColor('#166534');
+        // TOTAL HITUNG ULANG:
+        // - Jika belum ada baris terisi -> ""
+        // - Jika seluruh baris terisi DAN tidak masih tertahan di angka audit batch lama -> angka SUM murni (numeric)
+        // - Jika masih parsial (sebagian baris kosong atau ada batch susulan belum diaudit) -> "<sum> (Parsial)" (teks amber)
+        var totalHitungFormula = (hasBlockPending && prevBlockAuditSum !== null)
+          ? '=IF(COUNT(' + fisikRange + ')=0, "", IF(AND(COUNT(' + fisikRange + ')=' + numBlockRows + ', SUM(' + fisikRange + ')<>' + prevBlockAuditSum + '), SUM(' + fisikRange + '), SUM(' + fisikRange + ') & " (Parsial)"))'
+          : '=IF(COUNT(' + fisikRange + ')=0, "", IF(COUNT(' + fisikRange + ')=' + numBlockRows + ', SUM(' + fisikRange + '), SUM(' + fisikRange + ') & " (Parsial)"))';
 
-        // SELISIH NOTA (Formula Kebal Empty String Google Sheets):
-        // Jika Qty Hitung Ulang terisi (totalHitungCellRef <> ""):
-        //   - Selisih = Qty Hitung Ulang - (jika ada Qty Nota pakai Qty Nota, jika tidak pakai Total Awal)
-        // Jika belum hitung ulang:
-        //   - Selisih = (jika ada Qty Nota maka Total Awal - Qty Nota, jika tidak maka "")
-        var selisihFormula = '=IF(' + totalHitungCellRef + '<>"", ' + totalHitungCellRef + ' - IF(' + qtyNotaCellRef + '<>"", ' + qtyNotaCellRef + ', ' + totalAwalCellRef + '), IF(' + qtyNotaCellRef + '<>"", ' + totalAwalCellRef + ' - ' + qtyNotaCellRef + ', ""))';
+        var totalHitungRange = sheet.getRange(startDataRowIndex, colTotalHitung);
+        totalHitungRange.setFormula(totalHitungFormula)
+          .setNumberFormat('0').setFontWeight('bold').setFontSize(11).setBackground('#F0FDF4').setFontColor('#166534');
+        totalHitungRangesForCF.push(sheet.getRange(startDataRowIndex, colTotalHitung, numBlockRows, 1));
+
+        // SELISIH NOTA (Kebal Audit Parsial):
+        // - Hanya bandingkan TOTAL HITUNG ULANG terhadap QTY NOTA jika TOTAL HITUNG ULANG sudah lengkap (ISNUMBER)
+        // - Jika masih parsial / belum audit -> bandingkan TOTAL AWAL - QTY NOTA (anti false-alarm -207!)
+        var selisihFormula = '=IF(ISNUMBER(' + totalHitungCellRef + '), ' + totalHitungCellRef + ' - IF(' + qtyNotaCellRef + '<>"", ' + qtyNotaCellRef + ', ' + totalAwalCellRef + '), IF(' + qtyNotaCellRef + '<>"", ' + totalAwalCellRef + ' - ' + qtyNotaCellRef + ', ""))';
         var selisihCellRange = sheet.getRange(startDataRowIndex, colSelisihNota);
         selisihCellRange.setFormula(selisihFormula).setNumberFormat('0').setFontWeight('bold').setFontSize(11);
 
-        // Pasang Formula SELISIH FISIK & STATUS AUDIT per Row (Hindari ISBLANK karena cell formula bernilai "" bukan blank di Google Sheets)
+        // Pasang Formula SELISIH FISIK & STATUS AUDIT per Row (Deteksi Batch Susulan -> "BELUM LENGKAP")
         var colSelisihFisikLetter = colToLetter(colSelisihFisik);
         for (var rf = startDataRowIndex; rf <= endDataRowIndex; rf++) {
-          sheet.getRange(rf, colSelisihFisik).setFormula(
-            '=IF(' + colFisikLetter + rf + '<>"", ' + colFisikLetter + rf + '-' + colRowTotalLetter + rf + ', "")'
-          );
-          sheet.getRange(rf, colStatus).setFormula(
-            '=IF(' + colSelisihFisikLetter + rf + '<>"", IF(' + colSelisihFisikLetter + rf + '=0, "MATCH", IF(' + colSelisihFisikLetter + rf + '<0, "KURANG", "LEBIH")), "")'
-          );
+          var pMeta = pendingRowMetaByRow[rf];
+          if (pMeta && pMeta.isPendingBatch && pMeta.auditedQty !== null) {
+            sheet.getRange(rf, colSelisihFisik).setFormula(
+              '=IF(' + colFisikLetter + rf + '<>"", IF(' + colFisikLetter + rf + '=' + pMeta.auditedQty + ', "", ' + colFisikLetter + rf + '-' + colRowTotalLetter + rf + '), "")'
+            );
+            sheet.getRange(rf, colStatus).setFormula(
+              '=IF(' + colFisikLetter + rf + '<>"", IF(' + colFisikLetter + rf + '=' + pMeta.auditedQty + ', "BELUM LENGKAP", IF(' + colFisikLetter + rf + '-' + colRowTotalLetter + rf + '=0, "MATCH", IF(' + colFisikLetter + rf + '-' + colRowTotalLetter + rf + '<0, "KURANG", "LEBIH"))), "")'
+            );
+          } else {
+            sheet.getRange(rf, colSelisihFisik).setFormula(
+              '=IF(' + colFisikLetter + rf + '<>"", ' + colFisikLetter + rf + '-' + colRowTotalLetter + rf + ', "")'
+            );
+            sheet.getRange(rf, colStatus).setFormula(
+              '=IF(' + colSelisihFisikLetter + rf + '<>"", IF(' + colSelisihFisikLetter + rf + '=0, "MATCH", IF(' + colSelisihFisikLetter + rf + '<0, "KURANG", "LEBIH")), "")'
+            );
+          }
         }
       } else {
         var selisihFormula = '=IF(' + qtyNotaCellRef + '<>"", ' + totalAwalCellRef + ' - ' + qtyNotaCellRef + ', "")';
@@ -1719,7 +1747,7 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
   // - Selisih < 0 (Kurang): Merah (#FEE2E2 / #991B1B)
   // - Selisih > 0 (Lebih): Biru (#DBEAFE / #1E40AF)
   // - Selisih = 0 (Klop): Hijau (#DCFCE7 / #166534)
-  if (selisihRangesForCF.length > 0 || statusRangesForCF.length > 0) {
+  if (selisihRangesForCF.length > 0 || statusRangesForCF.length > 0 || totalHitungRangesForCF.length > 0) {
     try {
       var cfRules = [];
       if (selisihRangesForCF.length > 0) {
@@ -1777,6 +1805,26 @@ function renderProductBlocksMatrix(sheet, blocks, isCMT, specificDateStr) {
             .setFontColor('#1E40AF')
             .setBold(true)
             .setRanges(statusRangesForCF)
+            .build()
+        );
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenTextContains('BELUM LENGKAP')
+            .setBackground('#FEF3C7')
+            .setFontColor('#92400E')
+            .setBold(true)
+            .setRanges(statusRangesForCF)
+            .build()
+        );
+      }
+      if (totalHitungRangesForCF.length > 0) {
+        cfRules.push(
+          SpreadsheetApp.newConditionalFormatRule()
+            .whenTextContains('Parsial')
+            .setBackground('#FEF3C7')
+            .setFontColor('#92400E')
+            .setBold(true)
+            .setRanges(totalHitungRangesForCF)
             .build()
         );
       }

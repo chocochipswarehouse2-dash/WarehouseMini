@@ -1,9 +1,9 @@
 {
-  "version": "v2.30.0",
-  "versionCode": 500,
+  "version": "v2.30.1",
+  "versionCode": 501,
   "buildDate": "25 November 2026",
-  "buildHash": "wms-261125-v500-0114",
-  "releaseTitle": "WMS v2.30.0 — Riwayat Picking Lengkap, Multi-Lokasi Split & Picker Per-Produk",
+  "buildHash": "wms-261125-v501-1703",
+  "releaseTitle": "WMS v2.30.1 — Audit Hitung Ulang Multi-Batch & Anti False-Alarm Sheet",
   "releaseNotes": [
     "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
   ],

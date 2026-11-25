@@ -4,6 +4,19 @@
 
 ---
 
+## v2.30.1 — 25 November 2026
+**Modul**: Penerimaan Produksi — Audit Hitung Ulang Multi-Batch & Google Sheet Sync (`src/services/gasProduksiSync.ts`, `gas/produksi_sheet.js`, `src/components/penerimaan/AuditHitungUlangTab.tsx`, `src/components/penerimaan/ProduksiSpreadsheetView.tsx`, `src/services/settings.ts`)
+- **Perbaikan False-Alarm Multi-Batch Kedatangan Susulan (Kasus Kode `2678`)**:
+  - **Deteksi Otomatis Batch Susulan (`hasPendingFollowUpBatch` / `recountPendingBatch`)**: Memisahkan item penerimaan yang sudah punya `recount_qty` (batch lama) vs item baru (`recount_qty == null`) di `gasProduksiSync.ts` dan `AuditHitungUlangTab.tsx` agar audit batch lama tidak lagi diadu dengan total gabungan baru.
+  - **Proteksi Formula Google Sheet (`gas/produksi_sheet.js`)**:
+    - `TOTAL HITUNG ULANG` menampilkan `"<sum> (Parsial)"` (amber) jika masih ada baris kosong atau batch susulan yang belum diaudit; otomatis berubah menjadi angka penuh saat seluruh baris selesai diaudit.
+    - `SELISIH NOTA` menggunakan `ISNUMBER(TOTAL_HITUNG_ULANG)` sehingga saat audit masih parsial tetap membandingkan `TOTAL AWAL - QTY NOTA` (bebas false-alarm merah `-207`).
+    - Baris dengan batch susulan menampilkan status **`BELUM LENGKAP`** (amber) alih-alih **`KURANG`** (merah), dan `LOG HITUNG ULANG` hanya mencantumkan tanggal batch yang benar-benar sudah diaudit + catatan jumlah pcs batch baru yang belum diaudit.
+  - **UX Audit Susulan di WMS (`AuditHitungUlangTab.tsx`)**:
+    - Kode dengan kedatangan susulan otomatis berstatus **`Susulan +qty`** (muncul di filter *Belum / Perlu Audit*), menampilkan banner peringatan di workspace beserta tombol 1-klik **`+ Gabungkan Batch Baru`** dan badge `+qty baru` pada tiap varian, serta menyimpan `audited_dates` di `saveRecountAuditRecord`.
+
+---
+
 ## v2.30.0 — 24 November 2026
 **Modul**: Tugas Picking (`PickingTasksView.tsx`, `supabase.ts`, `scannerOutboxService.ts`, `types.ts`) + Upgrade Skill (`.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md`)
 - **Riwayat Tugas Picking Lengkap (Paginated On-Demand + Pencarian Arsip Cloud + Tail-SJ Guard)**:
@@ -16,6 +29,15 @@
 - **Atribusi Picker Per-Produk / Per-Split pada Picking Kolaboratif**:
   - Memperbaiki alur join/leave (`claimOrJoinPickingSJSupabase`, `leavePickingSJSupabase`), sync realtime per-item (`syncSinglePickingItemRealtimeSupabase`), dan penyelesaian SJ (`completePickingSuratJalanSupabase`, `syncAllPickingOutboxBatches`) agar **setiap SKU & split rak mencatat nama operator yang benar-benar mengambil barang tersebut** (mis. SKU1 oleh `Vina`, SKU2 oleh `Yesi` dalam 1 SJ yang sama — tidak lagi ditimpa seragam `"Vina, Yesi"` pada `picking_list.picker_name` maupun `log_produk.operator`).
   - Menampilkan badge atribusi picker per-SKU di kartu picking aktif, modal Rekap sebelum submit, dan modal Detail Rekap SJ Selesai.
+
+---
+
+## v2.29.2 — 24 November 2026
+**Modul**: Keranjang Order Picking & Distribusi Picking (`src/components/inventory/InventoryPickingCartDrawer.tsx`, `src/components/InventoryView.tsx`, `src/components/PesananSaya/DistribusiPickingModal.tsx`, `src/types.ts`)
+- **Filter Area Sumber Picking pada Keranjang Order**:
+  - Menambahkan pemilih **Area Sumber Picking** (`Semua Area Normal`, `Warehouse`, `Blok F`, `Kolian`, `Aksesoris`, `Transit`, `Perbaikan`, `Anomali`) beserta jumlah SKU aktif per area di bagian atas `InventoryPickingCartDrawer`.
+  - Saat area tertentu dipilih (mis. `Warehouse`, `Blok F`, atau `Perbaikan`), **Pencarian Cepat Produk**, **Impor CSV/Excel/Paste**, serta **Lokasi Rak & Qty item di Keranjang** otomatis hanya menampilkan produk, rak, dan stok dari area tersebut.
+  - Meneruskan `source_area` ke `PengecekanSJDraft` dan `DistribusiPickingModal` (`isLocationEligibleForDraft`) agar seluruh hasil picking (Preview, Tugas Picking App, Pesan WA Grup, & Cetak A4) ketat mengikuti lokasi area yang dipilih — sementara Pengecekan SJ Distribusi Store normal (tanpa `source_area`) tetap menjaga aturan baku `isPickingEligibleForPengecekan` (Priority 1 & 2).
 
 ---
 

@@ -100,9 +100,13 @@ export interface CodeAuditGroup {
   total_asli: number;
   total_fisik: number | null;
   total_selisih: number | null;
-  status_audit: 'BELUM' | 'MATCH' | 'KURANG' | 'LEBIH';
+  status_audit: 'BELUM' | 'SUSULAN' | 'MATCH' | 'KURANG' | 'LEBIH';
   has_diff: boolean;
   is_counted: boolean;
+  has_pending_batch?: boolean;
+  pending_batch_qty?: number;
+  pending_batch_dates?: string[];
+  audited_dates?: string[];
   last_auditor?: string;
   last_audit_date?: string;
   last_round?: number;
@@ -573,12 +577,21 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       let lastNotes: string | undefined = undefined;
 
       const varMap = new Map<string, { asli: number; fisik: number | null; selisih: number | null }>();
+      const auditedDateSet = new Set<string>();
+      const unauditedDateSet = new Set<string>();
+      let unauditedQty = 0;
 
       const auditRec = recountAuditMap[code];
+      if (Array.isArray(auditRec?.audited_dates)) {
+        auditRec.audited_dates.forEach((d: string) => {
+          if (d) auditedDateSet.add(String(d).slice(0, 10));
+        });
+      }
 
       grp.items.forEach((it) => {
         const vKey = `${it.warna || ''}_${it.size || ''}`;
         const qtyAsli = Number(it.qty) || 0;
+        const itemDate = it.tanggal_penerimaan ? String(it.tanggal_penerimaan).slice(0, 10) : '';
         totalAsli += qtyAsli;
 
         if (!varMap.has(vKey)) {
@@ -589,10 +602,14 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         if (it.recount_qty !== undefined && it.recount_qty !== null) {
           isCounted = true;
           varMap.get(vKey)!.fisik = Number(it.recount_qty);
+          if (itemDate) auditedDateSet.add(itemDate);
           if (it.recount_auditor) lastAuditor = it.recount_auditor;
           if (it.recount_updated_at) lastAuditDate = it.recount_updated_at;
           if (it.recount_round && (!lastRound || it.recount_round > lastRound)) lastRound = it.recount_round;
           if (it.recount_notes) lastNotes = it.recount_notes;
+        } else if (qtyAsli > 0) {
+          unauditedQty += qtyAsli;
+          if (itemDate) unauditedDateSet.add(itemDate);
         }
       });
 
@@ -633,8 +650,29 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         if (totalSelisih !== 0) hasDiff = true;
       }
 
-      let statusAudit: 'BELUM' | 'MATCH' | 'KURANG' | 'LEBIH' = 'BELUM';
-      if (isCounted) {
+      const auditRecAsli =
+        auditRec && auditRec.total_asli !== undefined && auditRec.total_asli !== null
+          ? Number(auditRec.total_asli)
+          : null;
+      const hasPendingBatch =
+        isCounted &&
+        (unauditedQty > 0 || (auditRecAsli !== null && auditRecAsli > 0 && auditRecAsli < totalAsli));
+      const pendingBatchQty = hasPendingBatch
+        ? unauditedQty > 0
+          ? unauditedQty
+          : auditRecAsli !== null
+          ? Math.max(0, totalAsli - auditRecAsli)
+          : 0
+        : 0;
+      const pendingBatchDates = Array.from(unauditedDateSet)
+        .filter((d) => !auditedDateSet.has(d) || unauditedQty > 0)
+        .sort();
+
+      let statusAudit: 'BELUM' | 'SUSULAN' | 'MATCH' | 'KURANG' | 'LEBIH' = 'BELUM';
+      if (hasPendingBatch) {
+        statusAudit = 'SUSULAN';
+        hasDiff = false;
+      } else if (isCounted) {
         if (auditRec?.status) {
           const st = String(auditRec.status).toUpperCase();
           if (st === 'MATCH' || st === 'KLOP' || st === 'SESUAI') statusAudit = 'MATCH';
@@ -658,9 +696,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       const targetQty = hasNota ? targetNota! : totalAsli;
 
       // Jika ada target Qty Nota, selisih dan status dihitung terhadap Qty Nota!
-      // Jika Qty Nota belum ada, dihitung terhadap Total Diterima awal (totalAsli).
-      let effectiveSelisih = totalSelisih;
-      if (isCounted && totalFisik !== null && hasNota) {
+      // Anti False-Alarm: jika ada batch susulan belum diaudit, jangan bandingkan totalFisik parsial dengan Qty Nota.
+      let effectiveSelisih = hasPendingBatch ? null : totalSelisih;
+      if (isCounted && !hasPendingBatch && totalFisik !== null && hasNota) {
         effectiveSelisih = totalFisik - targetNota!;
         if (effectiveSelisih === 0) statusAudit = 'MATCH';
         else if (effectiveSelisih < 0) statusAudit = 'KURANG';
@@ -685,6 +723,10 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         target_pembanding: targetQty,
         has_diff: hasDiff,
         is_counted: isCounted,
+        has_pending_batch: hasPendingBatch,
+        pending_batch_qty: pendingBatchQty,
+        pending_batch_dates: pendingBatchDates,
+        audited_dates: Array.from(auditedDateSet).sort(),
         last_auditor: lastAuditor,
         last_audit_date: lastAuditDate,
         last_round: lastRound,
@@ -751,11 +793,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     }
 
     if (filterStatus === 'uncounted') {
-      list = list.filter((g) => !g.is_counted);
+      list = list.filter((g) => !g.is_counted || g.has_pending_batch);
     } else if (filterStatus === 'diff') {
       list = list.filter((g) => g.has_diff);
     } else if (filterStatus === 'match') {
-      list = list.filter((g) => g.is_counted && !g.has_diff);
+      list = list.filter((g) => g.is_counted && !g.has_diff && !g.has_pending_batch);
     }
 
     if (searchQuery.trim()) {
@@ -828,11 +870,23 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   const activeVariants = useMemo(() => {
     if (!activeGroup) return [];
 
+    const auditRec = recountAuditMap[activeGroup.kode_produksi];
+    const auditVarAsliMap = new Map<string, number>();
+    if (Array.isArray(auditRec?.variants)) {
+      auditRec.variants.forEach((av: any) => {
+        const avKey = `${av.warna || '-'}_${av.size || '-'}`;
+        if (av.qty_asli !== undefined && av.qty_asli !== null) {
+          auditVarAsliMap.set(avKey, Number(av.qty_asli) || 0);
+        }
+      });
+    }
+
     const map = new Map<string, {
       warna: string;
       size: string;
       qty_asli: number;
       existing_fisik: number | null;
+      unaudited_qty: number;
       existing_round?: number;
       existing_note?: string;
     }>();
@@ -841,23 +895,41 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       const w = it.warna || '-';
       const s = it.size || '-';
       const key = `${w}_${s}`;
+      const q = Number(it.qty) || 0;
+      const hasRecount = it.recount_qty !== undefined && it.recount_qty !== null;
 
       if (!map.has(key)) {
         map.set(key, {
           warna: w,
           size: s,
           qty_asli: 0,
-          existing_fisik: it.recount_qty !== undefined && it.recount_qty !== null ? Number(it.recount_qty) : null,
+          existing_fisik: hasRecount ? Number(it.recount_qty) : null,
+          unaudited_qty: 0,
           existing_round: it.recount_round,
           existing_note: it.recount_notes,
         });
       }
 
-      map.get(key)!.qty_asli += Number(it.qty) || 0;
-      if (it.recount_qty !== undefined && it.recount_qty !== null) {
-        map.get(key)!.existing_fisik = Number(it.recount_qty);
+      const entry = map.get(key)!;
+      entry.qty_asli += q;
+      if (hasRecount) {
+        entry.existing_fisik = Number(it.recount_qty);
+      } else if (q > 0) {
+        entry.unaudited_qty += q;
       }
     });
+
+    // Fallback untuk data lama: jika semua baris sudah punya recount_qty namun auditRec mencatat qty_asli lebih kecil
+    if (activeGroup.has_pending_batch) {
+      map.forEach((entry, key) => {
+        if (entry.unaudited_qty === 0 && auditVarAsliMap.has(key)) {
+          const prevAsli = auditVarAsliMap.get(key)!;
+          if (entry.qty_asli > prevAsli) {
+            entry.unaudited_qty = entry.qty_asli - prevAsli;
+          }
+        }
+      });
+    }
 
     return Array.from(map.values()).sort((a, b) => {
       const c = a.warna.localeCompare(b.warna);
@@ -867,7 +939,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
       if (weightA !== weightB) return weightA - weightB;
       return a.size.localeCompare(b.size);
     });
-  }, [activeGroup]);
+  }, [activeGroup, recountAuditMap]);
 
   const lastLoadedCodeRef = useRef<string | null>(null);
   const isWorkspaceDirtyRef = useRef<boolean>(false);
@@ -1020,6 +1092,34 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     onShowToast('Seluruh kuantitas fisik telah diisi sesuai dengan hitungan awal.', 'info');
   };
 
+  // Quick Action: Merge unaudited follow-up batch qty into previously audited recount values
+  const handleMergePendingBatchQty = () => {
+    if (!activeGroup) return;
+    const updated: Record<string, { recountQty: number | null; note: string }> = {};
+    let totalAdded = 0;
+    activeVariants.forEach((v) => {
+      const key = `${v.warna}_${v.size}`;
+      const baseAudited = v.existing_fisik !== null ? v.existing_fisik : 0;
+      const mergedVal =
+        v.unaudited_qty > 0
+          ? baseAudited + v.unaudited_qty
+          : v.existing_fisik !== null
+          ? v.existing_fisik
+          : v.qty_asli;
+      if (v.unaudited_qty > 0) totalAdded += v.unaudited_qty;
+      updated[key] = {
+        recountQty: mergedVal,
+        note: variantInputs[key]?.note || v.existing_note || '',
+      };
+    });
+    isWorkspaceDirtyRef.current = true;
+    setVariantInputs(updated);
+    onShowToast(
+      `Batch susulan (+${totalAdded || activeGroup.pending_batch_qty || 0} pcs) digabungkan ke angka audit sebelumnya. Sesuaikan varian yang berbeda lalu Simpan.`,
+      'success'
+    );
+  };
+
   // Quick Action: Reset all inputs
   const handleResetInputs = () => {
     const updated: Record<string, { recountQty: number | null; note: string }> = {};
@@ -1134,6 +1234,9 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         });
       }
 
+      const arrivalDates = Array.from(activeGroup.distinct_dates || []);
+      const arrivalDatesInfo = formatDatesSummary(arrivalDates);
+
       const newRecord = {
         kode_produksi: activeGroup.kode_produksi,
         tanggal_audit: auditDate,
@@ -1145,6 +1248,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
         auditor: auditorName || 'Auditor Fisik',
         catatan: generalNotes,
         updated_at: nowIso,
+        audited_dates: arrivalDates,
         history: prevHistory,
         variants: activeVariants.map((v) => {
           const key = `${v.warna}_${v.size}`;
@@ -1162,9 +1266,6 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
           };
         }),
       };
-
-      const arrivalDates = Array.from(activeGroup.distinct_dates || []);
-      const arrivalDatesInfo = formatDatesSummary(arrivalDates);
 
       const deltaItems: MasterRecountDeltaItem[] = activeVariants.map((v) => {
         const key = `${v.warna}_${v.size}`;
@@ -2200,7 +2301,11 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
 
                         {/* Status Badge (Clean, No Emojis) */}
                         <div className="shrink-0">
-                          {!item.is_counted ? (
+                          {item.has_pending_batch ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700 tabular-nums">
+                              Susulan +{item.pending_batch_qty || 0}
+                            </span>
+                          ) : !item.is_counted ? (
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800">
                               Belum
                             </span>
@@ -2458,6 +2563,37 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               </div>
             ) : null}
 
+            {/* Pending Follow-Up Batch Alert Banner (Multi-Batch Guard) */}
+            {activeGroup.has_pending_batch ? (
+              <div className="px-3.5 py-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="min-w-0 space-y-0.5">
+                  <span className="text-[10px] uppercase font-bold tracking-wider text-amber-800 dark:text-amber-300 block">
+                    Kedatangan Batch Susulan Terdeteksi (+{activeGroup.pending_batch_qty || 0} pcs)
+                  </span>
+                  <p className="text-xs text-amber-950 dark:text-amber-100">
+                    Audit sebelumnya (Rev {activeGroup.last_round || 1}) hanya mencakup{' '}
+                    <strong className="font-mono">{activeGroup.total_fisik ?? 0} pcs</strong>
+                    {activeGroup.audited_dates && activeGroup.audited_dates.length > 0
+                      ? ` (${formatDatesSummary(activeGroup.audited_dates)})`
+                      : ''}
+                    . Batch baru{' '}
+                    <strong className="font-mono">+{activeGroup.pending_batch_qty || 0} pcs</strong>
+                    {activeGroup.pending_batch_dates && activeGroup.pending_batch_dates.length > 0
+                      ? ` (${formatDatesSummary(activeGroup.pending_batch_dates)})`
+                      : ''}{' '}
+                    belum masuk hitungan.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleMergePendingBatchQty}
+                  className="min-h-[38px] px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shrink-0 transition cursor-pointer shadow-sm"
+                >
+                  + Gabungkan Batch Baru (+{activeGroup.pending_batch_qty || 0})
+                </button>
+              </div>
+            ) : null}
+
             {/* Quick Helper Actions */}
             <div className="flex items-center justify-between flex-wrap gap-2">
               <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
@@ -2510,8 +2646,15 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                           {v.size}
                         </span>
                       </div>
-                      <span className="text-xs font-semibold text-slate-500 tabular-nums shrink-0">
-                        Awal: <strong className="text-slate-800 dark:text-slate-200">{v.qty_asli}</strong>
+                      <span className="text-xs font-semibold text-slate-500 tabular-nums shrink-0 flex items-center gap-1.5">
+                        {v.unaudited_qty > 0 && (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[10px] font-bold font-mono">
+                            +{v.unaudited_qty} baru
+                          </span>
+                        )}
+                        <span>
+                          Awal: <strong className="text-slate-800 dark:text-slate-200">{v.qty_asli}</strong>
+                        </span>
                       </span>
                     </div>
 
@@ -2609,7 +2752,12 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                         <td className="py-2 px-3 font-semibold text-slate-800 dark:text-slate-100">{v.warna}</td>
                         <td className="py-2 px-3 text-center font-mono font-bold">{v.size}</td>
                         <td className="py-2 px-3 text-center font-mono font-bold text-slate-700 dark:text-slate-300 tabular-nums">
-                          {v.qty_asli}
+                          <div>{v.qty_asli}</div>
+                          {v.unaudited_qty > 0 && (
+                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 text-[9px] font-bold">
+                              +{v.unaudited_qty} baru
+                            </span>
+                          )}
                         </td>
                         <td className="py-1.5 px-2 text-center bg-indigo-50/20 dark:bg-indigo-950/15">
                           <NumberInput

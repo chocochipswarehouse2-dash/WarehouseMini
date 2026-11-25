@@ -90,6 +90,10 @@ export interface MatrixSizeItem {
   recountAuditor?: string;
   recountUpdatedAt?: string;
   recountLog?: string;
+  recountPendingBatch?: boolean;
+  recountPendingQty?: number;
+  recountPendingDates?: string[];
+  recountAuditedDates?: string[];
 }
 
 export interface MatrixColorGroup {
@@ -125,6 +129,10 @@ export interface MatrixProductBlock {
   totalRecountSelisih?: number | null;
   hasRecount?: boolean;
   hasDiff?: boolean;
+  hasPendingFollowUpBatch?: boolean;
+  pendingFollowUpQty?: number;
+  pendingFollowUpDates?: string[];
+  auditedDates?: string[];
   // Kesimpulan metrics
   kg: number;
   ongkirPerKg: number;
