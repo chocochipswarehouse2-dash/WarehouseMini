@@ -4871,8 +4871,12 @@ export default function App() {
         <div className="flex-1 flex flex-row min-w-0 w-full max-w-full items-start">
           <main
             className={`flex-1 min-w-0 w-full max-w-full ${
+              isDesktopViewport && companionPage ? 'wms-split-pane overflow-x-auto' : ''
+            } ${
               activePage === 'live_chat'
                 ? 'p-0 pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0'
+                : isDesktopViewport && companionPage
+                ? 'p-2 sm:p-3 pb-6'
                 : 'px-1 pt-1.5 sm:p-4 lg:p-6 pb-24 lg:pb-6'
             }`}
           >

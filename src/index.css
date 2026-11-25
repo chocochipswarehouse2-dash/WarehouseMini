@@ -630,3 +630,13 @@ html.dark .dark\:border-\[\#0f1523\] {
 }
 @media print { @page { margin: 0; } }
 
+/* Desktop Split-Pane (Panel Pendamping Berdampingan) Layout Safety */
+.wms-split-pane {
+  container-type: inline-size;
+}
+.wms-split-pane table.lg\:table-fixed,
+.wms-split-pane table.table-fixed {
+  min-width: 820px;
+}
+
+

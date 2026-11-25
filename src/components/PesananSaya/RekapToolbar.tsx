@@ -435,8 +435,8 @@ export const RekapToolbar: React.FC<RekapToolbarProps> = ({
       )}
 
       {/* ROW 2: Stage Tabs (Horizontal swipe on mobile) + Sub-type Filter (Desktop) */}
-      <div className="px-3 sm:px-4 pb-2.5 flex flex-col lg:flex-row lg:items-center justify-between gap-2">
-        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap -mx-1 px-1">
+      <div className="px-3 sm:px-4 pb-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar whitespace-nowrap min-w-0 max-w-full -mx-1 px-1">
           {[
             { id: 'baru', label: 'Baru', count: countBaru, icon: Clock, active: 'bg-amber-500 text-white' },
             { id: 'diproses', label: 'Diproses', count: countDiproses, icon: Package, active: 'bg-indigo-600 text-white' },

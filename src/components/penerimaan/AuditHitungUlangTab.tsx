@@ -60,12 +60,14 @@ import {
 import { saveWmsSettings } from '../../services/settings';
 import {
   pushMasterRecountDeltaToGoogleSheet,
+  pushPenerimaanProduksiToGoogleSheet,
   syncQtyNotaAndAutoQueueRecount,
   MasterRecountDeltaItem,
   formatDatesSummary,
 } from '../../services/gasProduksiSync';
 import { getSizeWeight } from '../../utils/sortUtils';
 import { ProduksiActionSheet } from './ProduksiActionSheet';
+import { MultiBatchAuditScannerModal } from './MultiBatchAuditScannerModal';
 import {
   loadRecountWorkspaceDraft,
   saveRecountWorkspaceDraft,
@@ -499,6 +501,7 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
   const [isSyncingSheet, setIsSyncingSheet] = useState<boolean>(false);
   const [isBatchSyncing, setIsBatchSyncing] = useState<boolean>(false);
   const [batchSyncProgress, setBatchSyncProgress] = useState<{ current: number; total: number; activeCode: string } | null>(null);
+  const [isMultiBatchScannerOpen, setIsMultiBatchScannerOpen] = useState<boolean>(false);
 
   // Print ref for direct isolated printing
   const printContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1871,6 +1874,293 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
     });
   }, [allCodeGroups, pickerSearch, pickerSortOrder]);
 
+  // Daftar seluruh kode yang memiliki batch kedatangan susulan belum diaudit
+  const pendingBatchGroups = useMemo(
+    () => allCodeGroups.filter((g) => g.has_pending_batch),
+    [allCodeGroups]
+  );
+
+  // Masukkan massal kode terdampak batch susulan ke Antrean Audit dengan petunjuk otomatis
+  const handleBulkAddPendingToQueue = (groups: CodeAuditGroup[]) => {
+    if (!groups || groups.length === 0) return;
+    const payload = groups.map((g) => {
+      const existingNote = queueMap[g.kode_produksi]?.catatan_petunjuk || '';
+      const datesLabel =
+        g.pending_batch_dates && g.pending_batch_dates.length > 0
+          ? ` (${formatDatesSummary(g.pending_batch_dates)})`
+          : '';
+      const autoNote = `Batch susulan +${g.pending_batch_qty || 0} pcs${datesLabel} belum diaudit`;
+      return {
+        kode_produksi: g.kode_produksi,
+        catatan_petunjuk: existingNote || autoNote,
+      };
+    });
+    handleAddMultipleToQueue(payload);
+    setFilterStatus('uncounted');
+    setIsMultiBatchScannerOpen(false);
+    onShowToast(`${payload.length} kode batch susulan berhasil dimasukkan ke Antrean Audit!`, 'success');
+  };
+
+  // Auto-Gabung & Simpan Massal untuk kode yang batch susulannya sudah dipastikan klop
+  const handleBulkAutoMergePendingGroups = async (
+    groups: CodeAuditGroup[],
+    onProgress: (current: number, total: number, activeCode: string) => void
+  ): Promise<{ successCount: number; failedCodes: string[] }> => {
+    let successCount = 0;
+    const failedCodes: string[] = [];
+    const nowIso = new Date().toISOString();
+    const effectiveAuditor = auditorName || session?.username || 'Auditor Fisik';
+
+    for (let idx = 0; idx < groups.length; idx++) {
+      const group = groups[idx];
+      onProgress(idx + 1, groups.length, group.kode_produksi);
+      try {
+        const nextRound = (group.last_round || 0) + 1;
+        const prevRec = recountAuditMap[group.kode_produksi];
+        const auditVarAsliMap = new Map<string, number>();
+        if (Array.isArray(prevRec?.variants)) {
+          prevRec.variants.forEach((av: any) => {
+            const avKey = `${av.warna || '-'}_${av.size || '-'}`;
+            if (av.qty_asli !== undefined && av.qty_asli !== null) {
+              auditVarAsliMap.set(avKey, Number(av.qty_asli) || 0);
+            }
+          });
+        }
+
+        // Susun rincian varian + hitung target gabungan (audit lama + qty batch baru)
+        const varMap = new Map<
+          string,
+          { warna: string; size: string; qtyAsli: number; auditedFisik: number | null; unauditedQty: number; note: string }
+        >();
+        group.items.forEach((it) => {
+          const w = it.warna || '-';
+          const s = it.size || '-';
+          const key = `${w}_${s}`;
+          const q = Number(it.qty) || 0;
+          const hasRec = it.recount_qty !== undefined && it.recount_qty !== null;
+          if (!varMap.has(key)) {
+            varMap.set(key, {
+              warna: w,
+              size: s,
+              qtyAsli: 0,
+              auditedFisik: hasRec ? Number(it.recount_qty) : null,
+              unauditedQty: 0,
+              note: it.recount_notes || '',
+            });
+          }
+          const entry = varMap.get(key)!;
+          entry.qtyAsli += q;
+          if (hasRec) entry.auditedFisik = Number(it.recount_qty);
+          else if (q > 0) entry.unauditedQty += q;
+        });
+
+        varMap.forEach((entry, key) => {
+          if (entry.unauditedQty === 0 && auditVarAsliMap.has(key)) {
+            const prevAsli = auditVarAsliMap.get(key)!;
+            if (entry.qtyAsli > prevAsli) entry.unauditedQty = entry.qtyAsli - prevAsli;
+          }
+        });
+
+        const mergedByKey = new Map<string, number>();
+        let totalAsli = 0;
+        let totalFisik = 0;
+        const variantsPayload: Array<{
+          warna: string;
+          size: string;
+          qty_asli: number;
+          qty_fisik: number;
+          selisih: number;
+          status: string;
+          note: string;
+        }> = [];
+        const detailRecords: PenerimaanRecountLogDetailItem[] = [];
+
+        const arrivalDates = Array.from(group.distinct_dates || []);
+        const arrivalDatesInfo = formatDatesSummary(arrivalDates);
+        const pendingDatesLabel =
+          group.pending_batch_dates && group.pending_batch_dates.length > 0
+            ? formatDatesSummary(group.pending_batch_dates)
+            : '';
+        const mergeNote = `Auto-gabung batch susulan +${group.pending_batch_qty || 0} pcs${pendingDatesLabel ? ` (${pendingDatesLabel})` : ''}`;
+
+        varMap.forEach((v, key) => {
+          const mergedFisik =
+            v.unauditedQty > 0
+              ? (v.auditedFisik !== null ? v.auditedFisik : 0) + v.unauditedQty
+              : v.auditedFisik !== null
+              ? v.auditedFisik
+              : v.qtyAsli;
+          mergedByKey.set(key, mergedFisik);
+          totalAsli += v.qtyAsli;
+          totalFisik += mergedFisik;
+          const sel = mergedFisik - v.qtyAsli;
+          const st = sel === 0 ? 'MATCH' : sel < 0 ? 'KURANG' : 'LEBIH';
+          variantsPayload.push({
+            warna: v.warna,
+            size: v.size,
+            qty_asli: v.qtyAsli,
+            qty_fisik: mergedFisik,
+            selisih: sel,
+            status: st,
+            note: v.note || mergeNote,
+          });
+          detailRecords.push({
+            kode_produksi: group.kode_produksi,
+            nama_produk: group.nama_produk,
+            warna: v.warna,
+            size: v.size,
+            tanggal_penerimaan: group.items[0]?.tanggal_penerimaan || auditDate,
+            qty_sebelumnya: v.qtyAsli,
+            qty_fisik: mergedFisik,
+            selisih: sel,
+            catatan: v.note || mergeNote,
+          });
+        });
+
+        // 1. Update seluruh baris penerimaan_produksi pada kode ini
+        const updatedItems: PenerimaanProduksiItem[] = group.items.map((it) => {
+          const key = `${it.warna || '-'}_${it.size || '-'}`;
+          const fisikVal = mergedByKey.get(key) ?? (Number(it.qty) || 0);
+          const sel = fisikVal - (Number(it.qty) || 0);
+          return {
+            ...it,
+            qty: it.qty,
+            recount_qty: fisikVal,
+            recount_selisih: sel,
+            recount_status: sel === 0 ? 'MATCH' : sel < 0 ? 'KURANG' : 'LEBIH',
+            recount_round: nextRound,
+            recount_notes: it.recount_notes || mergeNote,
+            recount_auditor: effectiveAuditor,
+            recount_updated_at: nowIso,
+          };
+        });
+
+        await updatePenerimaanProduksiItemsInSupabase(updatedItems);
+
+        // 2. Simpan Recount Audit Record (beserta audited_dates lengkap) & Log Riwayat
+        const totalSelisih = totalFisik - totalAsli;
+        const finalStatus = totalSelisih === 0 ? 'MATCH' : totalSelisih < 0 ? 'KURANG' : 'LEBIH';
+        const prevHistory = Array.isArray(prevRec?.history) ? [...prevRec.history] : [];
+        if (prevRec && prevRec.total_fisik !== undefined && Number(prevRec.round || 1) !== nextRound) {
+          prevHistory.push({
+            round: prevRec.round || 1,
+            tanggal_audit: prevRec.tanggal_audit,
+            total_asli: prevRec.total_asli,
+            total_fisik: prevRec.total_fisik,
+            total_selisih: prevRec.total_selisih,
+            status: prevRec.status,
+            auditor: prevRec.auditor,
+            catatan: prevRec.catatan,
+            updated_at: prevRec.updated_at,
+            variants: prevRec.variants,
+          });
+        }
+
+        const newRecord = {
+          kode_produksi: group.kode_produksi,
+          tanggal_audit: auditDate,
+          total_asli: totalAsli,
+          total_fisik: totalFisik,
+          total_selisih: totalSelisih,
+          status: finalStatus,
+          round: nextRound,
+          auditor: effectiveAuditor,
+          catatan: mergeNote,
+          updated_at: nowIso,
+          audited_dates: arrivalDates,
+          history: prevHistory,
+          variants: variantsPayload,
+        };
+
+        await saveRecountAuditRecord(newRecord);
+        setRecountAuditMap((prev) => ({ ...prev, [group.kode_produksi]: newRecord }));
+
+        await savePenerimaanRecountLog({
+          id: `recount_${normalizeProductCode(group.kode_produksi)}_r${nextRound}_${Date.now()}`,
+          round: nextRound,
+          tanggal_audit: auditDate,
+          auditor: effectiveAuditor,
+          kode_produksi: group.kode_produksi,
+          total_sebelumnya: totalAsli,
+          total_fisik: totalFisik,
+          total_selisih: totalSelisih,
+          general_notes: mergeNote,
+          details: detailRecords,
+        }).catch(() => {});
+
+        // 3. Push delta ke Master Google Sheet
+        const deltaItems: MasterRecountDeltaItem[] = variantsPayload.map((v) => ({
+          kode_produksi: group.kode_produksi,
+          warna: v.warna,
+          size: v.size,
+          qty_asli: v.qty_asli,
+          qty_fisik: v.qty_fisik,
+          selisih: v.selisih,
+          status: v.status,
+          round: nextRound,
+          auditor: effectiveAuditor,
+          catatan: v.note,
+          tanggal_kedatangan_info: arrivalDatesInfo,
+          updated_at: nowIso,
+        }));
+
+        await pushMasterRecountDeltaToGoogleSheet({
+          activeTab: group.kategori === 'Kargo' ? 'Kargo' : 'CMT',
+          kode_produksi: group.kode_produksi,
+          tanggal_hitung: auditDate,
+          items: deltaItems,
+        }).catch(() => {});
+
+        successCount++;
+      } catch (err) {
+        console.error(`Gagal auto-gabung ${group.kode_produksi}:`, err);
+        failedCodes.push(group.kode_produksi);
+      }
+    }
+
+    await (onRefreshData as any)(true);
+    if (failedCodes.length === 0) {
+      onShowToast(
+        `${successCount} kode berhasil digabungkan (batch susulan) & tersinkron ke Google Sheet!`,
+        'success'
+      );
+    } else {
+      onShowToast(
+        `Selesai: ${successCount} berhasil, ${failedCodes.length} gagal (${failedCodes.join(', ')}).`,
+        'warning'
+      );
+    }
+    return { successCount, failedCodes };
+  };
+
+  // Re-Sync Master Google Sheet agar formula baru (Parsial / BELUM LENGKAP) langsung membersihkan false-alarm
+  const handleBulkResyncMasterSheetForPending = async (
+    categories: Array<'Kargo' | 'CMT'>,
+    onProgress: (msg: string) => void
+  ) => {
+    try {
+      for (const cat of categories) {
+        onProgress(`Menyinkronkan Master Sheet ${cat} ke Google Spreadsheet...`);
+        const catItems = penerimaanItems.filter((it) => {
+          const isKargo = String(it.kategori || '').toLowerCase().includes('kargo');
+          return cat === 'Kargo' ? isKargo : !isKargo;
+        });
+        if (catItems.length === 0) continue;
+        await pushPenerimaanProduksiToGoogleSheet({
+          items: catItems,
+          activeTab: cat,
+        });
+      }
+      onShowToast(
+        `Master Google Sheet (${categories.join(' & ')}) berhasil di-sync! False-alarm selisih parsial telah dibersihkan.`,
+        'success'
+      );
+    } catch (err: any) {
+      console.error('Gagal Re-Sync Master Sheet:', err);
+      onShowToast(err?.message || 'Gagal Re-Sync Master Sheet.', 'error');
+    }
+  };
+
   // Modal multiple selection handlers
   const handleTogglePickerCode = (code: string) => {
     const next = new Set(selectedPickerCodes);
@@ -2031,6 +2321,34 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
             MODE 1: ANTRIAN AUDIT & DAFTAR PEKERJAAN
             ======================================================== */
         <div className="space-y-3">
+          {/* Live Alert Bar: Batch Kedatangan Susulan Terdeteksi */}
+          {pendingBatchGroups.length > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-950/35 border border-amber-300 dark:border-amber-800 rounded-2xl px-3.5 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+                <div className="min-w-0 text-xs text-amber-950 dark:text-amber-100">
+                  <strong className="font-bold">
+                    {pendingBatchGroups.length} kode memiliki batch kedatangan susulan belum diaudit
+                  </strong>{' '}
+                  <span className="font-mono font-bold text-amber-800 dark:text-amber-300">
+                    (+{pendingBatchGroups.reduce((s, g) => s + (g.pending_batch_qty || 0), 0)} pcs)
+                  </span>
+                  <span className="hidden md:inline text-amber-800/90 dark:text-amber-200/80">
+                    {' '}— mis. {pendingBatchGroups.slice(0, 3).map((g) => g.kode_produksi).join(', ')}
+                    {pendingBatchGroups.length > 3 ? `, +${pendingBatchGroups.length - 3} lainnya` : ''}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMultiBatchScannerOpen(true)}
+                className="min-h-[36px] px-3.5 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shrink-0 transition cursor-pointer shadow-xs"
+              >
+                Cek &amp; Perbaiki ({pendingBatchGroups.length})
+              </button>
+            </div>
+          )}
+
           {/* Compact Toolbar Antrian */}
           <div className="bg-white dark:bg-slate-900 border border-slate-200/90 dark:border-slate-800 rounded-2xl p-2.5 sm:p-3 shadow-xs space-y-2.5">
             {/* Row 1: Search + 1 Primary CTA + Secondary/Overflow */}
@@ -2071,6 +2389,16 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
                 </button>
 
                 {/* Desktop Secondary Neutral Buttons */}
+                <button
+                  type="button"
+                  onClick={() => setIsMultiBatchScannerOpen(true)}
+                  className="hidden lg:inline-flex min-h-[42px] px-3 py-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-semibold items-center gap-1.5 transition cursor-pointer"
+                  title="Pindai & perbaiki seluruh kode dengan batch kedatangan susulan"
+                >
+                  <AlertTriangle className={`w-3.5 h-3.5 ${pendingBatchGroups.length > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-slate-400'}`} />
+                  <span>Cek Susulan{pendingBatchGroups.length > 0 ? ` (${pendingBatchGroups.length})` : ''}</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handleBatchRePushToSheet}
@@ -3725,6 +4053,19 @@ export const AuditHitungUlangTab: React.FC<AuditHitungUlangTabProps> = ({
               ]
             : []
         }
+      />
+
+      {/* Modal Scanner & Perbaikan Massal Batch Susulan */}
+      <MultiBatchAuditScannerModal
+        isOpen={isMultiBatchScannerOpen}
+        onClose={() => setIsMultiBatchScannerOpen(false)}
+        pendingGroups={pendingBatchGroups}
+        recountAuditMap={recountAuditMap}
+        queueMap={queueMap}
+        onOpenCodeWorkspace={(code) => handleOpenWorkspace(code)}
+        onBulkAddToQueue={handleBulkAddPendingToQueue}
+        onBulkAutoMergeAndSave={handleBulkAutoMergePendingGroups}
+        onBulkResyncMasterSheet={handleBulkResyncMasterSheetForPending}
       />
     </div>
   );

@@ -4,6 +4,21 @@
 
 ---
 
+## v2.31.0 — 25 November 2026
+**Modul**: Penerimaan Produksi — Fitur Scanner & Perbaikan Massal Batch Susulan (`src/components/penerimaan/MultiBatchAuditScannerModal.tsx`, `src/components/penerimaan/AuditHitungUlangTab.tsx`, `src/services/gasProduksiSync.ts`)
+- **Fitur Baru "Cek & Perbaiki Batch Susulan" (Multi-Batch Audit Scanner & Auto-Fixer)**:
+  - Menambahkan Live Alert Bar di atas antrean Audit Hitung Ulang & tombol permanen **`Cek Susulan`** yang memindai seluruh kode Kargo & CMT yang sudah pernah diaudit namun menerima kedatangan susulan baru (bukan hanya `2678`, melainkan seluruh kode terdampak sekaligus).
+  - Modal **`MultiBatchAuditScannerModal`** menampilkan ringkasan jumlah kode terdampak, total qty susulan, filter kategori (Kargo/CMT), pencarian, checklist pilih massal, rincian expandable per warna/size (`Audit Lama`, `Batch Baru`, `Total Awal`, `Hasil Gabung`), serta tombol `Audit Manual` per kode.
+  - Menyediakan **3 aksi perbaikan massal**: (1) **Masuk Antrean Massal** dengan petunjuk otomatis, (2) **Bersihkan False-Alarm Sheet** (Re-Sync Master Sheet Kargo/CMT agar formula `Parsial` & `BELUM LENGKAP` langsung menggantikan selisih merah palsu), dan (3) **Auto-Gabung & Simpan Massal** (menjumlahkan hasil audit lama + qty batch baru, update Supabase `penerimaan_produksi`, `recount_audit_results` + `audited_dates`, log riwayat, dan push delta ke Google Sheet).
+  - Menambahkan guard `!b.hasPendingFollowUpBatch` pada `effectiveFisik` di `pushPenerimaanProduksiToGoogleSheet` (`gasProduksiSync.ts`).
+
+- **Perbaikan Tata Letak Panel Pendamping Berdampingan (`DesktopWorkspaceTabBar.tsx`, `App.tsx`, `JneRekapView.tsx`, `RekapToolbar.tsx`, `RekapOrderViews.tsx`, `index.css`)**:
+  - Mengubah proporsi lebar Panel Pendamping mode *Berdampingan* dari `vw` (yang mengabaikan lebar sidebar) menjadi `%` proporsional (`40% / 49% / 58%`) dengan `overflow-x-auto` dan padding kompak agar kedua sisi rapi seimbang.
+  - Menambahkan `flex-wrap` + `min-w-[240px]` pada header `JneRekapView` & `RekapToolbar` agar judul/tab tidak tergencet menjadi 1 kata per baris atau tertimpa filter saat layar dibagi dua.
+  - Menambahkan `min-w-[880px]` pada tabel `RekapOrderViews` serta guardrail global `.wms-split-pane table.table-fixed` (`min-width: 820px`) di `index.css` agar kolom tabel (`Customer & Kurir`, `Produk`, `Aksi`) tidak pernah saling bertabrakan di mode split-screen.
+
+---
+
 ## v2.30.1 — 25 November 2026
 **Modul**: Penerimaan Produksi — Audit Hitung Ulang Multi-Batch & Google Sheet Sync (`src/services/gasProduksiSync.ts`, `gas/produksi_sheet.js`, `src/components/penerimaan/AuditHitungUlangTab.tsx`, `src/components/penerimaan/ProduksiSpreadsheetView.tsx`, `src/services/settings.ts`)
 - **Perbaikan False-Alarm Multi-Batch Kedatangan Susulan (Kasus Kode `2678`)**:

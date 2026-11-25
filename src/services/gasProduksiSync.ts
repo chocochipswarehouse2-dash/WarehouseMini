@@ -1331,7 +1331,7 @@ export async function pushPenerimaanProduksiToGoogleSheet(
   const formattedBlocks = effectiveBlocks.map((b) => {
     const normCode = (b.code || '').trim().toUpperCase();
     const resolvedQtyNota = b.qtyNota !== undefined && b.qtyNota !== null ? b.qtyNota : (cachedNotaMapMaster[normCode]?.qty_nota ?? null);
-    const effectiveFisik = (b.hasRecount && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined)
+    const effectiveFisik = (b.hasRecount && !b.hasPendingFollowUpBatch && b.totalRecountFisik !== null && b.totalRecountFisik !== undefined)
       ? b.totalRecountFisik
       : b.totalNet;
 

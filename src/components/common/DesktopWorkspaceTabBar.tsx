@@ -373,17 +373,22 @@ export const DesktopCompanionDrawer: React.FC<DesktopCompanionDrawerProps> = ({
   const mainMeta = getWorkspacePageMeta(activePage);
   const CompanionIcon = companionMeta.icon;
 
-  const widthClass =
-    drawerWidth === 'wide'
-      ? 'w-[62vw] max-w-[1200px]'
+  const widthClass = isDockedSplit
+    ? drawerWidth === 'wide'
+      ? 'w-[58%] max-w-[1200px] min-w-[420px]'
       : drawerWidth === 'half'
-      ? 'w-[48vw] max-w-[960px]'
-      : 'w-[40vw] max-w-[760px]';
+      ? 'w-[49%] max-w-[960px] min-w-[380px]'
+      : 'w-[40%] max-w-[760px] min-w-[360px]'
+    : drawerWidth === 'wide'
+    ? 'w-[62vw] max-w-[1200px]'
+    : drawerWidth === 'half'
+    ? 'w-[48vw] max-w-[960px]'
+    : 'w-[40vw] max-w-[760px]';
 
   return (
     <aside
       aria-label={`Panel Pendamping ${companionMeta.label}`}
-      className={`hidden lg:flex flex-col ${
+      className={`wms-split-pane hidden lg:flex flex-col ${
         isDockedSplit
           ? `${widthClass} shrink-0 border-l-2 border-indigo-500/30 dark:border-indigo-500/40 bg-[#f8fafc] dark:bg-[#0b1120] sticky top-[45px] h-[calc(100vh-45px)] z-20 shadow-xl`
           : `fixed top-[45px] right-0 bottom-0 ${widthClass} z-40 border-l-2 border-indigo-500/40 bg-[#f8fafc] dark:bg-[#0b1120] shadow-2xl`
@@ -467,7 +472,7 @@ export const DesktopCompanionDrawer: React.FC<DesktopCompanionDrawerProps> = ({
         className={
           companionPage === 'live_chat'
             ? 'flex-1 flex flex-col min-h-0 overflow-hidden p-0'
-            : 'flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-4'
+            : 'flex-1 overflow-y-auto overflow-x-auto p-2 sm:p-3'
         }
       >
         <div

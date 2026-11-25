@@ -445,7 +445,7 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
 
         {/* DESKTOP EXECUTIVE TABLE (>= 768px) — CLEAN 6-COLUMN PROPORTIONS */}
         <div className="hidden md:block w-full overflow-x-auto">
-          <table className="w-full text-left border-collapse lg:table-fixed">
+          <table className="w-full min-w-[880px] text-left border-collapse lg:table-fixed">
             <thead>
               <tr className="bg-slate-50/90 dark:bg-slate-800/70 border-b border-slate-200 dark:border-slate-800 text-[10.5px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 {canAction && (

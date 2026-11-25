@@ -995,8 +995,8 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     <div className="w-full max-w-full p-0 sm:px-4 lg:px-6 sm:py-4 pb-24 lg:pb-6 space-y-3 sm:space-y-4">
       {/* 1. HEADER TOOLBAR (Standar Anti-Pelangi: Maks 1 Tombol Solid Primary) */}
       <div className="bg-white dark:bg-slate-900 border-b sm:border border-slate-200 dark:border-slate-800 sm:rounded-2xl px-3 py-3 sm:p-4 shadow-2xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="min-w-0">
+        <div className="flex flex-wrap items-start sm:items-center justify-between gap-3">
+          <div className="min-w-[240px] flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <Receipt className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <h1 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
