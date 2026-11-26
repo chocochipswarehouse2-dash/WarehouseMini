@@ -6322,6 +6322,176 @@ export async function fetchLoggedOutQtyBySkuForSj(no_sj: string): Promise<Map<st
   return map;
 }
 
+export const PICKING_PRIOR_BASELINES_DOC_ID = 'picking_shortage_baselines_v1';
+const LOCAL_PICKING_PRIOR_BASELINES_KEY = 'wms_picking_prior_baselines_v1';
+const PICKING_PRIOR_BASELINES_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+export interface PickingPriorBaselineEntry {
+  updatedAt: string;
+  mode?: 'shortage_share' | 'continuation';
+  skus: Record<string, number>;
+}
+
+export type PickingPriorBaselinesMap = Record<string, PickingPriorBaselineEntry>;
+
+function parsePickingPriorBaselinesJson(raw?: string | null): PickingPriorBaselinesMap {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: PickingPriorBaselinesMap = {};
+    for (const [sjKeyRaw, entry] of Object.entries(parsed)) {
+      const sjKey = String(sjKeyRaw || '').trim().toUpperCase();
+      if (!sjKey || !entry || typeof entry !== 'object') continue;
+      const e = entry as any;
+      const skusObj: Record<string, number> = {};
+      if (e.skus && typeof e.skus === 'object') {
+        for (const [skuRaw, qtyRaw] of Object.entries(e.skus)) {
+          const sku = String(skuRaw || '').trim().toUpperCase();
+          const qty = Math.max(0, Number(qtyRaw) || 0);
+          if (sku && qty > 0) skusObj[sku] = qty;
+        }
+      }
+      if (Object.keys(skusObj).length > 0) {
+        out[sjKey] = {
+          updatedAt: String(e.updatedAt || new Date().toISOString()),
+          mode: e.mode === 'continuation' ? 'continuation' : 'shortage_share',
+          skus: skusObj,
+        };
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function getCachedPickingPriorBaselinesForSj(no_sj: string): Record<string, number> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj) return {};
+  try {
+    const memEntry = systemDocMemoryCache.get(`id:${PICKING_PRIOR_BASELINES_DOC_ID}`);
+    if (memEntry && Array.isArray(memEntry.data) && memEntry.data[0]?.content) {
+      const parsed = parsePickingPriorBaselinesJson(memEntry.data[0].content);
+      if (parsed[cleanNoSj]?.skus) return parsed[cleanNoSj].skus;
+    }
+  } catch {}
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const raw = localStorage.getItem(LOCAL_PICKING_PRIOR_BASELINES_KEY);
+      if (raw) {
+        const parsed = parsePickingPriorBaselinesJson(raw);
+        if (parsed[cleanNoSj]?.skus) return parsed[cleanNoSj].skus;
+      }
+    }
+  } catch {}
+  return {};
+}
+
+export async function getPickingPriorBaselinesMap(forceRefresh = false): Promise<PickingPriorBaselinesMap> {
+  try {
+    const docs = await getSystemDocs(PICKING_PRIOR_BASELINES_DOC_ID, forceRefresh);
+    const content = docs?.[0]?.content;
+    const parsed = parsePickingPriorBaselinesJson(content);
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem(LOCAL_PICKING_PRIOR_BASELINES_KEY, JSON.stringify(parsed));
+      }
+    } catch {}
+    return parsed;
+  } catch {
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const raw = localStorage.getItem(LOCAL_PICKING_PRIOR_BASELINES_KEY);
+        if (raw) return parsePickingPriorBaselinesJson(raw);
+      }
+    } catch {}
+    return {};
+  }
+}
+
+export async function getPickingPriorBaselinesForSj(
+  no_sj: string,
+  forceRefresh = false
+): Promise<Record<string, number>> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj) return {};
+  const map = await getPickingPriorBaselinesMap(forceRefresh);
+  return map[cleanNoSj]?.skus || {};
+}
+
+export async function savePickingPriorBaselineForSj(
+  no_sj: string,
+  skusMap: Record<string, number>,
+  options?: {
+    mode?: 'shortage_share' | 'continuation';
+    updatedBy?: string;
+    replaceExistingEntry?: boolean;
+  }
+): Promise<void> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj) return;
+
+  const cleanSkus: Record<string, number> = {};
+  for (const [k, v] of Object.entries(skusMap || {})) {
+    const skuKey = String(k || '').trim().toUpperCase();
+    const qtyVal = Math.max(0, Number(v) || 0);
+    if (skuKey && qtyVal > 0) {
+      cleanSkus[skuKey] = qtyVal;
+    }
+  }
+
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const existingMap = await getPickingPriorBaselinesMap(true);
+  const nextMap: PickingPriorBaselinesMap = {};
+
+  for (const [sjKey, entry] of Object.entries(existingMap)) {
+    const ts = new Date(entry.updatedAt || 0).getTime();
+    if (!Number.isFinite(ts) || nowMs - ts <= PICKING_PRIOR_BASELINES_RETENTION_MS) {
+      nextMap[sjKey] = entry;
+    }
+  }
+
+  const prevEntry = nextMap[cleanNoSj];
+  const mergedSkus: Record<string, number> = options?.replaceExistingEntry
+    ? { ...cleanSkus }
+    : { ...(prevEntry?.skus || {}) };
+  if (!options?.replaceExistingEntry) {
+    for (const [skuKey, qtyVal] of Object.entries(cleanSkus)) {
+      mergedSkus[skuKey] = Math.max(mergedSkus[skuKey] || 0, qtyVal);
+    }
+  }
+
+  if (Object.keys(mergedSkus).length > 0) {
+    nextMap[cleanNoSj] = {
+      updatedAt: nowIso,
+      mode: options?.mode || prevEntry?.mode || 'shortage_share',
+      skus: mergedSkus,
+    };
+  } else {
+    delete nextMap[cleanNoSj];
+  }
+
+  const serialized = JSON.stringify(nextMap);
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      localStorage.setItem(LOCAL_PICKING_PRIOR_BASELINES_KEY, serialized);
+    }
+  } catch {}
+
+  try {
+    await saveSystemDoc({
+      section_id: PICKING_PRIOR_BASELINES_DOC_ID,
+      content: serialized,
+      updated_by: options?.updatedBy || 'System',
+      updated_at: nowIso,
+    });
+  } catch (err) {
+    console.warn('[PickingBaseline] Gagal menyimpan baseline prioritas ke wms_system_docs:', err);
+  }
+}
+
 function pickPrimaryFreshWarehouseLocation(stocks: StockRealtimeItem[]): string {
   if (!Array.isArray(stocks) || stocks.length === 0) return '-';
   const locMap = new Map<string, { lokasi: string; qty: number; area: string }>();
@@ -6503,6 +6673,14 @@ export async function reopenRemainingPickingSJSupabase(
       await Promise.all(patchPromises);
     }
 
+    // Persist baseline so subsequent completions & multi-device opens never double-deduct prior #OUT
+    if (Object.keys(priorPickedBySku).length > 0) {
+      await savePickingPriorBaselineForSj(cleanNoSj, priorPickedBySku, {
+        mode: 'continuation',
+        updatedBy: cleanUser,
+      }).catch(() => {});
+    }
+
     // 5. Update local picking caches immediately
     const updateCache = (storageKey: string) => {
       try {
@@ -6557,6 +6735,452 @@ export async function reopenRemainingPickingSJSupabase(
       activePickers: [],
       reopenedCount: 0,
       priorPickedBySku: {},
+    };
+  }
+}
+
+/**
+ * Share shortage items (Selisih Kurang) from Pengecekan Surat Jalan (Pengiriman) to Tugas Picking.
+ * - If the SJ already exists in `picking_list`, reopens ONLY the short SKUs into `PENDING` with `qty_picked = qty_scan`
+ *   and fresh live rack locations from `stok_real_fisik`, while keeping matched SKUs as `SELESAI`.
+ * - If the SJ does NOT exist in `picking_list` yet, creates the SJ entry pre-filled with `qty_picked = qty_scan`
+ *   (`PENDING` for short items, `SELESAI` for already-matched items).
+ * - Saves per-SKU baseline into `picking_shortage_baselines_v1` so completion ONLY logs `#OUT` for newly picked shortage qty.
+ */
+export async function shareShortageToPickingAppSupabase(params: {
+  no_sj: string;
+  destination: string;
+  source?: string;
+  tanggal_sj?: string;
+  operatorName?: string;
+  items: Array<{
+    sku: string;
+    nama_produk?: string;
+    size?: string;
+    qty_sj: number;
+    qty_scan: number;
+  }>;
+}): Promise<{
+  ok: boolean;
+  reason?: string;
+  mode: 'updated' | 'created';
+  shortageSkuCount: number;
+  shortageTotalPcs: number;
+  alreadyFulfilledPcs: number;
+  invoice_picking?: string;
+}> {
+  const cleanNoSj = String(params.no_sj || '').trim().toUpperCase();
+  const cleanDest = String(params.destination || 'Store').trim() || 'Store';
+  const cleanSource = String(params.source || '').trim();
+  const cleanOperator = String(params.operatorName || 'Admin').trim();
+  const nowIso = new Date().toISOString();
+
+  if (!cleanNoSj) {
+    return {
+      ok: false,
+      reason: 'Nomor Surat Jalan tidak valid.',
+      mode: 'created',
+      shortageSkuCount: 0,
+      shortageTotalPcs: 0,
+      alreadyFulfilledPcs: 0,
+    };
+  }
+
+  // Deduplicate & aggregate regular items by SKU
+  const aggregatedBySku = new Map<
+    string,
+    { sku: string; nama_produk: string; size: string; qty_sj: number; qty_scan: number }
+  >();
+  for (const rawIt of params.items || []) {
+    const skuKey = String(rawIt.sku || '').trim().toUpperCase();
+    const qtySj = Math.max(0, Number(rawIt.qty_sj) || 0);
+    const qtyScan = Math.max(0, Number(rawIt.qty_scan) || 0);
+    if (!skuKey || qtySj <= 0) continue;
+    const prev = aggregatedBySku.get(skuKey);
+    if (prev) {
+      prev.qty_sj += qtySj;
+      prev.qty_scan += qtyScan;
+    } else {
+      aggregatedBySku.set(skuKey, {
+        sku: skuKey,
+        nama_produk: String(rawIt.nama_produk || skuKey).trim(),
+        size: String(rawIt.size || '-').trim() || '-',
+        qty_sj: qtySj,
+        qty_scan: qtyScan,
+      });
+    }
+  }
+
+  const allItems = Array.from(aggregatedBySku.values());
+  const shortageItems = allItems.filter((it) => it.qty_scan < it.qty_sj);
+  if (shortageItems.length === 0) {
+    return {
+      ok: false,
+      reason: 'Tidak ada item selisih kurang pada Surat Jalan ini.',
+      mode: 'created',
+      shortageSkuCount: 0,
+      shortageTotalPcs: 0,
+      alreadyFulfilledPcs: 0,
+    };
+  }
+
+  const shortageTotalPcs = shortageItems.reduce((sum, it) => sum + Math.max(0, it.qty_sj - it.qty_scan), 0);
+  const alreadyFulfilledPcs = allItems.reduce((sum, it) => sum + Math.min(it.qty_sj, it.qty_scan), 0);
+
+  try {
+    // Clear from local completed set & stale draft so SJ appears back in active queue
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const compStr = localStorage.getItem('wms_completed_sjs_set');
+        if (compStr) {
+          const compSet = new Set<string>(JSON.parse(compStr));
+          compSet.delete(cleanNoSj);
+          localStorage.setItem('wms_completed_sjs_set', JSON.stringify(Array.from(compSet)));
+        }
+        const draftsRaw = localStorage.getItem('wms_picking_sj_drafts_v1');
+        if (draftsRaw) {
+          const draftsObj = JSON.parse(draftsRaw);
+          if (draftsObj && typeof draftsObj === 'object' && draftsObj[cleanNoSj]) {
+            delete draftsObj[cleanNoSj];
+            localStorage.setItem('wms_picking_sj_drafts_v1', JSON.stringify(draftsObj));
+          }
+        }
+      }
+    } catch {}
+
+    const isSourceStore =
+      Boolean(cleanSource) &&
+      !/warehouse|gudang|pusat/i.test(cleanSource) &&
+      /store|toko|outlet/i.test(cleanSource);
+
+    const shortageSkus = shortageItems.map((it) => it.sku);
+    const [currentRows, loggedOutMap, existingBaselines, freshStocksList] = await Promise.all([
+      fetchActiveSjRealtimeRowsSupabase(cleanNoSj),
+      fetchLoggedOutQtyBySkuForSj(cleanNoSj),
+      getPickingPriorBaselinesForSj(cleanNoSj, true),
+      isSourceStore ? Promise.resolve([] as StockRealtimeItem[]) : fetchStockForSkus(shortageSkus),
+    ]);
+
+    const freshStocksBySku: Record<string, StockRealtimeItem[]> = {};
+    freshStocksList.forEach((stk) => {
+      const k = String(stk.sku || '').trim().toUpperCase();
+      if (!freshStocksBySku[k]) freshStocksBySku[k] = [];
+      freshStocksBySku[k].push(stk);
+    });
+
+    const resolveFreshLoc = (skuKey: string): string => {
+      if (isSourceStore) return cleanSource || cleanDest || 'STORE';
+      const primary = pickPrimaryFreshWarehouseLocation(freshStocksBySku[skuKey] || []);
+      if (primary && primary !== '-') return primary;
+      const cachedCat = memoryProductCache?.find(
+        (p) =>
+          (p.k && p.k.trim().toUpperCase() === skuKey) ||
+          ((p as any).sku && String((p as any).sku).trim().toUpperCase() === skuKey)
+      );
+      const locItem = Array.isArray(cachedCat?.locList) ? cachedCat?.locList[0] : null;
+      const locStr = typeof locItem === 'string' ? locItem : locItem?.lokasi;
+      return cachedCat?.lokasi || locStr || '-';
+    };
+
+    const resolveCatalogMeta = (item: { sku: string; nama_produk: string; size: string }) => {
+      const cachedCat = memoryProductCache?.find(
+        (p) =>
+          (p.k && p.k.trim().toUpperCase() === item.sku) ||
+          ((p as any).sku && String((p as any).sku).trim().toUpperCase() === item.sku)
+      );
+      const catSize = cachedCat?.s || (cachedCat as any)?.size || (cachedCat as any)?.variant;
+      const cleanSize =
+        item.size && item.size !== '-'
+          ? item.size
+          : catSize && String(catSize).trim()
+          ? String(catSize).trim()
+          : '-';
+      const rawNama = (item.nama_produk || '').trim();
+      const catNama = cachedCat?.p || (cachedCat as any)?.nama_produk || cachedCat?.n;
+      const cleanNama =
+        !rawNama || rawNama.toUpperCase() === item.sku
+          ? (catNama ? String(catNama).trim() : item.sku)
+          : rawNama;
+      return { nama_produk: cleanNama, size: cleanSize };
+    };
+
+    const baselineToSave: Record<string, number> = {};
+    const allResultRows: PickingListItem[] = [];
+    let resolvedInvoicePicking = '';
+    let mode: 'updated' | 'created' = 'created';
+
+    if (currentRows.length > 0) {
+      mode = 'updated';
+      resolvedInvoicePicking =
+        currentRows.find((r) => r.invoice_picking && String(r.invoice_picking).trim())?.invoice_picking || '';
+
+      const rowBySku = new Map<string, PickingListItem[]>();
+      currentRows.forEach((r) => {
+        const k = String(r.sku || '').trim().toUpperCase();
+        if (!k) return;
+        const arr = rowBySku.get(k) || [];
+        arr.push(r);
+        rowBySku.set(k, arr);
+      });
+
+      const patchJobs: Array<{ cond: string; body: Record<string, any> }> = [];
+      const rowsToInsert: Array<{
+        invoice_picking?: string;
+        no_sj: string;
+        tanggal?: string;
+        tujuan?: string;
+        sku: string;
+        nama_produk: string;
+        size?: string;
+        qty_req: number;
+        qty_picked?: number;
+        lokasi?: string;
+        status?: string;
+        picker_name?: string;
+        created_at?: string;
+      }> = [];
+
+      const handledExistingIds = new Set<string>();
+
+      for (const item of allItems) {
+        const existingForSku = rowBySku.get(item.sku) || [];
+        const isShort = item.qty_scan < item.qty_sj;
+        const checkedQty = Math.min(item.qty_sj, Math.max(0, item.qty_scan));
+        const priorLoggedOut = loggedOutMap.get(item.sku) || 0;
+        const priorSavedBase = existingBaselines[item.sku] || 0;
+        const effectiveBaseline = Math.max(checkedQty, priorLoggedOut, priorSavedBase);
+        if (effectiveBaseline > 0) {
+          baselineToSave[item.sku] = effectiveBaseline;
+        }
+
+        const freshLoc = isShort ? resolveFreshLoc(item.sku) : '-';
+        const meta = resolveCatalogMeta(item);
+
+        if (existingForSku.length > 0) {
+          const primaryRow = existingForSku[0];
+          existingForSku.forEach((r) => handledExistingIds.add(String(r.id || r.sku)));
+          const cond =
+            primaryRow.id && !String(primaryRow.id).startsWith('pick_')
+              ? `id=eq.${encodeURIComponent(String(primaryRow.id))}`
+              : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
+
+          if (isShort) {
+            patchJobs.push({
+              cond,
+              body: {
+                qty_req: item.qty_sj,
+                qty_picked: checkedQty,
+                status: 'PENDING',
+                picker_name: '',
+                lokasi: freshLoc,
+              },
+            });
+            allResultRows.push({
+              ...primaryRow,
+              nama_produk: meta.nama_produk,
+              size: meta.size,
+              qty_req: item.qty_sj,
+              qty_picked: checkedQty,
+              prev_qty_picked: checkedQty > 0 ? checkedQty : undefined,
+              status: 'PENDING',
+              picker_name: '',
+              lokasi: freshLoc,
+              lokasi_picked: undefined,
+              is_kosong: false,
+            });
+          } else {
+            const fulfilledQty = Math.max(item.qty_sj, Number(primaryRow.qty_picked) || 0, checkedQty);
+            patchJobs.push({
+              cond,
+              body: {
+                qty_req: item.qty_sj,
+                qty_picked: fulfilledQty,
+                status: 'SELESAI',
+              },
+            });
+            allResultRows.push({
+              ...primaryRow,
+              qty_req: item.qty_sj,
+              qty_picked: fulfilledQty,
+              prev_qty_picked: fulfilledQty,
+              status: 'SELESAI',
+            });
+          }
+
+          // Mark duplicate extra rows for the same SKU (if any) as SELESAI so no orphan row stays PENDING
+          for (let dIdx = 1; dIdx < existingForSku.length; dIdx++) {
+            const dupRow = existingForSku[dIdx];
+            if (dupRow.status !== 'SELESAI' && dupRow.id && !String(dupRow.id).startsWith('pick_')) {
+              patchJobs.push({
+                cond: `id=eq.${encodeURIComponent(String(dupRow.id))}`,
+                body: { status: 'SELESAI', qty_picked: Number(dupRow.qty_req) || 0 },
+              });
+            }
+          }
+        } else if (isShort) {
+          rowsToInsert.push({
+            invoice_picking: resolvedInvoicePicking,
+            no_sj: cleanNoSj,
+            tanggal: (params.tanggal_sj || nowIso).slice(0, 10),
+            tujuan: cleanDest,
+            sku: item.sku,
+            nama_produk: meta.nama_produk,
+            size: meta.size,
+            qty_req: item.qty_sj,
+            qty_picked: checkedQty,
+            lokasi: freshLoc,
+            status: 'PENDING',
+            picker_name: '',
+            created_at: nowIso,
+          });
+          allResultRows.push({
+            id: `pick_${cleanNoSj}_${item.sku}_${Date.now()}`,
+            invoice_picking: resolvedInvoicePicking,
+            no_sj: cleanNoSj,
+            tanggal: (params.tanggal_sj || nowIso).slice(0, 10),
+            tujuan: cleanDest,
+            sku: item.sku,
+            nama_produk: meta.nama_produk,
+            size: meta.size,
+            qty_req: item.qty_sj,
+            qty_picked: checkedQty,
+            prev_qty_picked: checkedQty > 0 ? checkedQty : undefined,
+            lokasi: freshLoc,
+            status: 'PENDING',
+            picker_name: '',
+            created_at: nowIso,
+          });
+        }
+      }
+
+      // Close out any stale non-shortage rows on this SJ that weren't in Pengecekan SJ
+      for (const remRow of currentRows) {
+        if (!handledExistingIds.has(String(remRow.id || remRow.sku)) && remRow.status !== 'SELESAI') {
+          if (remRow.id && !String(remRow.id).startsWith('pick_')) {
+            patchJobs.push({
+              cond: `id=eq.${encodeURIComponent(String(remRow.id))}`,
+              body: { status: 'SELESAI' },
+            });
+          }
+          allResultRows.push({ ...remRow, status: 'SELESAI' });
+        }
+      }
+
+      const PATCH_CONCURRENCY = 8;
+      for (let i = 0; i < patchJobs.length; i += PATCH_CONCURRENCY) {
+        const chunk = patchJobs.slice(i, i + PATCH_CONCURRENCY);
+        await Promise.all(
+          chunk.map((job) => supabaseFetch('picking_list', 'PATCH', job.body, job.cond))
+        );
+      }
+
+      if (rowsToInsert.length > 0) {
+        await insertPickingListRowsToSupabase(rowsToInsert);
+      }
+    } else {
+      mode = 'created';
+      const dateStr = nowIso.slice(2, 10).replace(/-/g, '');
+      const tipeCode = cleanNoSj.includes('SPS')
+        ? 'SPS'
+        : cleanDest.toLowerCase().includes('marketplace') || cleanNoSj.includes('SHP') || cleanNoSj.includes('TKTK')
+        ? 'MRK'
+        : 'SJL';
+      const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+      resolvedInvoicePicking = `WA${dateStr}${tipeCode}${randomStr}`;
+
+      const baseTime = Math.max(Date.now(), lastPickingBatchBaseTime + 1);
+      lastPickingBatchBaseTime = baseTime;
+
+      const cleanDate = (params.tanggal_sj || nowIso).slice(0, 10);
+      const newRows: PickingListItem[] = allItems.map((item, idx) => {
+        const isShort = item.qty_scan < item.qty_sj;
+        const checkedQty = Math.min(item.qty_sj, Math.max(0, item.qty_scan));
+        const priorLoggedOut = loggedOutMap.get(item.sku) || 0;
+        const priorSavedBase = existingBaselines[item.sku] || 0;
+        const effectiveBaseline = Math.max(checkedQty, priorLoggedOut, priorSavedBase);
+        if (effectiveBaseline > 0) {
+          baselineToSave[item.sku] = effectiveBaseline;
+        }
+        const meta = resolveCatalogMeta(item);
+        const freshLoc = isShort ? resolveFreshLoc(item.sku) : '-';
+
+        return {
+          id: baseTime * 1000 + (idx % 1000),
+          invoice_picking: resolvedInvoicePicking,
+          no_sj: cleanNoSj,
+          tanggal: cleanDate,
+          tujuan: cleanDest,
+          sku: item.sku,
+          nama_produk: meta.nama_produk,
+          size: meta.size,
+          qty_req: item.qty_sj,
+          qty_picked: isShort ? checkedQty : item.qty_sj,
+          prev_qty_picked: effectiveBaseline > 0 ? effectiveBaseline : undefined,
+          lokasi: freshLoc,
+          status: isShort ? ('PENDING' as const) : ('SELESAI' as const),
+          picker_name: '',
+          created_at: nowIso,
+        };
+      });
+
+      await insertPickingListRowsToSupabase(newRows);
+      allResultRows.push(...newRows);
+    }
+
+    // Persist authoritative prior baseline so #OUT on submit ONLY deducts newly picked shortage qty
+    await savePickingPriorBaselineForSj(cleanNoSj, baselineToSave, {
+      mode: 'shortage_share',
+      updatedBy: cleanOperator,
+      replaceExistingEntry: true,
+    });
+
+    // Update local picking caches immediately
+    const updateLocalCache = (storageKey: string) => {
+      try {
+        const rawStr = localStorage.getItem(storageKey);
+        const cached: PickingListItem[] = rawStr ? JSON.parse(rawStr) : [];
+        const filtered = Array.isArray(cached)
+          ? cached.filter((c) => String(c.no_sj || '').trim().toUpperCase() !== cleanNoSj)
+          : [];
+        localStorage.setItem(storageKey, JSON.stringify([...allResultRows, ...filtered]));
+      } catch {}
+    };
+    updateLocalCache('wms_picking_cache');
+    updateLocalCache('wms_raw_picking_list_cache');
+
+    invalidatePickingListCache();
+
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(new CustomEvent('picking_list_updated', { detail: allResultRows }));
+        window.dispatchEvent(new CustomEvent('wms_picking_list_updated', { detail: allResultRows }));
+      } catch {}
+    }
+
+    globalRealtimeStore
+      .broadcastEvent('sj_reopened', {
+        no_sj: cleanNoSj,
+        reopened_count: shortageItems.length,
+      })
+      .catch(() => {});
+
+    return {
+      ok: true,
+      mode,
+      shortageSkuCount: shortageItems.length,
+      shortageTotalPcs,
+      alreadyFulfilledPcs,
+      invoice_picking: resolvedInvoicePicking,
+    };
+  } catch (err: any) {
+    console.error('[shareShortageToPickingAppSupabase] Error:', err);
+    return {
+      ok: false,
+      reason: err?.message || 'Gagal mengirim kekurangan ke Tugas Picking.',
+      mode: 'created',
+      shortageSkuCount: 0,
+      shortageTotalPcs: 0,
+      alreadyFulfilledPcs: 0,
     };
   }
 }
@@ -7194,8 +7818,15 @@ export async function completePickingSuratJalanSupabase(
     }
   } catch {}
 
-  // 2. Sync to log_produk (OUT) automatically using SKU-level delta check against existing OUT logs
-  //    Supports multi-location splits AND per-item / per-split operator attribution!
+  // 2. Sync to log_produk (OUT) automatically using SKU-level delta check against existing OUT logs AND prior shortage/continuation baselines
+  //    Supports multi-location splits, per-item / per-split operator attribution, and Pengecekan SJ pre-filled qty protection!
+  let priorBaselineBySku: Record<string, number> = {};
+  try {
+    priorBaselineBySku = await getPickingPriorBaselinesForSj(cleanNoSj, true);
+  } catch {
+    priorBaselineBySku = getCachedPickingPriorBaselinesForSj(cleanNoSj);
+  }
+
   if (syncOutToLog && !alreadyCompletedRemotely) {
     try {
       const existingOutBySku = await fetchLoggedOutQtyBySkuForSj(cleanNoSj);
@@ -7207,7 +7838,10 @@ export async function completePickingSuratJalanSupabase(
         if (!skuKey || pickedQty <= 0) continue;
 
         const alreadyOut = existingOutBySku.get(skuKey) || 0;
-        const deltaQty = Math.max(0, pickedQty - alreadyOut);
+        const itemPrevBaseline = Math.max(0, Number(it.prev_qty_picked) || 0);
+        const persistedBaseline = Math.max(0, Number(priorBaselineBySku[skuKey]) || 0);
+        const alreadyProcessed = Math.max(alreadyOut, itemPrevBaseline, persistedBaseline);
+        const deltaQty = Math.max(0, pickedQty - alreadyProcessed);
         existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
         if (deltaQty <= 0) continue;
 
@@ -7215,7 +7849,7 @@ export async function completePickingSuratJalanSupabase(
           cleanNoSj,
           item: it,
           deltaQty,
-          alreadyOut,
+          alreadyOut: alreadyProcessed,
           fallbackPicker: finalPickerName,
           catatan,
           createdAtIso: nowIso,
@@ -7351,6 +7985,25 @@ export async function completePickingSuratJalanSupabase(
       await supabaseFetch('peminjaman', 'PATCH', { 
         status: 'SELESAI'
       }, `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}`).catch(() => {});
+    }
+
+    // 5.5. Update persisted prior baseline if this SJ used shortage/continuation tracking
+    //      so any future `Lanjutkan Sisa` never re-deducts newly completed session qty!
+    const hadPriorBaseline =
+      Object.keys(priorBaselineBySku).length > 0 ||
+      items.some((it) => (Number(it.prev_qty_picked) || 0) > 0);
+    if (hadPriorBaseline) {
+      const updatedBaselineMap: Record<string, number> = { ...priorBaselineBySku };
+      items.forEach((it) => {
+        const skuKey = String(it.sku || '').trim().toUpperCase();
+        const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
+        if (skuKey && pickedQty > 0) {
+          updatedBaselineMap[skuKey] = Math.max(updatedBaselineMap[skuKey] || 0, pickedQty);
+        }
+      });
+      await savePickingPriorBaselineForSj(cleanNoSj, updatedBaselineMap, {
+        updatedBy: finalPickerName,
+      }).catch(() => {});
     }
 
     invalidatePickingListCache();

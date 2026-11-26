@@ -15,18 +15,52 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.31.1",
-  "versionCode": 511,
-  "buildDate": "25 November 2026",
-  "buildHash": "wms-261125-v511-1840",
-  "releaseTitle": "WMS v2.31.1 — Cetak Surat Jalan SPS Tanpa Kolom Lokasi",
+  "version": "v2.33.0",
+  "versionCode": 530,
+  "buildDate": "26 November 2026",
+  "buildHash": "wms-261126-v530-0623",
+  "releaseTitle": "WMS v2.33.0 — Share Kekurangan Pengecekan SJ ke Tugas Picking",
   "releaseNotes": [
-    "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
+    "Tombol Share ke Tugas Picking pada item selisih kurang di Pengecekan SJ Pengiriman",
+    "Rekonsiliasi SJ eksisting vs baru di picking_list, tampil hanya sisa kurang, dan anti-double #OUT via baseline persisten"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.32.1",
+    "versionCode": 521,
+    "buildDate": "26 November 2026",
+    "buildHash": "wms-261126-v521-0304",
+    "releaseTitle": "WMS v2.32.1 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.32.0",
+    "versionCode": 520,
+    "buildDate": "26 November 2026",
+    "buildHash": "wms-261126-v520-0118",
+    "releaseTitle": "WMS v2.32.0 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
+  {
+    "version": "v2.31.1",
+    "versionCode": 511,
+    "buildDate": "25 November 2026",
+    "buildHash": "wms-261125-v511-1840",
+    "releaseTitle": "WMS v2.31.1 — Cetak Surat Jalan SPS Tanpa Kolom Lokasi",
+    "releaseNotes": [
+      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.31.0",
     "versionCode": 510,
@@ -83,45 +117,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Sinkronisasi live 2 arah dengan GSheet JNEMember (Kolom D Deskripsi Pengiriman bisa diisi dari WMS maupun GSheet)",
       "Import multi-sumber: Excel, CSV, Lampiran Gambar/Screenshot (Ctrl+V via Gemini Vision AI), PDF, & Input Manual dengan Tabel Pratinjau",
       "Fitur Edit Lengkap seluruh kolom & Hapus Baris GSheet khusus Admin dan Warehouse dalam tampilan 2-Mode (Tabel & Kartu)"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.28.3",
-    "versionCode": 483,
-    "buildDate": "24 November 2026",
-    "buildHash": "wms-261124-v483-0731",
-    "releaseTitle": "WMS v2.28.3 — Pilih Cetak Per-Size & Setup Customizer Barcode Presisi",
-    "releaseNotes": [
-      "Tambah fitur pilih cetak varian size tertentu di Langkah 1 (tombol size langsung dan toggle chip)",
-      "Sediakan panel customizer barcode lengkap (Format Tag Harga IDR/Rp/Polos, Ukuran QR, Font Size & Weight)",
-      "Perbaiki proporsi stiker thermal 50x20mm dan vertical center alignment"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.28.2",
-    "versionCode": 482,
-    "buildDate": "24 November 2026",
-    "buildHash": "wms-261124-v482-0015",
-    "releaseTitle": "WMS v2.28.2 — Fix Baris Picking Nyangkut & Upgrade Skill Guardrails",
-    "releaseNotes": [
-      "Perbaikan paralel completion + SJ-wide sweep agar 0 baris nyangkut",
-      "Pembersihan data TO.OMP.26.11.00356 di Supabase",
-      "Upgrade skill wms-picking-completion-sync-guardrails untuk seluruh agen"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.28.1",
-    "versionCode": 481,
-    "buildDate": "23 November 2026",
-    "buildHash": "wms-261123-v481-2253",
-    "releaseTitle": "WMS v2.28.1 — Pembaruan Sistem & Optimasi Operasional",
-    "releaseNotes": [
-      "Fondasi Memori Permanen Global semua modul di docs/memory/ (Feature Registry, Changelog & AI Backlog) + pembersihan GEMINI.md",
-      "Sistem AI Self-Reporting Capability Gap (Supabase + panel Backlog Dev + CLI pull_ai_dev_reports.cjs)",
-      "Upgrade Full-Coverage Asisten AI: 10 tool lintas modul (SOP/FAQ QnA, Loading Dock, Distribusi/Pengiriman, Order Channels, SO/Putaway, Store Help, Ringkasan Eksekutif, Validasi Master Produk, Navigasi 1-Klik) & Export CSV (.csv)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

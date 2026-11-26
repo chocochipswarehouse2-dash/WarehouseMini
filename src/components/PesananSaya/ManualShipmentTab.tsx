@@ -83,6 +83,7 @@ import {
   notifyOrderSoldOutToChat,
   notifySoldItemRestoredToChat,
   notifyStoreScheduleToChat,
+  notifyStoreWarehouseReminderToChat,
 } from '../../services/orderChatNotificationService';
 
 interface ManualShipmentViewProps {
@@ -180,6 +181,7 @@ export const ManualShipmentTab: React.FC<ManualShipmentViewProps> = ({
     return 'table';
   });
   const [actionSheetOrder, setActionSheetOrder] = useState<ManualShipmentOrder | null>(null);
+  const [sendingReminderOrderKey, setSendingReminderOrderKey] = useState<string | null>(null);
   const [isRekapUtilsMenuOpen, setIsRekapUtilsMenuOpen] = useState(false);
 
   const handleSetViewMode = (mode: 'table' | 'card') => {
@@ -1085,14 +1087,35 @@ _WMS Warehouse System_`;
       }
     };
 
+    const handleExternalOrderUpdated = (e: Event) => {
+      const detail = (e as CustomEvent)?.detail;
+      const updatedOrder: ManualShipmentOrder | undefined = detail?.order;
+      if (updatedOrder) {
+        const updatedKey = updatedOrder.no_pesanan || (updatedOrder as any).id;
+        setOrders((prev) =>
+          prev.map((o) => (o.no_pesanan === updatedKey || (o as any).id === updatedKey ? updatedOrder : o))
+        );
+        setSelectedOrderDetails((prev) =>
+          prev && (prev.no_pesanan === updatedKey || (prev as any).id === updatedKey) ? updatedOrder : prev
+        );
+        setActionSheetOrder((prev) =>
+          prev && (prev.no_pesanan === updatedKey || (prev as any).id === updatedKey) ? updatedOrder : prev
+        );
+      } else {
+        void loadOrders();
+      }
+    };
+
     window.addEventListener('wms_open_pesanan_target', handleOpenPesananTarget);
     window.addEventListener('wms_prefill_manual_shipment_form', handlePrefillManualDraft);
+    window.addEventListener('wms_manual_shipment_updated', handleExternalOrderUpdated);
 
     return () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       unsubscribe();
       window.removeEventListener('wms_open_pesanan_target', handleOpenPesananTarget);
       window.removeEventListener('wms_prefill_manual_shipment_form', handlePrefillManualDraft);
+      window.removeEventListener('wms_manual_shipment_updated', handleExternalOrderUpdated);
     };
   }, []);
 
@@ -3589,6 +3612,10 @@ _WMS Warehouse System_`;
         isKirimKeStore={isKirimKeStore(selectedOrderDetails)}
         isSentToWarehouse={isOrderSentToWarehouse(selectedOrderDetails)}
         isEligibleKirimKeGudang={isOrderEligibleKirimKeGudang(selectedOrderDetails)}
+        hasPendingStoreFulfillment={hasPendingStoreFulfillment(selectedOrderDetails)}
+        isSendingStoreReminder={
+          sendingReminderOrderKey === (selectedOrderDetails.no_pesanan || (selectedOrderDetails as any).id)
+        }
         isEligibleSjStruk={isEligibleForSjStruk(selectedOrderDetails)}
         isOrderSelesai={isOrderSelesai(selectedOrderDetails)}
         isStoreFulfilledItem={isStoreFulfilledItem}
@@ -3626,6 +3653,7 @@ _WMS Warehouse System_`;
           handleUpdateResi(o.no_pesanan!);
         }}
         onKirimKeGudang={(o) => {
+          if (!isStoreUser) return;
           const storeItems = (o.items || []).filter(
             (it) =>
               it.fulfillment &&
@@ -3641,6 +3669,8 @@ _WMS Warehouse System_`;
             actionType: "mark_sent_store",
           });
         }}
+        onReceiveAllStoreItems={(o) => void handleReceiveAllStoreItems(o)}
+        onSendStoreReminder={(o) => void handleSendStoreReminder(o)}
         onPrintPicking={(o) => handlePrintPickingList(o)}
         onPrintLabel={(o) => handlePrintLabel(o)}
         onPrintSjStruk={(o) => setSjAlterModalOrders([o])}
@@ -4294,12 +4324,13 @@ _WMS Warehouse System_`;
     return false;
   };
 
-  // Helper: Cek apakah pesanan memenuhi kriteria "Kirim ke Gudang" oleh Store
+  // Helper: Cek apakah pesanan memenuhi kriteria "Kirim ke Gudang" — KHUSUS AKUN STORE (bukan Admin)
   // Berlaku untuk:
   // 1. Cross-store fulfillment (incoming request ke store ini)
   // 2. Produk yang difulfill dari store yang sedang login (myStoreItems)
   // 3. Pesanan Alteration/Repair yang fisiknya berada di store dan perlu dikirim ke gudang/penjahit pusat
   const isOrderEligibleKirimKeGudang = (order: ManualShipmentOrder): boolean => {
+    if (!isStoreUser) return false;
     if (!order || order.status === 'batal' || isOrderSelesai(order) || areAllStoreItemsReceived(order)) return false;
 
     // 1. Incoming cross-store fulfillment
@@ -4320,13 +4351,175 @@ _WMS Warehouse System_`;
       const isArOrder = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || hasRealAlterItems(order);
       const isFisikStore = order.alteration_repair_data?.sumber_barang !== 'warehouse';
       if (isMyStoreOrder && isArOrder && isFisikStore) return true;
-    } else if (!isStoreUser) {
-      // Untuk Admin / Warehouse: tampil jika ada store fulfillment atau pesanan AR dari store
-      const isArOrder = order.order_type === 'alteration_repair' || (order.no_pesanan || '').toUpperCase().startsWith('AR-') || hasRealAlterItems(order);
-      return storeItems.length > 0 || isArOrder;
     }
 
     return false;
+  };
+
+  // Helper (Admin): Cek apakah pesanan memiliki item fulfillment Store / AR fisik Store yang BELUM diterima di Gudang
+  const hasPendingStoreFulfillment = (order: ManualShipmentOrder): boolean => {
+    if (!order || order.status === 'batal' || isOrderSelesai(order)) return false;
+    const activeStoreItems = (order.items || []).filter(
+      (it) =>
+        isStoreFulfilledItem(order, it) &&
+        it.item_status !== 'sold_out' &&
+        it.item_status !== 'cancelled'
+    );
+    if (activeStoreItems.length > 0) {
+      return activeStoreItems.some((it) => !isStoreItemReceived(order, it));
+    }
+    const isArFromStore =
+      (order.order_type === 'alteration_repair' ||
+        (order.no_pesanan || '').toUpperCase().startsWith('AR-') ||
+        hasRealAlterItems(order)) &&
+      order.alteration_repair_data?.sumber_barang !== 'warehouse';
+    if (isArFromStore) {
+      const ar = order.alteration_repair_data;
+      const flowStr = (ar?.status_flow || '').toLowerCase();
+      const receivedAr =
+        Boolean(ar?.tgl_terima_warehouse) ||
+        ['diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'siap_dikirim', 'dikirim_kembali', 'selesai'].includes(flowStr);
+      return !receivedAr;
+    }
+    return false;
+  };
+
+  // Handler (Admin): Tandai SELURUH item fulfillment Store pada pesanan ini sudah diterima fisik di Gudang
+  const handleReceiveAllStoreItems = async (order: ManualShipmentOrder) => {
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin Gudang / Superadmin yang dapat menandai penerimaan barang dari Store.', 'error');
+      return;
+    }
+    const pendingItems = (order.items || []).filter(
+      (it) =>
+        isStoreFulfilledItem(order, it) &&
+        it.item_status !== 'sold_out' &&
+        it.item_status !== 'cancelled' &&
+        !isStoreItemReceived(order, it)
+    );
+    const isArFromStorePending =
+      pendingItems.length === 0 && hasPendingStoreFulfillment(order);
+
+    if (pendingItems.length === 0 && !isArFromStorePending) {
+      onShowToast('Seluruh item fulfillment Store pada pesanan ini sudah ditandai diterima di Gudang.', 'info');
+      return;
+    }
+
+    const actor = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
+    const nowIso = new Date().toISOString();
+
+    const updatedItems = (order.items || []).map((it) => {
+      if (
+        isStoreFulfilledItem(order, it) &&
+        it.item_status !== 'sold_out' &&
+        it.item_status !== 'cancelled' &&
+        !isStoreItemReceived(order, it)
+      ) {
+        return {
+          ...it,
+          received_at_warehouse: true,
+          received_at: nowIso,
+          received_by: actor,
+        };
+      }
+      return it;
+    });
+
+    const updatedArData: any = order.alteration_repair_data
+      ? { ...order.alteration_repair_data }
+      : isArFromStorePending
+      ? {}
+      : undefined;
+
+    if (updatedArData) {
+      updatedArData.tgl_terima_warehouse = updatedArData.tgl_terima_warehouse || nowIso.slice(0, 10);
+      updatedArData.pic_terima_warehouse = updatedArData.pic_terima_warehouse || actor;
+      if (
+        !updatedArData.status_flow ||
+        updatedArData.status_flow === 'diajukan' ||
+        updatedArData.status_flow === 'dikirim_store'
+      ) {
+        updatedArData.status_flow = 'diterima_warehouse';
+      }
+    }
+
+    const skuSummary =
+      pendingItems.length > 0
+        ? pendingItems.map((it) => `${it.sku} (${it.fulfillment})`).join(', ')
+        : 'Item Alter/Repair Store';
+
+    const newLog = {
+      id: `log-recv-all-${Date.now()}`,
+      timestamp: nowIso,
+      actor,
+      action: 'edited' as const,
+      note: `Seluruh barang fulfillment Store (${skuSummary}) ditandai SUDAH TERIMA fisik di Gudang Pusat.`,
+    };
+
+    const existingLogs = Array.isArray(order.history_logs) ? order.history_logs : [];
+    const updatedOrder: ManualShipmentOrder = {
+      ...order,
+      items: updatedItems,
+      ...(updatedArData ? { alteration_repair_data: updatedArData } : {}),
+      history_logs: [newLog, ...existingLogs],
+    };
+
+    const orderKey = order.no_pesanan || (order as any).id;
+    setOrders((prev) =>
+      prev.map((o) => (o.no_pesanan === orderKey || (o as any).id === orderKey ? updatedOrder : o))
+    );
+    if (selectedOrderDetails && (selectedOrderDetails.no_pesanan === orderKey || (selectedOrderDetails as any).id === orderKey)) {
+      setSelectedOrderDetails(updatedOrder);
+    }
+
+    const res = await editManualShipment(updatedOrder);
+    if (res.success) {
+      onShowToast(
+        `✅ Barang dari Store untuk #${order.no_pesanan} ditandai Sudah Terima di Gudang!`,
+        'success'
+      );
+      if (pendingItems.length > 0) {
+        for (const it of pendingItems) {
+          void notifyWarehouseReceivedStoreItemToChat(updatedOrder, it, true, actor);
+        }
+      } else if (updatedItems[0]) {
+        void notifyWarehouseReceivedStoreItemToChat(updatedOrder, updatedItems[0], true, actor);
+      }
+    } else {
+      onShowToast(`Gagal menyimpan status terima: ${res.message}`, 'error');
+      loadOrders();
+    }
+  };
+
+  // Handler (Admin): Kirim chat reminder ke Store penyedia barang lengkap dengan tombol "Konfirmasi Sudah Kirim"
+  const handleSendStoreReminder = async (order: ManualShipmentOrder) => {
+    if (!userIsAdmin) {
+      onShowToast('Akses ditolak: Hanya Admin Gudang yang dapat mengirim reminder ke Store.', 'error');
+      return;
+    }
+    const orderKey = order.no_pesanan || (order as any).id || '';
+    if (!orderKey || sendingReminderOrderKey === orderKey) return;
+
+    setSendingReminderOrderKey(orderKey);
+    try {
+      const actor = session?.name || getUserPersonName(session?.username) || session?.username || 'Admin Gudang';
+      const res = await notifyStoreWarehouseReminderToChat(order, {
+        actorName: actor,
+        productCatalog,
+      });
+      if (res.success) {
+        onShowToast(
+          `🔔 Chat reminder terkirim ke ${res.sentStores.join(', ')} (lengkap dengan tombol Konfirmasi Sudah Kirim di Live Chat).`,
+          'success'
+        );
+      } else {
+        onShowToast(res.error || 'Gagal mengirim reminder ke Live Chat Store.', 'warning');
+      }
+    } catch (err: any) {
+      onShowToast(`Gagal mengirim reminder: ${err?.message || 'Error tidak diketahui'}`, 'error');
+    } finally {
+      setSendingReminderOrderKey((prev) => (prev === orderKey ? null : prev));
+    }
   };
 
   const directionScopedOrders = useMemo(() => {
@@ -5218,11 +5411,14 @@ _WMS Warehouse System_`;
             isKirimKeStore={isKirimKeStore}
             isOrderSentToWarehouse={isOrderSentToWarehouse}
             isOrderEligibleKirimKeGudang={isOrderEligibleKirimKeGudang}
+            hasPendingStoreFulfillment={hasPendingStoreFulfillment}
+            sendingReminderOrderKey={sendingReminderOrderKey}
             isEligibleForSjStruk={isEligibleForSjStruk}
             getValidItemSjDealpos={getValidItemSjDealpos}
             onOpenDetail={(o) => setSelectedOrderDetails(o)}
             onOpenActionSheet={(o) => setActionSheetOrder(o)}
             onKirimKeGudang={(o) => {
+              if (!isStoreUser) return;
               const storeItems = (o.items || []).filter(
                 (it) =>
                   it.fulfillment &&
@@ -5238,6 +5434,8 @@ _WMS Warehouse System_`;
                 actionType: "mark_sent_store",
               });
             }}
+            onReceiveAllStoreItems={(o) => void handleReceiveAllStoreItems(o)}
+            onSendStoreReminder={(o) => void handleSendStoreReminder(o)}
             onPrintLabel={(o) => handlePrintLabel(o)}
             onPrintPicking={(o) => handlePrintPickingList(o)}
             onPrintSjStruk={(o) => setSjAlterModalOrders([o])}
@@ -6637,6 +6835,10 @@ _WMS Warehouse System_`;
             eligibleSjStruk={isEligibleForSjStruk(actionSheetOrder)}
             sentToWarehouse={isOrderSentToWarehouse(actionSheetOrder)}
             eligibleKirimKeGudang={isOrderEligibleKirimKeGudang(actionSheetOrder)}
+            hasPendingStoreFulfillment={hasPendingStoreFulfillment(actionSheetOrder)}
+            isSendingStoreReminder={
+              sendingReminderOrderKey === (actionSheetOrder.no_pesanan || (actionSheetOrder as any).id)
+            }
             kirimKeStore={isKirimKeStore(actionSheetOrder)}
             hasMarketplaceItems={mktItems.length > 0}
             orderIsSelesai={isOrderSelesai(actionSheetOrder)}
@@ -6666,6 +6868,7 @@ _WMS Warehouse System_`;
               setArReceiptOrder(o);
             }}
             onKirimKeGudang={(o) => {
+              if (!isStoreUser) return;
               setSelectedOrderDetails(null);
               const storeItems = (o.items || []).filter(
                 (it) =>
@@ -6682,6 +6885,8 @@ _WMS Warehouse System_`;
                 actionType: 'mark_sent_store',
               });
             }}
+            onReceiveAllStoreItems={(o) => void handleReceiveAllStoreItems(o)}
+            onSendStoreReminder={(o) => void handleSendStoreReminder(o)}
             onInputSjDealpos={(o) => {
               if (!userIsAdmin) {
                 onShowToast('Akses ditolak: Hanya Admin Gudang yang berhak menginput SJ DealPOS.', 'error');

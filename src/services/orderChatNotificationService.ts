@@ -8,7 +8,7 @@
  * - Zero WA Fonnte dependency for Store/Admin WH coordination (Picking WA Grup remains Marketplace-only in ManualShipmentTab).
  */
 
-import { ManualShipmentOrder, ManualShipmentItem, UserSession } from '../types';
+import { ManualShipmentOrder, ManualShipmentItem, ProductItem, UserSession } from '../types';
 import {
   liveChatManager,
   ChatContextTag,
@@ -16,6 +16,8 @@ import {
 } from './liveChatService';
 import {
   DEFAULT_OUTLETS,
+  editManualShipment,
+  fetchManualShipmentByOrderId,
   getAllStoreContacts,
   getFullStoreName,
   isSameStore,
@@ -24,6 +26,8 @@ import {
 import { supabaseFetch } from './supabase';
 import { isStoreAccountSession } from './permissions';
 import { isRealAlterItem, hasRealAlterItems, hasValidArData } from '../utils/alterationUtils';
+import { lookupProductBySku } from '../utils/productLookup';
+import { getUserPersonName } from '../utils/userResolver';
 
 /**
  * Menghapus blok metadata internal yang disisipkan di kolom notes_paket database
@@ -1010,6 +1014,399 @@ export async function notifyStoreFulfillmentGroupManualToChat(
   } catch (err) {
     console.warn('[OrderChatNotify] notifyStoreFulfillmentGroupManualToChat error:', err);
     return false;
+  }
+}
+
+/**
+ * 12. Admin Reminder Ulang ke Store Penyedia (dengan Kartu Interaktif "Konfirmasi Sudah Kirim" di Live Chat)
+ */
+export async function notifyStoreWarehouseReminderToChat(
+  order: ManualShipmentOrder,
+  options?: {
+    actorName?: string;
+    productCatalog?: ProductItem[];
+    targetStoreName?: string;
+  }
+): Promise<{ success: boolean; sentStores: string[]; roomIds: string[]; error?: string }> {
+  const sentStores: string[] = [];
+  const roomIds: string[] = [];
+
+  try {
+    const orderId = getOrderId(order);
+    const actor = options?.actorName || 'Admin Gudang';
+    const requesterStore = getRequesterStoreName(order);
+    const fulfillmentData = resolveOrderFulfillmentStores(order);
+
+    const targetGroups: Array<{ storeName: string; items: ManualShipmentItem[] }> = [];
+
+    for (const grp of fulfillmentData.groups) {
+      if (grp.isGudangGroup || isGudangFulfillment(grp.storeName)) continue;
+      if (options?.targetStoreName && !isSameStore(grp.storeName, options.targetStoreName)) continue;
+      const pendingItems = (grp.items || []).filter(
+        (it) =>
+          it.item_status !== 'sold_out' &&
+          it.item_status !== 'cancelled' &&
+          !it.received_at_warehouse
+      );
+      if (pendingItems.length > 0) {
+        targetGroups.push({ storeName: grp.storeName, items: pendingItems });
+      }
+    }
+
+    // Fallback untuk tiket Alteration/Repair fisik dari Store yang item-nya tidak mengisi kolom fulfillment eksplisit
+    if (targetGroups.length === 0) {
+      const isArFromStore =
+        (order.order_type === 'alteration_repair' ||
+          orderId.toUpperCase().startsWith('AR-') ||
+          hasRealAlterItems(order)) &&
+        order.alteration_repair_data?.sumber_barang !== 'warehouse' &&
+        !order.alteration_repair_data?.tgl_terima_warehouse;
+      const fallbackStore = options?.targetStoreName || requesterStore;
+      if (isArFromStore && fallbackStore && !isGudangFulfillment(fallbackStore)) {
+        const activeItems = (order.items || []).filter(
+          (it) => it.item_status !== 'sold_out' && it.item_status !== 'cancelled' && !it.received_at_warehouse
+        );
+        targetGroups.push({
+          storeName: getFullStoreName(fallbackStore) || fallbackStore,
+          items: activeItems.length > 0 ? activeItems : order.items || [],
+        });
+      }
+    }
+
+    if (targetGroups.length === 0) {
+      return {
+        success: false,
+        sentStores: [],
+        roomIds: [],
+        error: 'Tidak ada item fulfillment Store yang masih menunggu diterima Gudang pada pesanan ini.',
+      };
+    }
+
+    const ar = order.alteration_repair_data;
+    const alreadySentByStore = Boolean(
+      ar?.tgl_kirim_store ||
+        ar?.kurir_kirim_store ||
+        ['dikirim_store', 'diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'dikirim_kembali', 'selesai'].includes(
+          String(ar?.status_flow || '').toLowerCase()
+        )
+    );
+    const cleanNotes = stripInternalOrderMetadata(order.notes_paket);
+
+    for (const grp of targetGroups) {
+      const resolvedDetails = grp.items.map((it) => {
+        const cleanSku = String(it.sku || '').trim().toUpperCase();
+        const master = cleanSku
+          ? lookupProductBySku(cleanSku, options?.productCatalog, it.nama_produk, it.size)
+          : null;
+        const nama_produk =
+          master && master.found ? master.nama_produk : it.nama_produk || cleanSku || 'Produk Pesanan';
+        const size =
+          master && master.found && master.size && master.size !== '-'
+            ? master.size
+            : it.size && it.size !== '-'
+            ? it.size
+            : undefined;
+        return {
+          sku: cleanSku || '-',
+          nama_produk,
+          size,
+          qty: Number(it.qty) || 1,
+        };
+      });
+
+      const totalPcs = resolvedDetails.reduce((sum, d) => sum + d.qty, 0);
+      const itemsText = resolvedDetails
+        .map(
+          (d, idx) =>
+            `  ${idx + 1}. [${d.sku}] ${d.nama_produk}${d.size && d.size !== 'ALL' ? ` (${d.size})` : ''} — ${d.qty} pcs`
+        )
+        .join('\n');
+
+      const itemsSummary =
+        resolvedDetails.length === 1
+          ? `${resolvedDetails[0].nama_produk} (${resolvedDetails[0].qty} pcs)`
+          : `${resolvedDetails[0].nama_produk} (+${resolvedDetails.length - 1} item lainnya)`;
+
+      const isInterStore = Boolean(requesterStore && !isSameStore(grp.storeName, requesterStore));
+      const text =
+        `🔔 REMINDER PENGIRIMAN BARANG KE GUDANG PUSAT\n` +
+        `────────────────────────────────────\n` +
+        `Halo Tim ${grp.storeName}, Admin Gudang (${actor}) belum menerima fisik produk untuk pesanan berikut:\n\n` +
+        `• Order ID: #${orderId}\n` +
+        `${isInterStore ? `• Store Pemohon: ${requesterStore}\n` : ''}` +
+        `• Customer Tujuan: ${order.nama_tujuan || '-'}\n` +
+        `• Kurir Akhir: ${order.jasa_kirim || '-'}\n` +
+        `• Status Kirim Store: ${alreadySentByStore ? 'Tercatat sudah kirim (belum tiba di WH)' : 'Belum dikonfirmasi kirim'}\n\n` +
+        `👕 Produk dari Store ${grp.storeName} (${resolvedDetails.length} item · ${totalPcs} pcs):\n` +
+        `${itemsText}\n` +
+        `${cleanNotes ? `\n📝 Catatan: ${cleanNotes}\n` : '\n'}` +
+        `Mohon segera kirimkan barang ke Gudang Pusat & klik tombol "Konfirmasi Sudah Kirim" pada kartu di atas setelah paket diserahkan ke kurir/ekspedisi.`;
+
+      const orderContext: ChatOrderContext = {
+        ...buildOrderContext(order, alreadySentByStore ? 'Menunggu Tiba WH' : 'Menunggu Kirim Store'),
+        store_name: grp.storeName,
+        items_summary: itemsSummary,
+        total_pcs: totalPcs,
+        action_type: 'store_kirim_gudang_reminder',
+        target_store: grp.storeName,
+        items_detail: resolvedDetails,
+      };
+
+      const res = await liveChatManager.sendSystemGroupMessage({
+        storeName: grp.storeName,
+        text,
+        contextTags: buildOrderTags({ ...order, items: grp.items }),
+        orderContext,
+        eventType: 'store_kirim_reminder',
+        actorName: actor,
+      });
+
+      if (res.success) {
+        sentStores.push(grp.storeName);
+        if (res.room?.id) roomIds.push(res.room.id);
+      }
+    }
+
+    if (sentStores.length === 0) {
+      return {
+        success: false,
+        sentStores: [],
+        roomIds: [],
+        error: 'Gagal mengirim chat reminder ke grup Store terkait.',
+      };
+    }
+
+    return { success: true, sentStores, roomIds };
+  } catch (err: any) {
+    console.warn('[OrderChatNotify] notifyStoreWarehouseReminderToChat error:', err);
+    return {
+      success: false,
+      sentStores,
+      roomIds,
+      error: err?.message || 'Gagal mengirim reminder ke Live Chat Store.',
+    };
+  }
+}
+
+/**
+ * 13. Store mengonfirmasi "Sudah Kirim ke Gudang" langsung dari kartu reminder Live Chat
+ *     tanpa perlu membuka halaman Pesanan Saya.
+ */
+export async function confirmStoreSentToWarehouseFromChat(params: {
+  roomId: string;
+  messageId: string;
+  orderId: string;
+  targetStore?: string;
+  kurir?: string;
+  resi?: string;
+  session: UserSession | null;
+}): Promise<{
+  success: boolean;
+  alreadyConfirmed?: boolean;
+  message: string;
+  updatedOrder?: ManualShipmentOrder;
+}> {
+  const cleanOrderId = String(params.orderId || '').replace(/^#/, '').trim();
+  if (!cleanOrderId) {
+    return { success: false, message: 'Nomor pesanan tidak valid.' };
+  }
+  if (!params.session?.username) {
+    return { success: false, message: 'Silakan login terlebih dahulu.' };
+  }
+
+  try {
+    const order = await fetchManualShipmentByOrderId(cleanOrderId);
+    if (!order) {
+      return {
+        success: false,
+        message: `Pesanan #${cleanOrderId} tidak ditemukan di database.`,
+      };
+    }
+
+    if (order.status === 'batal') {
+      return {
+        success: false,
+        message: `Pesanan #${cleanOrderId} sudah berstatus DIBATALKAN sehingga tidak perlu dikirim.`,
+      };
+    }
+
+    const nowIso = new Date().toISOString();
+    const todayYmd = nowIso.slice(0, 10);
+    const actorName =
+      params.session.name ||
+      getUserPersonName(params.session.username) ||
+      params.session.store_name ||
+      params.session.username;
+
+    const arData: any = order.alteration_repair_data ? { ...order.alteration_repair_data } : {};
+    const flowStr = String(arData.status_flow || '').toLowerCase();
+    const targetStoreCheck = params.targetStore || params.session.store_name || '';
+    const relevantStoreItems = (order.items || []).filter(
+      (it) =>
+        it.fulfillment &&
+        !isGudangFulfillment(it.fulfillment) &&
+        it.item_status !== 'sold_out' &&
+        it.item_status !== 'cancelled' &&
+        (!targetStoreCheck || isSameStore(it.fulfillment, targetStoreCheck))
+    );
+    const allTargetStoreItemsReceived =
+      relevantStoreItems.length > 0 && relevantStoreItems.every((it) => Boolean(it.received_at_warehouse));
+
+    const alreadyReceived =
+      allTargetStoreItemsReceived ||
+      Boolean(arData.tgl_terima_warehouse) ||
+      ['diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'siap_dikirim', 'dikirim_kembali', 'selesai'].includes(
+        flowStr
+      ) ||
+      order.status === 'dikirim' ||
+      order.status === 'selesai';
+
+    if (alreadyReceived) {
+      await liveChatManager.updateMessageOrderContext(
+        params.roomId,
+        params.messageId,
+        {
+          status: 'Sudah Diterima WH',
+          action_confirmed_at: arData.tgl_kirim_store || arData.tgl_terima_warehouse || nowIso,
+          action_confirmed_by: arData.pic_kirim_store || arData.pic_terima_warehouse || 'Gudang Pusat',
+          action_confirmed_kurir: arData.kurir_kirim_store || undefined,
+          action_confirmed_resi: arData.resi_kirim_store || undefined,
+        },
+        { orderId: cleanOrderId, targetStore: params.targetStore }
+      );
+      return {
+        success: true,
+        alreadyConfirmed: true,
+        message: `Pesanan #${cleanOrderId} sudah tercatat diterima di Gudang Pusat.`,
+        updatedOrder: order,
+      };
+    }
+
+    const dispatchStore =
+      getFullStoreName(params.targetStore || params.session.store_name || getRequesterStoreName(order)) ||
+      params.targetStore ||
+      params.session.store_name ||
+      'Store';
+
+    const kurirLabel = String(params.kurir || '').trim() || 'Kurir Internal Toko';
+    const resiLabel = String(params.resi || '').trim();
+
+    const existingFlowLogs = Array.isArray(arData.flow_logs) ? [...arData.flow_logs] : [];
+    const logNote = `Barang dikonfirmasi SUDAH DIKIRIM dari Store (${dispatchStore}) ke Warehouse via ${kurirLabel}${
+      resiLabel ? ` (Resi: ${resiLabel})` : ''
+    } [Konfirmasi via Live Chat]`;
+
+    existingFlowLogs.push({
+      id: `flow-${Date.now()}`,
+      stage: 'dikirim_store',
+      timestamp: nowIso,
+      actor_name: actorName,
+      notes: logNote,
+    });
+
+    const updatedArData = {
+      ...arData,
+      tgl_kirim_store: todayYmd,
+      kurir_kirim_store: kurirLabel,
+      resi_kirim_store: resiLabel,
+      pic_kirim_store: actorName,
+      status_flow: 'dikirim_store' as const,
+      flow_logs: existingFlowLogs,
+    };
+
+    const existingHistory = Array.isArray(order.history_logs) ? order.history_logs : [];
+    const updatedOrder: ManualShipmentOrder = {
+      ...order,
+      status: order.status === 'diproses' ? 'diproses' : 'diterima',
+      alteration_repair_data: updatedArData,
+      history_logs: [
+        {
+          id: `log-chat-sent-${Date.now()}`,
+          timestamp: nowIso,
+          actor: actorName,
+          action: 'edited',
+          note: logNote,
+        },
+        ...existingHistory,
+      ],
+    };
+
+    const saveRes = await editManualShipment(updatedOrder);
+    if (!saveRes.success) {
+      return {
+        success: false,
+        message: `Gagal menyimpan status kirim: ${saveRes.message}`,
+      };
+    }
+
+    // 1. Update status kartu reminder di Live Chat agar tombol berubah menjadi badge "Sudah Dikonfirmasi Kirim"
+    await liveChatManager.updateMessageOrderContext(
+      params.roomId,
+      params.messageId,
+      {
+        status: 'Dikirim ke WH',
+        action_confirmed_at: nowIso,
+        action_confirmed_by: actorName,
+        action_confirmed_kurir: kurirLabel,
+        action_confirmed_resi: resiLabel || undefined,
+      },
+      { orderId: cleanOrderId, targetStore: dispatchStore }
+    );
+
+    // 2. Kirim pesan konfirmasi ke ruang chat Store Ops (+ mirror ke Store Pemohon jika antar-store)
+    const storeItems = (updatedOrder.items || []).filter(
+      (it) =>
+        it.fulfillment &&
+        !isGudangFulfillment(it.fulfillment) &&
+        (!dispatchStore || isSameStore(it.fulfillment, dispatchStore))
+    );
+    const itemsForSummary = storeItems.length > 0 ? storeItems : updatedOrder.items || [];
+    const productSummary =
+      itemsForSummary
+        .map((it) => it.nama_produk)
+        .filter(Boolean)
+        .join(', ') || 'Produk Pesanan';
+    const skuSummary =
+      itemsForSummary
+        .map((it) => it.sku)
+        .filter(Boolean)
+        .join(', ') || '-';
+
+    void notifyAlterationActionToChat(
+      updatedOrder,
+      'mark_sent_store',
+      {
+        dispatchingStoreName: dispatchStore,
+        kurir: kurirLabel,
+        resi: resiLabel,
+        tgl: todayYmd,
+        pic: actorName,
+        productSummary,
+        skuSummary,
+      },
+      actorName
+    );
+
+    // 3. Zero-reload sync ke Rekap Pesanan jika sedang terbuka di tab desktop
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('wms_manual_shipment_updated', {
+          detail: { orderId: cleanOrderId, order: updatedOrder },
+        })
+      );
+    }
+
+    return {
+      success: true,
+      message: `Konfirmasi kirim #${cleanOrderId} ke Gudang berhasil dicatat!`,
+      updatedOrder,
+    };
+  } catch (err: any) {
+    console.warn('[OrderChatNotify] confirmStoreSentToWarehouseFromChat error:', err);
+    return {
+      success: false,
+      message: err?.message || 'Terjadi kesalahan saat mengonfirmasi pengiriman.',
+    };
   }
 }
 

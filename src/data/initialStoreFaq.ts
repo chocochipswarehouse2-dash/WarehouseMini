@@ -170,33 +170,35 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Admin Gudang memantau barang yang dikirim oleh cabang pada Rekap Pesanan maupun Tab Distribusi Store. Ketika fisik barang dari Store tiba di gudang, Admin langsung mengklik tombol "Tandai Terima" pada baris produk Store tersebut sehingga berubah menjadi badge hijau "Sudah Terima". Apabila pesanan langsung diinput resi / berubah status menjadi "Dikirim" sebelum Admin sempat mengklik "Tandai Terima", sistem secara otomatis mengubah status item Store tersebut menjadi "Sudah Terima".',
+    answer_admin: 'Admin Gudang TIDAK menggunakan tombol "Kirim ke Gudang" (tombol tersebut khusus tampilan Store). Pada pesanan yang memiliki item fulfillment Store namun barang fisiknya belum tiba di Gudang, Admin melihat tombol "Reminder Store" untuk mengirim chat pengingat langsung ke grup Live Chat Store terkait (lengkap dengan tombol interaktif "Konfirmasi Sudah Kirim" bagi Store) serta tombol "Terima" / "Tandai Terima" untuk mencatat fisik barang saat tiba di Gudang. Apabila pesanan langsung diinput resi / berstatus "Dikirim", seluruh item Store otomatis tercatat "Sudah Terima".',
     action_steps_admin: [
-      { step: 1, title: 'Pantau Barang Kiriman Store', desc: 'Lihat item dengan badge nama cabang (misal Gading Serpong Tangerang, Central Park Jakarta) pada kolom Rincian Produk.' },
-      { step: 2, title: 'Klik [Tandai Terima] Saat Barang Tiba', desc: 'Saat driver internal menyerahkan fisik pakaian beserta Struk SJ, klik tombol biru "Tandai Terima" pada item produk tersebut.' },
-      { step: 3, title: 'Otomatis "Sudah Terima" Saat Terkirim', desc: 'Saat resi pengiriman ke customer diinput (status pesanan Dikirim/Selesai), seluruh item fulfillment Store pada pesanan tersebut otomatis tercatat "Sudah Terima".' }
+      { step: 1, title: 'Pantau Item Fulfillment Store', desc: 'Lihat pesanan dengan item yang berasal dari cabang (misal Gading Serpong Tangerang, Central Park Jakarta) pada Rekap Pesanan.' },
+      { step: 2, title: 'Klik [Reminder Store] Jika Barang Belum Dikirim', desc: 'Jika Store belum juga mengirim barang, klik tombol "Reminder Store" (atau lewat Menu Aksi ⋯ / Detail Pesanan). Sistem otomatis mengirim pesan pengingat ke grup Live Chat Store terkait lengkap dengan tombol "Konfirmasi Sudah Kirim".' },
+      { step: 3, title: 'Klik [Terima] / [Terima WH] Saat Barang Tiba', desc: 'Saat fisik pakaian & Struk SJ tiba di Gudang, klik tombol "Terima" / "Terima Barang" untuk menandai seluruh item Store sudah diterima di Gudang.' },
+      { step: 4, title: 'Otomatis "Sudah Terima" Saat Terkirim', desc: 'Saat resi pengiriman ke customer diinput (status Dikirim/Selesai), seluruh item fulfillment Store pada pesanan tersebut otomatis tercatat "Sudah Terima".' }
     ],
     button_badges_admin: [
-      { label: 'Tandai Terima', color: 'blue', icon: 'CheckCircle2' },
+      { label: 'Reminder Store', color: 'indigo', icon: 'BellRing' },
+      { label: 'Terima WH', color: 'blue', icon: 'PackageCheck' },
       { label: 'Sudah Terima', color: 'emerald', icon: 'CheckCircle2' }
     ],
-    admin_notes: 'ℹ️ Jika paket tiba dalam kondisi rusak atau tidak sesuai struk, segera dokumentasikan foto dan laporkan ke PIC toko pengirim.',
+    admin_notes: 'ℹ️ Tombol "Kirim ke Gudang" disembunyikan dari tampilan Admin agar alur peran tetap bersih. Gunakan "Reminder Store" untuk menagih pengiriman lewat Live Chat dan "Terima" untuk konfirmasi penerimaan fisik di gudang.',
 
     // PERSPEKTIF TIM STORE / OUTLET
-    answer_store: 'Store WAJIB mengirimkan fisik pakaian ke Gudang Pusat jika toko Anda ditunjuk sebagai penyedia barang (Fulfillment Store), atau pakaian customer butuh alterasi oleh penjahit gudang. Anda dapat memantau apakah barang sudah diterima oleh Gudang melalui badge "Belum Terima WH" / "Sudah Terima" pada baris produk.',
+    answer_store: 'Store WAJIB mengirimkan fisik pakaian ke Gudang Pusat jika toko Anda ditunjuk sebagai penyedia barang (Fulfillment Store), atau pakaian customer butuh alterasi oleh penjahit gudang. Anda bisa mengonfirmasi pengiriman melalui tombol "Kirim ke Gudang" di Rekap Pesanan ATAU langsung mengklik tombol "Konfirmasi Sudah Kirim" pada kartu reminder dari Admin di Live Chat tanpa perlu membuka halaman Pesanan.',
     action_steps_store: [
-      { step: 1, title: 'Cek Tab Rekap Pesanan Toko', desc: 'Buka Pesanan Saya ➔ Manual Shipment. Temukan pesanan dengan label toko Anda sebagai penyedia barang.' },
-      { step: 2, title: 'Klik [SJ Struk] & [Kirim ke Gudang]', desc: 'Cetak Surat Jalan Struk Rangkap 2, masukkan ke dalam kemasan pakaian, lalu atur pengiriman ke Gudang Pusat.' },
-      { step: 3, title: 'Pantau Status "Sudah Terima"', desc: 'Setelah barang tiba dan diverifikasi Admin Gudang (atau saat pesanan telah dikirim ke customer), badge item akan otomatis berubah menjadi "Sudah Terima".' }
+      { step: 1, title: 'Cek Rekap Pesanan atau Live Chat', desc: 'Buka Pesanan Saya ➔ Manual Shipment (Rekap Pesanan), atau buka pesan Reminder dari Admin di grup Live Chat [MS & Alter] toko Anda.' },
+      { step: 2, title: 'Konfirmasi Kirim via Rekap atau Langsung di Live Chat', desc: 'Di Rekap Pesanan klik [Kirim ke Gudang] (+ cetak SJ Struk Rangkap 2), atau cukup klik tombol [Konfirmasi Sudah Kirim] langsung di dalam bubble Live Chat lalu pilih kurir & (opsional) nomor resi.' },
+      { step: 3, title: 'Pantau Status "Sudah Terima"', desc: 'Setelah barang tiba dan diverifikasi Admin Gudang, status pesanan otomatis berubah menjadi "Diterima WH" / "Sudah Terima".' }
     ],
     button_badges_store: [
-      { label: 'SJ Struk', color: 'amber', icon: 'Printer' },
-      { label: 'Kirim ke Gudang', color: 'blue', icon: 'Truck' },
-      { label: 'Sudah Terima (View Only)', color: 'emerald', icon: 'CheckCircle2' }
+      { label: 'Kirim ke Gudang', color: 'indigo', icon: 'Truck' },
+      { label: 'Konfirmasi Sudah Kirim (Live Chat)', color: 'emerald', icon: 'CheckCircle2' },
+      { label: 'SJ Struk', color: 'amber', icon: 'Printer' }
     ],
-    store_notes: '⚠️ Jangan kirim barang tanpa menyertakan Surat Jalan Struk fisik, karena gudang membutuhkan struk tersebut saat melakukan verifikasi "Tandai Terima".',
+    store_notes: '⚠️ Tetap sertakan Surat Jalan Struk fisik pada paket, dan manfaatkan tombol "Konfirmasi Sudah Kirim" di Live Chat saat menerima reminder dari Admin agar status langsung tersinkron ke Gudang.',
 
-    keywords: ['kirim ke gudang', 'tandai terima', 'sudah terima', 'surat jalan struk', 'antar fisik', 'multi store', 'kurir internal', 'ekspedisi', 'packing', 'cabang ke gudang'],
+    keywords: ['kirim ke gudang', 'tandai terima', 'sudah terima', 'reminder store', 'konfirmasi sudah kirim', 'live chat', 'surat jalan struk', 'antar fisik', 'multi store', 'kurir internal', 'ekspedisi', 'packing', 'cabang ke gudang'],
     view_count: 98
   },
 
@@ -515,10 +517,10 @@ export const INITIAL_STORE_FAQS: StoreFaqItem[] = [
     target_audience: 'all',
 
     // PERSPEKTIF ADMIN GUDANG
-    answer_admin: 'Sebagai Admin Gudang / CS, Anda dapat beralih cepat antara tampilan "Tabel" (default desktop) dan "Kartu" (default HP) di pojok kanan atas Rekap Pesanan. Seluruh menu aksi tiap pesanan (Cetak Picking, Cetak Label A6, Picking WA Grup, SJ DealPOS, Input Resi, Jadwal Store, Edit, Batalkan) tersusun rapi dalam 1 menu "⋯" sehingga tidak lagi tersebar di banyak kolom. Gunakan menu "Urutkan" untuk antrean FIFO (Terlama), per Store, per Kurir, atau Prioritas Belum Cetak.',
+    answer_admin: 'Sebagai Admin Gudang / CS, Anda dapat beralih cepat antara tampilan "Tabel" (default desktop) dan "Kartu" (default HP) di pojok kanan atas Rekap Pesanan. Untuk pesanan yang menunggu barang dari Store, tombol utama otomatis menampilkan "Reminder Store" (kirim chat pengingat ber-tombol konfirmasi ke Live Chat Store) atau "Terima WH" (jika Store sudah kirim). Seluruh aksi lainnya (Cetak Picking, Label A6, Picking WA Grup, SJ DealPOS, Input Resi, Jadwal Store, Edit, Batalkan) tersusun rapi dalam 1 menu "⋯".',
     action_steps_admin: [
       { step: 1, title: 'Pilih Mode Tampilan [Tabel] atau [Kartu]', desc: 'Klik switcher "Tabel | Kartu" di pojok kanan atas Rekap Pesanan. Menu utilitas (Export CSV, Muat Ulang Penuh, Slide SOP) tersimpan rapi di tombol titik tiga (⋯) di sebelahnya.' },
-      { step: 2, title: 'Gunakan Tombol Aksi Utama & Menu [⋯] per Pesanan', desc: 'Klik tombol aksi utama pada baris/kartu untuk langkah berikutnya (misal Cetak Picking, Cetak Label A6, atau Input Resi), atau klik tombol "⋯" (Aksi) untuk membuka semua opsi yang dikelompokkan rapi.' },
+      { step: 2, title: 'Gunakan Tombol Aksi Utama & Menu [⋯] per Pesanan', desc: 'Klik tombol aksi utama sesuai tahap (misal Reminder Store, Terima WH, Cetak Picking, Label A6, atau Input Resi), atau klik tombol "⋯" (Aksi) untuk membuka semua opsi.' },
       { step: 3, title: 'Urutkan Antrean via Dropdown Urutkan atau Header Tabel', desc: 'Pilih urutan (Terlama/FIFO, Store A-Z, Kurir A-Z, Belum Cetak Dulu, atau Target Alter Terdekat) melalui dropdown di samping kolom pencarian, atau klik judul kolom pada mode Tabel.' },
       { step: 4, title: 'Klik [Reset] untuk Kembali ke Default', desc: 'Klik tombol "Reset" saat filter aktif untuk mengembalikan daftar ke urutan default (Terbaru).' }
     ],

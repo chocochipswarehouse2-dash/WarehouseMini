@@ -4,6 +4,48 @@
 
 ---
 
+## v2.33.0 — 26 November 2026
+**Modul**: Pengecekan Surat Jalan (`src/components/PesananSaya/DistribusiStoreTab.tsx`) + Antrean Tugas Picking (`src/components/PickingTasksView.tsx`, `src/services/supabase.ts`, `src/services/scannerOutboxService.ts`, `.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md`)
+- **Share Kekurangan Pengecekan Surat Jalan (Pengiriman) ke Tugas Picking**:
+  - Menambahkan tombol **`Share ke Tugas Picking`** pada Pengecekan SJ berselisih kurang (**Selisih Kurang** `qty_scan < qty_sj`) di **Draft Pengecekan aktif**, **Detail Riwayat Pengecekan**, dan **Bottom Action Sheet mobile** (`DistribusiStoreTab.tsx`).
+  - **Rekonsiliasi Pintar SJ Eksisting vs SJ Baru (`shareShortageToPickingAppSupabase`)**:
+    - Jika `no_sj` **sudah ada** di `picking_list`, sistem memperbarui baris eksisting tanpa membuat SJ duplikat: SKU yang sudah cocok otomatis berstatus `SELESAI`, sedangkan SKU yang kurang dibuka kembali (`PENDING`) dengan `qty_picked = qty_scan` serta regenerasi lokasi rak live terbaru dari `stok_real_fisik`.
+    - Jika `no_sj` **belum ada** di `picking_list`, sistem membuat SJ baru lengkap dengan `invoice_picking` (`WA...`), otomatis mengisi `qty_picked = qty_scan` untuk item kurang dan menandai `SELESAI` item yang sudah cocok.
+- **Hanya Tampil Sisa Kekurangan & Proteksi Anti-Double `#OUT` (`picking_shortage_baselines_v1`)**:
+  - Di Tugas Picking (`handleSelectSJ`), item yang sudah cocok otomatis tersembunyi (`hideCompleted = true`) sehingga operator **hanya melihat sisa produk kekurangannya** (`AMBIL SISA N PCS` & `0 / Sisa Pcs`, dengan info `Sesi lalu: X/Y` dari baseline tersimpan).
+  - Saat Tugas Picking diselesaikan — baik online (`completePickingSuratJalanSupabase`) maupun lewat antrean outbox offline (`syncAllPickingOutboxBatches`) — `log_produk` `#OUT` **hanya memotong stok sebesar sisa qty yang diambil terakhir** (`deltaQty = pickedQty - Math.max(loggedOut, prev_qty_picked, baseline)`), sehingga qty yang sebelumnya sudah diambil/disubmit tidak pernah terpotong dua kali, dan baseline otomatis diperbarui pasca-submit untuk keamanan sesi lanjutan berikutnya.
+
+---
+
+## v2.32.1 — 26 November 2026
+**Modul**: Antrean Tugas Picking — Form Picking Manual (`src/components/PickingTasksView.tsx`, `.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md`)
+- **Ringkaskan Area Kerja Mode Picking Manual (Bebas Sesak di Mobile)**:
+  - Melipat form manual `Cari SKU / Lokasi Rak / Qty Pcs / + Input` secara default (`showManualSkuInput = false`) menjadi 1 baris status kompak (`Rak Aktif` + tombol toggle `Input SKU`) sehingga daftar kartu produk langsung tampil lega di HP maupun Desktop.
+- **Guardrail Aktivasi Lokasi Rak Wajib Sebelum `Ambil Pas` / `+`**:
+  - Mengunci aksi tambah qty (`+`, `Ambil Pas`, dan input angka naik) hingga operator mengaktifkan lokasi rak (klik tombol rak pada kartu atau tambah lokasi lewat **`+ Lokasi` / `+ Rak`**).
+  - Saat operator menekan **`+`** atau **`Ambil Pas`** sebelum lokasi diaktifkan, sistem otomatis memblokir penambahan qty dan memberikan peringatan langsung (toast warning, beep + getar, banner peringatan inline pada kartu, serta highlight tombol lokasi rak).
+- **Keterbacaan & Kejelasan Kartu Produk + 1 Tombol Kosong Tunggal**:
+  - Memperbesar nama produk (`text-[21px] sm:text-2xl font-black`) dan mempertegas batas kotak antar kartu produk (`border-2`, shadow kontras, dan jarak antar kartu lebih lega).
+  - Menghilangkan duplikasi badge/tombol `Kosong`; ketika lokasi stok tidak tersedia (0 pcs dan belum ditambah lokasi manual), footer kartu hanya menampilkan **1 tombol `Tandai Kosong`** yang bersih sambil tetap menyediakan **`+ Lokasi`** di header kartu (begitu lokasi manual ditambahkan, tombol ambil otomatis terbuka).
+
+---
+
+## v2.32.0 — 25 November 2026
+**Modul**: Pesanan Manual Shipment & Alteration (`ManualShipmentTab.tsx`, `RekapOrderViews.tsx`, `OrderDetailModal.tsx`, `OrderActionSheet.tsx`, `gasManualShipment.ts`) + Live Chat (`LiveChatWorkspace.tsx`, `liveChatService.ts`, `orderChatNotificationService.ts`) + FAQ & Skill (`initialStoreFaq.ts`, `wms-live-chat-guardrails/SKILL.md`)
+- **Pemisahan Aksi Role-Strict Admin vs Store (Hilangkan "Kirim ke Gudang" di Tampilan Admin)**:
+  - Mengunci tombol & alur **`Kirim ke Gudang`** (`isOrderEligibleKirimKeGudang`) **eksklusif untuk akun Store** di Tabel Desktop, Tabel Compact HP, Kartu, Detail Pesanan, dan Menu Aksi (`OrderActionSheet`).
+  - Menambahkan aksi khusus Admin (`hasPendingStoreFulfillment`) saat pesanan memiliki item fulfillment Store / Alter fisik Store yang belum diterima di Gudang:
+    - Jika Store belum mengirim: tombol utama **`Reminder Store`** (kirim chat pengingat ke grup Live Chat Store terkait) + tombol sekunder netral **`Terima`** (1-klik tandai terima fisik di WH).
+    - Jika Store sudah mengirim namun belum diterima WH: tombol utama **`Terima Barang` / `Terima WH`** + opsi **`Reminder Ulang Store`** di Detail Modal & Action Sheet.
+- **Chat Reminder Store & Tombol Interaktif "Konfirmasi Sudah Kirim" Langsung di Live Chat**:
+  - Menambahkan `notifyStoreWarehouseReminderToChat` yang otomatis menargetkan Store penyedia barang yang belum diterima di WH (dengan nama & size produk tervalidasi Master Produk via `lookupProductBySku` serta sanitasi catatan via `stripInternalOrderMetadata`).
+  - Memperluas `ChatOrderContext` secara *backwards-compatible* (`action_type: 'store_kirim_gudang_reminder'`, `target_store`, `action_confirmed_*`) beserta `updateMessageOrderContext` (merge monotonik anti-revert & anti-double-confirm) di `liveChatService.ts`.
+  - Merender tombol interaktif **"Konfirmasi Sudah Kirim"** (dengan form inline kurir & resi opsional, mobile-friendly `min-h-[40px]` & `text-base sm:text-xs`) di dalam bubble Live Chat (`LiveChatWorkspace` — aktif di halaman penuh maupun Floating Widget) khusus untuk akun Store terkait, terhubung ke `confirmStoreSentToWarehouseFromChat` (`fetchManualShipmentByOrderId` single-row minimal egress + `editManualShipment` + zero-reload sync via event `wms_manual_shipment_updated`).
+- **Sinkronisasi FAQ & Skill Guardrails**:
+  - Menyinkronkan panduan peran Admin & Store pada `src/data/initialStoreFaq.ts` dan menambahkan Invarian #18 + checklist regresi pada `.agents/skills/wms-live-chat-guardrails/SKILL.md`.
+
+---
+
 ## v2.31.1 — 25 November 2026
 **Modul**: Peminjaman Barang (SPS) (`src/components/PeminjamanView.tsx`)
 - **Hapus Kolom Lokasi pada Cetak Surat Jalan (PDF) SPS**:

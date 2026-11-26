@@ -1015,244 +1015,7 @@ export async function fetchManualShipments(forceRefresh = false): Promise<Manual
       return true;
     });
 
-      const mapped = nonReturData.map(item => {
-      let history_logs: ManualShipmentHistoryLog[] = [];
-      let alteration_repair_data: any = undefined;
-      let store_metadata: any = undefined;
-      let notes = item.notes_paket || '';
-      
-      // 1. Ekstrak [ALTERATION_REPAIR]
-      if (notes.includes('[ALTERATION_REPAIR]:')) {
-        const parts = notes.split('[ALTERATION_REPAIR]:');
-        notes = parts[0].trim();
-        const remain = parts[1] || '';
-        const nextIdx = remain.search(/\[(HISTORI_LOGS|STORE_METADATA)\]:/);
-        const jsonStr = nextIdx !== -1 ? remain.substring(0, nextIdx) : remain;
-        try {
-          alteration_repair_data = JSON.parse(jsonStr.trim());
-        } catch {}
-        if (nextIdx !== -1) {
-          notes += '\n' + remain.substring(nextIdx);
-        }
-      }
-
-      // 2. Ekstrak [HISTORI_LOGS]
-      if (notes.includes('[HISTORI_LOGS]:')) {
-        const parts = notes.split('[HISTORI_LOGS]:');
-        notes = parts[0].trim();
-        const remain = parts[1] || '';
-        const nextIdx = remain.search(/\[STORE_METADATA\]:/);
-        const jsonStr = nextIdx !== -1 ? remain.substring(0, nextIdx) : remain;
-        try {
-          history_logs = JSON.parse(jsonStr.trim());
-        } catch {}
-        if (nextIdx !== -1) {
-          notes += '\n' + remain.substring(nextIdx);
-        }
-      }
-
-      // 3. Ekstrak [STORE_METADATA]
-      if (notes.includes('[STORE_METADATA]:')) {
-        const parts = notes.split('[STORE_METADATA]:');
-        notes = parts[0].trim();
-        try {
-          store_metadata = JSON.parse(parts[1].trim());
-        } catch {}
-      }
-
-      // Deteksi order_type (Pesanan MS... adalah manual_shipment meskipun memiliki metadata kirim WH / alter)
-      const noPesanan = (item.no_pesanan || '').toUpperCase();
-      const isMsPrefix = noPesanan.startsWith('MS');
-      const isArPrefix = noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
-      const isAlterationRepair = !isMsPrefix && (isArPrefix || hasValidArData(alteration_repair_data));
-      const order_type = isAlterationRepair ? 'alteration_repair' : 'manual_shipment';
-
-      // Parse & normalize items array (bisa berupa Array, string JSON, atau flat properties)
-      let rawItems: any = item.items;
-      if (typeof rawItems === 'string' && rawItems.trim()) {
-        try {
-          rawItems = JSON.parse(rawItems);
-        } catch {}
-      }
-
-      const storeTxList: string[] = Array.isArray(item.no_transaksi_pengirim)
-        ? item.no_transaksi_pengirim.map((t: any) => String(t || '').trim().toLowerCase()).filter(Boolean)
-        : item.no_transaksi_pengirim
-          ? String(item.no_transaksi_pengirim).split(',').map((t: string) => t.trim().toLowerCase()).filter(Boolean)
-          : [];
-
-      const tujuanPengiriman =
-        store_metadata?.tujuan_pengiriman ||
-        (item as any).tujuan_pengiriman ||
-        alteration_repair_data?.tujuan_pengembalian ||
-        undefined;
-      // PENTING: Jangan gunakan tgl_kirim_store (tanggal toko kirim ke gudang) sebagai jadwal kirim gudang ke store!
-      const effectiveTglJadwalStore =
-        store_metadata?.tgl_jadwal_kirim_store ||
-        item.tgl_jadwal_kirim_store ||
-        alteration_repair_data?.tgl_kirim_kembali ||
-        '';
-      const isPickingPrinted = !!(store_metadata?.is_picking_printed || (item as any).is_picking_printed);
-      const isLabelPrinted = !!(store_metadata?.is_label_printed || (item as any).is_label_printed);
-      const bothPrinted = isPickingPrinted && isLabelPrinted;
-
-      const rawOrderStatus = String(item.status || '').toLowerCase().trim();
-      const needsResi = orderNeedsResi({
-        ...item,
-        tujuan_pengiriman: tujuanPengiriman,
-        alteration_repair_data,
-      });
-      const hasResi = Boolean(item.no_resi && String(item.no_resi).trim());
-      const hasJadwalStore = Boolean(effectiveTglJadwalStore && String(effectiveTglJadwalStore).trim());
-
-      // ATURAN KETAT: Pesanan yang wajib resi (Ekspedisi ke Customer / Store) HANYA dianggap Dikirim/Selesai jika No. Resi sudah terisi!
-      const isOrderShippedOrDone =
-        rawOrderStatus !== 'batal' &&
-        (needsResi
-          ? hasResi
-          : hasJadwalStore || rawOrderStatus === 'dikirim' || rawOrderStatus === 'selesai');
-
-      const flowStageStr = String(alteration_repair_data?.status_flow || '').toLowerCase().trim();
-      const isOrderWarehouseReceived =
-        Boolean(alteration_repair_data?.tgl_terima_warehouse) ||
-        ['diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'siap_dikirim', 'dikirim_kembali', 'selesai'].includes(flowStageStr);
-      const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStageStr);
-
-      let normalizedStatus: ManualShipmentOrder['status'] = item.status;
-      if (rawOrderStatus !== 'batal') {
-        if (isOrderShippedOrDone) {
-          normalizedStatus = rawOrderStatus === 'selesai' ? 'selesai' : 'dikirim';
-        } else if (bothPrinted || isFlowAktif || isOrderWarehouseReceived) {
-          normalizedStatus = 'diproses';
-        } else if (rawOrderStatus === 'dikirim' || rawOrderStatus === 'selesai') {
-          normalizedStatus = 'diterima';
-        }
-      }
-
-      let parsedItems: ManualShipmentItem[] = (Array.isArray(rawItems) ? rawItems : []).map((it: any) => {
-        const rawSj = String(it?.no_sj_dealpos || '').trim();
-        // Jangan pernah menganggap No. Transaksi DealPOS Store sebagai No. SJ DealPOS Admin WH
-        const isDuplicateStoreTx = rawSj && storeTxList.includes(rawSj.toLowerCase()) && !it?.sj_updated_by;
-        const ful = String(it?.fulfillment || it?.toko_asal || it?.store_name || '').trim();
-        const fulLower = ful.toLowerCase();
-        const isStoreFulfill =
-          Boolean(ful) &&
-          !fulLower.includes('marketplace') &&
-          !fulLower.includes('gudang') &&
-          !fulLower.includes('warehouse');
-
-        const wasAutoMarkedBefore = it?.received_by === 'Otomatis (Pesanan Terkirim)';
-        const explicitAdminReceived = Boolean(it?.received_at_warehouse) && !wasAutoMarkedBefore;
-
-        const autoReceived =
-          isStoreFulfill &&
-          it?.item_status !== 'sold_out' &&
-          it?.item_status !== 'cancelled' &&
-          (explicitAdminReceived || isOrderShippedOrDone || isOrderWarehouseReceived);
-
-        const cleanSku = String(it?.sku || '').trim().toUpperCase();
-        const master = cleanSku ? lookupProductBySku(cleanSku, undefined, it?.nama_produk, it?.size) : null;
-        const resolvedNamaProduk = (master && master.found) ? master.nama_produk : (it?.nama_produk || it?.sku || '-');
-        const resolvedSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it?.size || '-');
-
-        const cleanedItem = { ...it, nama_produk: resolvedNamaProduk, size: resolvedSize };
-        if (wasAutoMarkedBefore && !isOrderShippedOrDone && !isOrderWarehouseReceived) {
-          delete cleanedItem.received_at_warehouse;
-          delete cleanedItem.received_by;
-        }
-
-        return {
-          ...cleanedItem,
-          no_sj_dealpos: isDuplicateStoreTx ? '' : rawSj,
-          ...(autoReceived
-            ? {
-                received_at_warehouse: true,
-                received_by:
-                  (explicitAdminReceived ? it?.received_by : '') ||
-                  (isOrderShippedOrDone
-                    ? 'Otomatis (Pesanan Terkirim)'
-                    : alteration_repair_data?.pic_terima_warehouse || 'Warehouse'),
-              }
-            : {}),
-        };
-      });
-
-      if (parsedItems.length === 0 && (item.sku || item.nama_produk)) {
-        const fallbackFul = String(item.nama_pengirim || '').trim();
-        const fallbackFulLower = fallbackFul.toLowerCase();
-        const isFallbackStore =
-          Boolean(fallbackFul) &&
-          !fallbackFulLower.includes('marketplace') &&
-          !fallbackFulLower.includes('gudang') &&
-          !fallbackFulLower.includes('warehouse');
-        const cleanFallbackSku = String(item.sku || '').trim().toUpperCase();
-        const fallbackMaster = cleanFallbackSku ? lookupProductBySku(cleanFallbackSku, undefined, item.nama_produk, item.size) : null;
-        const resolvedFallbackName = (fallbackMaster && fallbackMaster.found) ? fallbackMaster.nama_produk : (item.nama_produk || item.sku || '');
-        const resolvedFallbackSize = (fallbackMaster && fallbackMaster.found && fallbackMaster.size && fallbackMaster.size !== '-') ? fallbackMaster.size : (item.size || 'Default');
-        parsedItems = [{
-          id: item.id || `item-1`,
-          sku: item.sku || '',
-          nama_produk: resolvedFallbackName,
-          size: resolvedFallbackSize,
-          qty: Number(item.qty) || 1,
-          fulfillment: fallbackFul,
-          ...(isFallbackStore && (isOrderShippedOrDone || isOrderWarehouseReceived)
-            ? {
-                received_at_warehouse: true,
-                received_by: isOrderShippedOrDone
-                  ? 'Otomatis (Pesanan Terkirim)'
-                  : alteration_repair_data?.pic_terima_warehouse || 'Warehouse',
-              }
-            : {}),
-        }];
-      }
-
-      const validPicStore = getValidPersonPicName(
-        item.pic_store || alteration_repair_data?.pic_pemohon || alteration_repair_data?.nama_sa,
-        item.nama_pengirim || alteration_repair_data?.nama_asal
-      );
-
-      if (alteration_repair_data && parsedItems.length === 1 && parsedItems[0]?.nama_produk) {
-        alteration_repair_data.nama_produk = parsedItems[0].nama_produk;
-        if (parsedItems[0].size && parsedItems[0].size !== '-') {
-          alteration_repair_data.size = parsedItems[0].size;
-        }
-      }
-
-      return {
-        ...item,
-        pic_store: validPicStore,
-        status: normalizedStatus,
-        items: parsedItems,
-        order_type,
-        notes_paket: notes,
-        alteration_repair_data,
-        layanan_type: alteration_repair_data?.layanan_type || (item.layanan_type || 'both'),
-        sumber_barang: alteration_repair_data?.sumber_barang || 'store',
-        nama_asal: alteration_repair_data?.nama_asal || item.nama_pengirim || '',
-        pic_pemohon: validPicStore,
-        lokasi_rak: alteration_repair_data?.lokasi_rak || '',
-        pic_warehouse: alteration_repair_data?.pic_warehouse || '',
-        status_flow: alteration_repair_data?.status_flow || 'diajukan',
-        flow_logs: alteration_repair_data?.flow_logs || [],
-        kondisi: alteration_repair_data?.kondisi || item.kondisi || '',
-        perkiraan_selesai: alteration_repair_data?.perkiraan_selesai || item.perkiraan_selesai || '',
-        alteration_detail: alteration_repair_data?.alteration_detail || item.alteration_detail || '',
-        repair_detail: alteration_repair_data?.repair_detail || item.repair_detail || '',
-        is_agreed_terms: alteration_repair_data?.is_agreed_terms ?? item.is_agreed_terms,
-        is_condition_confirmed: alteration_repair_data?.is_condition_confirmed ?? item.is_condition_confirmed,
-        foto_urls: alteration_repair_data?.foto_urls || item.foto_urls || [],
-        history_logs: history_logs.length > 0 ? history_logs : (item.history_logs || []),
-        // Metadata jadwal kirim ke store & status cetak
-        tgl_jadwal_kirim_store: effectiveTglJadwalStore,
-        catatan_jadwal_store: store_metadata?.catatan_jadwal_store || (item as any).catatan_jadwal_store || '',
-        tujuan_pengiriman: tujuanPengiriman,
-        is_picking_printed: isPickingPrinted,
-        is_label_printed: isLabelPrinted,
-        tgl_cetak_picking: store_metadata?.tgl_cetak_picking || (item as any).tgl_cetak_picking || '',
-        tgl_cetak_label: store_metadata?.tgl_cetak_label || (item as any).tgl_cetak_label || '',
-      } as ManualShipmentOrder;
-      });
+      const mapped = nonReturData.map((item) => parseManualShipmentRow(item));
       memoryManualShipmentsCache = mapped;
       memoryManualShipmentsLastFetch = Date.now();
       return mapped;
@@ -1266,6 +1029,277 @@ export async function fetchManualShipments(forceRefresh = false): Promise<Manual
     inflightManualShipmentsPromise = null;
   });
   return inflightManualShipmentsPromise;
+}
+
+export function parseManualShipmentRow(item: any): ManualShipmentOrder {
+  let history_logs: ManualShipmentHistoryLog[] = [];
+  let alteration_repair_data: any = undefined;
+  let store_metadata: any = undefined;
+  let notes = item.notes_paket || '';
+
+  // 1. Ekstrak [ALTERATION_REPAIR]
+  if (notes.includes('[ALTERATION_REPAIR]:')) {
+    const parts = notes.split('[ALTERATION_REPAIR]:');
+    notes = parts[0].trim();
+    const remain = parts[1] || '';
+    const nextIdx = remain.search(/\[(HISTORI_LOGS|STORE_METADATA)\]:/);
+    const jsonStr = nextIdx !== -1 ? remain.substring(0, nextIdx) : remain;
+    try {
+      alteration_repair_data = JSON.parse(jsonStr.trim());
+    } catch {}
+    if (nextIdx !== -1) {
+      notes += '\n' + remain.substring(nextIdx);
+    }
+  }
+
+  // 2. Ekstrak [HISTORI_LOGS]
+  if (notes.includes('[HISTORI_LOGS]:')) {
+    const parts = notes.split('[HISTORI_LOGS]:');
+    notes = parts[0].trim();
+    const remain = parts[1] || '';
+    const nextIdx = remain.search(/\[STORE_METADATA\]:/);
+    const jsonStr = nextIdx !== -1 ? remain.substring(0, nextIdx) : remain;
+    try {
+      history_logs = JSON.parse(jsonStr.trim());
+    } catch {}
+    if (nextIdx !== -1) {
+      notes += '\n' + remain.substring(nextIdx);
+    }
+  }
+
+  // 3. Ekstrak [STORE_METADATA]
+  if (notes.includes('[STORE_METADATA]:')) {
+    const parts = notes.split('[STORE_METADATA]:');
+    notes = parts[0].trim();
+    try {
+      store_metadata = JSON.parse(parts[1].trim());
+    } catch {}
+  }
+
+  // Deteksi order_type (Pesanan MS... adalah manual_shipment meskipun memiliki metadata kirim WH / alter)
+  const noPesanan = (item.no_pesanan || '').toUpperCase();
+  const isMsPrefix = noPesanan.startsWith('MS');
+  const isArPrefix = noPesanan.startsWith('AR-') || noPesanan.startsWith('REP-') || noPesanan.startsWith('ALT-');
+  const isAlterationRepair = !isMsPrefix && (isArPrefix || hasValidArData(alteration_repair_data));
+  const order_type = isAlterationRepair ? 'alteration_repair' : 'manual_shipment';
+
+  // Parse & normalize items array (bisa berupa Array, string JSON, atau flat properties)
+  let rawItems: any = item.items;
+  if (typeof rawItems === 'string' && rawItems.trim()) {
+    try {
+      rawItems = JSON.parse(rawItems);
+    } catch {}
+  }
+
+  const storeTxList: string[] = Array.isArray(item.no_transaksi_pengirim)
+    ? item.no_transaksi_pengirim.map((t: any) => String(t || '').trim().toLowerCase()).filter(Boolean)
+    : item.no_transaksi_pengirim
+      ? String(item.no_transaksi_pengirim).split(',').map((t: string) => t.trim().toLowerCase()).filter(Boolean)
+      : [];
+
+  const tujuanPengiriman =
+    store_metadata?.tujuan_pengiriman ||
+    (item as any).tujuan_pengiriman ||
+    alteration_repair_data?.tujuan_pengembalian ||
+    undefined;
+  // PENTING: Jangan gunakan tgl_kirim_store (tanggal toko kirim ke gudang) sebagai jadwal kirim gudang ke store!
+  const effectiveTglJadwalStore =
+    store_metadata?.tgl_jadwal_kirim_store ||
+    item.tgl_jadwal_kirim_store ||
+    alteration_repair_data?.tgl_kirim_kembali ||
+    '';
+  const isPickingPrinted = !!(store_metadata?.is_picking_printed || (item as any).is_picking_printed);
+  const isLabelPrinted = !!(store_metadata?.is_label_printed || (item as any).is_label_printed);
+  const bothPrinted = isPickingPrinted && isLabelPrinted;
+
+  const rawOrderStatus = String(item.status || '').toLowerCase().trim();
+  const needsResi = orderNeedsResi({
+    ...item,
+    tujuan_pengiriman: tujuanPengiriman,
+    alteration_repair_data,
+  });
+  const hasResi = Boolean(item.no_resi && String(item.no_resi).trim());
+  const hasJadwalStore = Boolean(effectiveTglJadwalStore && String(effectiveTglJadwalStore).trim());
+
+  // ATURAN KETAT: Pesanan yang wajib resi (Ekspedisi ke Customer / Store) HANYA dianggap Dikirim/Selesai jika No. Resi sudah terisi!
+  const isOrderShippedOrDone =
+    rawOrderStatus !== 'batal' &&
+    (needsResi
+      ? hasResi
+      : hasJadwalStore || rawOrderStatus === 'dikirim' || rawOrderStatus === 'selesai');
+
+  const flowStageStr = String(alteration_repair_data?.status_flow || '').toLowerCase().trim();
+  const isOrderWarehouseReceived =
+    Boolean(alteration_repair_data?.tgl_terima_warehouse) ||
+    ['diterima_warehouse', 'dalam_pengerjaan', 'selesai_qc', 'siap_dikirim', 'dikirim_kembali', 'selesai'].includes(flowStageStr);
+  const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStageStr);
+
+  let normalizedStatus: ManualShipmentOrder['status'] = item.status;
+  if (rawOrderStatus !== 'batal') {
+    if (isOrderShippedOrDone) {
+      normalizedStatus = rawOrderStatus === 'selesai' ? 'selesai' : 'dikirim';
+    } else if (bothPrinted || isFlowAktif || isOrderWarehouseReceived) {
+      normalizedStatus = 'diproses';
+    } else if (rawOrderStatus === 'dikirim' || rawOrderStatus === 'selesai') {
+      normalizedStatus = 'diterima';
+    }
+  }
+
+  let parsedItems: ManualShipmentItem[] = (Array.isArray(rawItems) ? rawItems : []).map((it: any) => {
+    const rawSj = String(it?.no_sj_dealpos || '').trim();
+    const isDuplicateStoreTx = rawSj && storeTxList.includes(rawSj.toLowerCase()) && !it?.sj_updated_by;
+    const ful = String(it?.fulfillment || it?.toko_asal || it?.store_name || '').trim();
+    const fulLower = ful.toLowerCase();
+    const isStoreFulfill =
+      Boolean(ful) &&
+      !fulLower.includes('marketplace') &&
+      !fulLower.includes('gudang') &&
+      !fulLower.includes('warehouse');
+
+    const wasAutoMarkedBefore = it?.received_by === 'Otomatis (Pesanan Terkirim)';
+    const explicitAdminReceived = Boolean(it?.received_at_warehouse) && !wasAutoMarkedBefore;
+
+    const autoReceived =
+      isStoreFulfill &&
+      it?.item_status !== 'sold_out' &&
+      it?.item_status !== 'cancelled' &&
+      (explicitAdminReceived || isOrderShippedOrDone || isOrderWarehouseReceived);
+
+    const cleanSku = String(it?.sku || '').trim().toUpperCase();
+    const master = cleanSku ? lookupProductBySku(cleanSku, undefined, it?.nama_produk, it?.size) : null;
+    const resolvedNamaProduk = (master && master.found) ? master.nama_produk : (it?.nama_produk || it?.sku || '-');
+    const resolvedSize = (master && master.found && master.size && master.size !== '-') ? master.size : (it?.size || '-');
+
+    const cleanedItem = { ...it, nama_produk: resolvedNamaProduk, size: resolvedSize };
+    if (wasAutoMarkedBefore && !isOrderShippedOrDone && !isOrderWarehouseReceived) {
+      delete cleanedItem.received_at_warehouse;
+      delete cleanedItem.received_by;
+    }
+
+    return {
+      ...cleanedItem,
+      no_sj_dealpos: isDuplicateStoreTx ? '' : rawSj,
+      ...(autoReceived
+        ? {
+            received_at_warehouse: true,
+            received_by:
+              (explicitAdminReceived ? it?.received_by : '') ||
+              (isOrderShippedOrDone
+                ? 'Otomatis (Pesanan Terkirim)'
+                : alteration_repair_data?.pic_terima_warehouse || 'Warehouse'),
+          }
+        : {}),
+    };
+  });
+
+  if (parsedItems.length === 0 && (item.sku || item.nama_produk)) {
+    const fallbackFul = String(item.nama_pengirim || '').trim();
+    const fallbackFulLower = fallbackFul.toLowerCase();
+    const isFallbackStore =
+      Boolean(fallbackFul) &&
+      !fallbackFulLower.includes('marketplace') &&
+      !fallbackFulLower.includes('gudang') &&
+      !fallbackFulLower.includes('warehouse');
+    const cleanFallbackSku = String(item.sku || '').trim().toUpperCase();
+    const fallbackMaster = cleanFallbackSku ? lookupProductBySku(cleanFallbackSku, undefined, item.nama_produk, item.size) : null;
+    const resolvedFallbackName = (fallbackMaster && fallbackMaster.found) ? fallbackMaster.nama_produk : (item.nama_produk || item.sku || '');
+    const resolvedFallbackSize = (fallbackMaster && fallbackMaster.found && fallbackMaster.size && fallbackMaster.size !== '-') ? fallbackMaster.size : (item.size || 'Default');
+    parsedItems = [{
+      id: item.id || `item-1`,
+      sku: item.sku || '',
+      nama_produk: resolvedFallbackName,
+      size: resolvedFallbackSize,
+      qty: Number(item.qty) || 1,
+      fulfillment: fallbackFul,
+      ...(isFallbackStore && (isOrderShippedOrDone || isOrderWarehouseReceived)
+        ? {
+            received_at_warehouse: true,
+            received_by: isOrderShippedOrDone
+              ? 'Otomatis (Pesanan Terkirim)'
+              : alteration_repair_data?.pic_terima_warehouse || 'Warehouse',
+          }
+        : {}),
+    }];
+  }
+
+  const validPicStore = getValidPersonPicName(
+    item.pic_store || alteration_repair_data?.pic_pemohon || alteration_repair_data?.nama_sa,
+    item.nama_pengirim || alteration_repair_data?.nama_asal
+  );
+
+  if (alteration_repair_data && parsedItems.length === 1 && parsedItems[0]?.nama_produk) {
+    alteration_repair_data.nama_produk = parsedItems[0].nama_produk;
+    if (parsedItems[0].size && parsedItems[0].size !== '-') {
+      alteration_repair_data.size = parsedItems[0].size;
+    }
+  }
+
+  return {
+    ...item,
+    pic_store: validPicStore,
+    status: normalizedStatus,
+    items: parsedItems,
+    order_type,
+    notes_paket: notes,
+    alteration_repair_data,
+    layanan_type: alteration_repair_data?.layanan_type || (item.layanan_type || 'both'),
+    sumber_barang: alteration_repair_data?.sumber_barang || 'store',
+    nama_asal: alteration_repair_data?.nama_asal || item.nama_pengirim || '',
+    pic_pemohon: validPicStore,
+    lokasi_rak: alteration_repair_data?.lokasi_rak || '',
+    pic_warehouse: alteration_repair_data?.pic_warehouse || '',
+    status_flow: alteration_repair_data?.status_flow || 'diajukan',
+    flow_logs: alteration_repair_data?.flow_logs || [],
+    kondisi: alteration_repair_data?.kondisi || item.kondisi || '',
+    perkiraan_selesai: alteration_repair_data?.perkiraan_selesai || item.perkiraan_selesai || '',
+    alteration_detail: alteration_repair_data?.alteration_detail || item.alteration_detail || '',
+    repair_detail: alteration_repair_data?.repair_detail || item.repair_detail || '',
+    is_agreed_terms: alteration_repair_data?.is_agreed_terms ?? item.is_agreed_terms,
+    is_condition_confirmed: alteration_repair_data?.is_condition_confirmed ?? item.is_condition_confirmed,
+    foto_urls: alteration_repair_data?.foto_urls || item.foto_urls || [],
+    history_logs: history_logs.length > 0 ? history_logs : (item.history_logs || []),
+    tgl_jadwal_kirim_store: effectiveTglJadwalStore,
+    catatan_jadwal_store: store_metadata?.catatan_jadwal_store || (item as any).catatan_jadwal_store || '',
+    tujuan_pengiriman: tujuanPengiriman,
+    is_picking_printed: isPickingPrinted,
+    is_label_printed: isLabelPrinted,
+    tgl_cetak_picking: store_metadata?.tgl_cetak_picking || (item as any).tgl_cetak_picking || '',
+    tgl_cetak_label: store_metadata?.tgl_cetak_label || (item as any).tgl_cetak_label || '',
+  } as ManualShipmentOrder;
+}
+
+/**
+ * Fetch 1 baris pesanan manual_shipment secara presisi (egress minimal ~1 KB)
+ * berdasarkan no_pesanan (fallback id) untuk aksi interaktif langsung dari Live Chat.
+ */
+export async function fetchManualShipmentByOrderId(orderId: string): Promise<ManualShipmentOrder | null> {
+  const cleanId = String(orderId || '').replace(/^#/, '').trim();
+  if (!cleanId) return null;
+  try {
+    const encoded = encodeURIComponent(cleanId);
+    const rows = await supabaseFetch<any[]>(
+      'manual_shipment',
+      'GET',
+      null,
+      `select=*&no_pesanan=eq.${encoded}&limit=1`
+    );
+    if (Array.isArray(rows) && rows.length > 0) {
+      return parseManualShipmentRow(rows[0]);
+    }
+    const byIdRows = await supabaseFetch<any[]>(
+      'manual_shipment',
+      'GET',
+      null,
+      `select=*&id=eq.${encoded}&limit=1`
+    );
+    if (Array.isArray(byIdRows) && byIdRows.length > 0) {
+      return parseManualShipmentRow(byIdRows[0]);
+    }
+    return null;
+  } catch (err) {
+    console.warn('[gasManualShipment] fetchManualShipmentByOrderId error:', err);
+    return null;
+  }
 }
 
 export async function updateShipmentStatus(idOrNoPesanan: string, status: string): Promise<boolean> {

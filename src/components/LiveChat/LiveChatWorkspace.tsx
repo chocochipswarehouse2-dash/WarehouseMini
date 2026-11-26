@@ -33,6 +33,10 @@ import {
   Crown,
   LogOut,
   Smile,
+  Truck,
+  BellRing,
+  CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 import { ProductItem, UserSession } from '../../types';
 import {
@@ -50,8 +54,13 @@ import {
   compressAndUploadChatImage,
   isProtectedStoreOpsGroup,
 } from '../../services/liveChatService';
-import { canManageChatGroups } from '../../services/permissions';
-import { ensureStoreOpsGroupsForSession, stripInternalOrderMetadata } from '../../services/orderChatNotificationService';
+import { canManageChatGroups, isStoreAccountSession } from '../../services/permissions';
+import {
+  confirmStoreSentToWarehouseFromChat,
+  ensureStoreOpsGroupsForSession,
+  stripInternalOrderMetadata,
+} from '../../services/orderChatNotificationService';
+import { isSameStore } from '../../services/gasManualShipment';
 import { getUserPersonName } from '../../utils/userResolver';
 
 interface LiveChatWorkspaceProps {
@@ -175,6 +184,12 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
   const [confirmDeleteRoom, setConfirmDeleteRoom] = useState<ChatRoom | null>(null);
   const [isDeletingRoom, setIsDeletingRoom] = useState(false);
 
+  // Interactive Store Reminder "Konfirmasi Sudah Kirim" inline state
+  const [expandedReminderMsgId, setExpandedReminderMsgId] = useState<string | null>(null);
+  const [reminderKurirInput, setReminderKurirInput] = useState<string>('Kurir Internal Toko');
+  const [reminderResiInput, setReminderResiInput] = useState<string>('');
+  const [submittingReminderMsgId, setSubmittingReminderMsgId] = useState<string | null>(null);
+
   // Tick every 5 seconds so 5-minute edit/delete countdown badges stay accurate
   const [, setNowTick] = useState(0);
   useEffect(() => {
@@ -218,6 +233,36 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
 
   const myUsername = String(session?.username || '').trim().toLowerCase();
   const isAdminGroupManager = canManageChatGroups(session);
+  const isStoreSessionUser = isStoreAccountSession(session);
+
+  const handleConfirmReminderSentToWarehouse = async (msg: ChatMessage) => {
+    if (!activeRoom || !msg.order_context?.order_id) return;
+    if (submittingReminderMsgId) return;
+    setSubmittingReminderMsgId(msg.id);
+    try {
+      const res = await confirmStoreSentToWarehouseFromChat({
+        roomId: activeRoom.id,
+        messageId: msg.id,
+        orderId: msg.order_context.order_id,
+        targetStore: msg.order_context.target_store || msg.order_context.store_name,
+        kurir: reminderKurirInput,
+        resi: reminderResiInput,
+        session,
+      });
+      if (res.success) {
+        setExpandedReminderMsgId(null);
+        setReminderResiInput('');
+        setReminderKurirInput('Kurir Internal Toko');
+        onNotify?.(res.message, res.alreadyConfirmed ? 'info' : 'success');
+      } else {
+        onNotify?.(res.message || 'Gagal mengonfirmasi pengiriman.', 'error');
+      }
+    } catch (err: any) {
+      onNotify?.(err?.message || 'Gagal mengonfirmasi pengiriman.', 'error');
+    } finally {
+      setSubmittingReminderMsgId(null);
+    }
+  };
 
   useEffect(() => {
     const unsub = liveChatManager.subscribe((next) => {
@@ -1582,75 +1627,260 @@ export const LiveChatWorkspace: React.FC<LiveChatWorkspaceProps> = ({
                                 )}
 
                                 {/* Shopee-Style Attached Order Context Card */}
-                                {msg.order_context && (
-                                  <div
-                                    onClick={() => {
-                                      const oid = String(msg.order_context?.order_id || '').replace(/^#/, '').trim();
-                                      const targetDetail = {
-                                        tab: 'manual_shipment',
-                                        subTab: 'manual_shipment',
-                                        manualSubTab: 'rekap',
-                                        orderId: oid,
-                                      };
-                                      if (typeof window !== 'undefined') {
-                                        (window as any).__wms_pending_pesanan_target = targetDetail;
-                                        window.dispatchEvent(
-                                          new CustomEvent('wms_navigate_page', {
-                                            detail: {
-                                              page: 'pesanan_saya',
-                                              ...targetDetail,
-                                            },
-                                          })
-                                        );
-                                        window.dispatchEvent(
-                                          new CustomEvent('wms_open_pesanan_target', { detail: targetDetail })
-                                        );
-                                      }
-                                      if (mode === 'floating' && onCloseFloating) {
-                                        onCloseFloating();
-                                      }
-                                    }}
-                                    title={`Klik untuk membuka Rekap Pesanan #${msg.order_context.order_id}`}
-                                    className={`mb-2 p-2.5 rounded-xl border text-left cursor-pointer transition-opacity hover:opacity-95 ${
-                                      isMine
-                                        ? 'bg-indigo-700/80 border-indigo-400/40 text-white'
-                                        : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 shadow-2xs'
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between gap-2 border-b border-white/20 dark:border-slate-800 pb-1.5 mb-1.5">
-                                      <div className="flex items-center gap-1.5 min-w-0">
-                                        <Package className={`w-3.5 h-3.5 shrink-0 ${isMine ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`} />
-                                        <span className="text-xs font-mono font-bold truncate underline decoration-dotted">
-                                          #{msg.order_context.order_id}
-                                        </span>
+                                {msg.order_context && (() => {
+                                  const ctx = msg.order_context;
+                                  const isReminderCard = ctx.action_type === 'store_kirim_gudang_reminder';
+                                  const isConfirmed = Boolean(ctx.action_confirmed_at);
+                                  const canStoreConfirmThisCard =
+                                    isReminderCard &&
+                                    !isConfirmed &&
+                                    isStoreSessionUser &&
+                                    (!ctx.target_store ||
+                                      !session?.store_name ||
+                                      isSameStore(session.store_name, ctx.target_store));
+                                  const isExpanded = expandedReminderMsgId === msg.id;
+                                  const isSubmitting = submittingReminderMsgId === msg.id;
+
+                                  return (
+                                    <div
+                                      className={`mb-2 rounded-xl border text-left overflow-hidden ${
+                                        isMine
+                                          ? 'bg-indigo-700/80 border-indigo-400/40 text-white'
+                                          : isReminderCard && !isConfirmed
+                                          ? 'bg-amber-50/70 dark:bg-slate-900 border-amber-300/90 dark:border-amber-700/70 text-slate-800 dark:text-slate-100 shadow-2xs'
+                                          : isReminderCard && isConfirmed
+                                          ? 'bg-emerald-50/70 dark:bg-slate-900 border-emerald-300/90 dark:border-emerald-700/70 text-slate-800 dark:text-slate-100 shadow-2xs'
+                                          : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 shadow-2xs'
+                                      }`}
+                                    >
+                                      <div
+                                        onClick={() => {
+                                          const oid = String(ctx.order_id || '').replace(/^#/, '').trim();
+                                          const targetDetail = {
+                                            tab: 'manual_shipment',
+                                            subTab: 'manual_shipment',
+                                            manualSubTab: 'rekap',
+                                            orderId: oid,
+                                          };
+                                          if (typeof window !== 'undefined') {
+                                            (window as any).__wms_pending_pesanan_target = targetDetail;
+                                            window.dispatchEvent(
+                                              new CustomEvent('wms_navigate_page', {
+                                                detail: {
+                                                  page: 'pesanan_saya',
+                                                  ...targetDetail,
+                                                },
+                                              })
+                                            );
+                                            window.dispatchEvent(
+                                              new CustomEvent('wms_open_pesanan_target', { detail: targetDetail })
+                                            );
+                                          }
+                                          if (mode === 'floating' && onCloseFloating) {
+                                            onCloseFloating();
+                                          }
+                                        }}
+                                        title={`Klik untuk membuka Rekap Pesanan #${ctx.order_id}`}
+                                        className="p-2.5 cursor-pointer transition-opacity hover:opacity-95"
+                                      >
+                                        <div className="flex items-center justify-between gap-2 border-b border-black/10 dark:border-slate-800 pb-1.5 mb-1.5">
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            {isReminderCard ? (
+                                              <BellRing
+                                                className={`w-3.5 h-3.5 shrink-0 ${
+                                                  isMine
+                                                    ? 'text-amber-300'
+                                                    : isConfirmed
+                                                    ? 'text-emerald-600 dark:text-emerald-400'
+                                                    : 'text-amber-600 dark:text-amber-400'
+                                                }`}
+                                              />
+                                            ) : (
+                                              <Package
+                                                className={`w-3.5 h-3.5 shrink-0 ${
+                                                  isMine ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'
+                                                }`}
+                                              />
+                                            )}
+                                            <span className="text-xs font-mono font-bold truncate underline decoration-dotted">
+                                              #{ctx.order_id}
+                                            </span>
+                                          </div>
+                                          {ctx.status && (
+                                            <span
+                                              className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                                                isConfirmed
+                                                  ? isMine
+                                                    ? 'bg-emerald-500/30 text-emerald-100'
+                                                    : 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300'
+                                                  : isMine
+                                                  ? 'bg-indigo-800 text-indigo-100'
+                                                  : isReminderCard
+                                                  ? 'bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300'
+                                                  : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                                              }`}
+                                            >
+                                              {isConfirmed ? 'Sudah Dikirim ✓' : ctx.status}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[11px] space-y-0.5">
+                                          {ctx.store_name && (
+                                            <div className="truncate">
+                                              <span className="opacity-75">Toko:</span>{' '}
+                                              <span className="font-semibold">{ctx.store_name}</span>
+                                            </div>
+                                          )}
+                                          {ctx.items_summary && (
+                                            <div className="truncate">
+                                              <span className="opacity-75">Item:</span>{' '}
+                                              <span className="font-semibold">{ctx.items_summary}</span>
+                                            </div>
+                                          )}
+                                          {ctx.no_resi && (
+                                            <div className="font-mono text-[10px] truncate">
+                                              <span className="opacity-75">Resi:</span> {ctx.no_resi}
+                                            </div>
+                                          )}
+                                        </div>
                                       </div>
-                                      {msg.order_context.status && (
-                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${
-                                          isMine ? 'bg-indigo-800 text-indigo-100' : 'bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                                        }`}>
-                                          {msg.order_context.status}
-                                        </span>
+
+                                      {/* Interactive Store Reminder Confirmation Footer */}
+                                      {isReminderCard && (
+                                        <div
+                                          onClick={(e) => e.stopPropagation()}
+                                          className={`px-2.5 py-2 border-t ${
+                                            isMine
+                                              ? 'border-indigo-400/30 bg-indigo-800/40'
+                                              : isConfirmed
+                                              ? 'border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/90 dark:bg-emerald-950/40'
+                                              : 'border-amber-200/80 dark:border-slate-700 bg-white/80 dark:bg-slate-950/50'
+                                          }`}
+                                        >
+                                          {isConfirmed ? (
+                                            <div className="flex items-start gap-2">
+                                              <CheckCircle2
+                                                className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                                  isMine
+                                                    ? 'text-emerald-300'
+                                                    : 'text-emerald-600 dark:text-emerald-400'
+                                                }`}
+                                              />
+                                              <div className="min-w-0 text-[11px] leading-snug">
+                                                <div
+                                                  className={`font-bold ${
+                                                    isMine
+                                                      ? 'text-emerald-100'
+                                                      : 'text-emerald-800 dark:text-emerald-300'
+                                                  }`}
+                                                >
+                                                  Sudah Dikonfirmasi Kirim ke Gudang
+                                                </div>
+                                                <div
+                                                  className={`text-[10px] mt-0.5 ${
+                                                    isMine
+                                                      ? 'text-indigo-100/90'
+                                                      : 'text-slate-600 dark:text-slate-400'
+                                                  }`}
+                                                >
+                                                  {ctx.action_confirmed_by ? `Oleh ${ctx.action_confirmed_by}` : 'Oleh Store'}
+                                                  {ctx.action_confirmed_kurir ? ` · ${ctx.action_confirmed_kurir}` : ''}
+                                                  {ctx.action_confirmed_resi ? (
+                                                    <span className="font-mono"> · Resi: {ctx.action_confirmed_resi}</span>
+                                                  ) : null}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          ) : canStoreConfirmThisCard ? (
+                                            !isExpanded ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setExpandedReminderMsgId(msg.id);
+                                                  setReminderKurirInput('Kurir Internal Toko');
+                                                  setReminderResiInput('');
+                                                }}
+                                                className="w-full min-h-[40px] sm:min-h-[36px] px-3 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white text-xs font-bold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-2xs"
+                                              >
+                                                <Truck className="w-4 h-4 shrink-0" />
+                                                <span>Konfirmasi Sudah Kirim</span>
+                                              </button>
+                                            ) : (
+                                              <div className="space-y-2">
+                                                <div className="text-[11px] font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                                                  <Truck className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                                                  <span>Konfirmasi Kirim ke Gudang Pusat</span>
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                  <select
+                                                    value={reminderKurirInput}
+                                                    onChange={(e) => setReminderKurirInput(e.target.value)}
+                                                    disabled={isSubmitting}
+                                                    className="w-full h-10 sm:h-8 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-base sm:text-xs font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                  >
+                                                    <option value="Kurir Internal Toko">Kurir Internal Toko</option>
+                                                    <option value="Gosend / Grab Express">Gosend / Grab Express</option>
+                                                    <option value="JNE / Ekspedisi">JNE / Ekspedisi</option>
+                                                    <option value="Drop Langsung ke WH">Drop Langsung ke WH</option>
+                                                  </select>
+                                                  <input
+                                                    type="text"
+                                                    value={reminderResiInput}
+                                                    onChange={(e) => setReminderResiInput(e.target.value)}
+                                                    disabled={isSubmitting}
+                                                    placeholder="No. Resi / Catatan kurir (opsional)"
+                                                    className="w-full h-10 sm:h-8 px-2.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100 text-base sm:text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                  />
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                  <button
+                                                    type="button"
+                                                    disabled={isSubmitting}
+                                                    onClick={() => void handleConfirmReminderSentToWarehouse(msg)}
+                                                    className="flex-1 min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                                  >
+                                                    {isSubmitting ? (
+                                                      <>
+                                                        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                                        <span>Menyimpan...</span>
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        <Check className="w-3.5 h-3.5 shrink-0" />
+                                                        <span>Ya, Sudah Dikirim</span>
+                                                      </>
+                                                    )}
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    disabled={isSubmitting}
+                                                    onClick={() => setExpandedReminderMsgId(null)}
+                                                    className="min-h-[40px] sm:min-h-[34px] px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+                                                  >
+                                                    Batal
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )
+                                          ) : (
+                                            <div
+                                              className={`flex items-center gap-1.5 text-[10.5px] font-medium ${
+                                                isMine
+                                                  ? 'text-indigo-100/90'
+                                                  : 'text-amber-700 dark:text-amber-300'
+                                              }`}
+                                            >
+                                              <Clock className="w-3.5 h-3.5 shrink-0" />
+                                              <span>
+                                                Menunggu Store ({ctx.target_store || ctx.store_name || 'terkait'}) klik Konfirmasi Sudah Kirim...
+                                              </span>
+                                            </div>
+                                          )}
+                                        </div>
                                       )}
                                     </div>
-                                    <div className="text-[11px] space-y-0.5">
-                                      {msg.order_context.store_name && (
-                                        <div className="truncate">
-                                          <span className="opacity-75">Toko:</span> <span className="font-semibold">{msg.order_context.store_name}</span>
-                                        </div>
-                                      )}
-                                      {msg.order_context.items_summary && (
-                                        <div className="truncate">
-                                          <span className="opacity-75">Item:</span> <span className="font-semibold">{msg.order_context.items_summary}</span>
-                                        </div>
-                                      )}
-                                      {msg.order_context.no_resi && (
-                                        <div className="font-mono text-[10px] truncate">
-                                          <span className="opacity-75">Resi:</span> {msg.order_context.no_resi}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
+                                  );
+                                })()}
 
                                 {/* Message Text Body */}
                                 {msg.text && (

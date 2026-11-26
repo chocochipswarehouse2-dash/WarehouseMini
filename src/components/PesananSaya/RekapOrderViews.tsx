@@ -21,6 +21,8 @@ import {
   Store,
   Truck,
   AlertOctagon,
+  BellRing,
+  Loader2,
 } from 'lucide-react';
 import { ManualShipmentItem, ManualShipmentOrder, ProductItem } from '../../types';
 import { OutletItem, getValidPersonPicName } from '../../services/gasManualShipment';
@@ -61,12 +63,16 @@ export interface RekapOrderViewsProps {
   isKirimKeStore: (o: ManualShipmentOrder) => boolean;
   isOrderSentToWarehouse: (o: ManualShipmentOrder) => boolean;
   isOrderEligibleKirimKeGudang: (o: ManualShipmentOrder) => boolean;
+  hasPendingStoreFulfillment?: (o: ManualShipmentOrder) => boolean;
+  sendingReminderOrderKey?: string | null;
   isEligibleForSjStruk: (o: ManualShipmentOrder) => boolean;
   getValidItemSjDealpos: (o: ManualShipmentOrder, it: any) => string;
   // Action callbacks
   onOpenDetail: (o: ManualShipmentOrder) => void;
   onOpenActionSheet: (o: ManualShipmentOrder) => void;
   onKirimKeGudang: (o: ManualShipmentOrder) => void;
+  onReceiveAllStoreItems?: (o: ManualShipmentOrder) => void;
+  onSendStoreReminder?: (o: ManualShipmentOrder) => void;
   onPrintLabel: (o: ManualShipmentOrder) => void;
   onPrintPicking: (o: ManualShipmentOrder) => void;
   onPrintSjStruk: (o: ManualShipmentOrder) => void;
@@ -84,6 +90,7 @@ interface PrimaryActionMeta {
   shortLabel: string;
   icon: React.ReactNode;
   variant: 'primary' | 'secondary' | 'success';
+  disabled?: boolean;
   onClick: () => void;
 }
 
@@ -119,11 +126,15 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
   isKirimKeStore,
   isOrderSentToWarehouse,
   isOrderEligibleKirimKeGudang,
+  hasPendingStoreFulfillment,
+  sendingReminderOrderKey,
   isEligibleForSjStruk,
   getValidItemSjDealpos,
   onOpenDetail,
   onOpenActionSheet,
   onKirimKeGudang,
+  onReceiveAllStoreItems,
+  onSendStoreReminder,
   onPrintLabel,
   onPrintPicking,
   onPrintSjStruk,
@@ -166,8 +177,14 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
 
   // Single clear contextual primary CTA per order — eliminates scattered buttons!
   const getPrimaryAction = (order: ManualShipmentOrder): PrimaryActionMeta => {
+    const orderKey = getOrderKey(order);
+    const isSendingReminder = sendingReminderOrderKey === orderKey;
+    const hasPendingStore = Boolean(hasPendingStoreFulfillment?.(order));
+    const sentToWh = isOrderSentToWarehouse(order);
+
     if (order.status !== 'batal') {
-      if (isOrderEligibleKirimKeGudang(order) && !isOrderSentToWarehouse(order)) {
+      // STRICT ROLE: "Kirim ke Gudang" HANYA untuk Store (bukan Admin)
+      if (isStoreUser && isOrderEligibleKirimKeGudang(order) && !sentToWh) {
         return {
           label: 'Kirim ke Gudang',
           shortLabel: 'Kirim WH',
@@ -175,6 +192,32 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
           variant: 'primary',
           onClick: () => onKirimKeGudang(order),
         };
+      }
+      // STRICT ROLE: Admin Gudang melihat tombol Terima Barang Store (jika store sudah kirim) atau Reminder Store (jika belum kirim)
+      if (!isStoreUser && userIsAdmin && hasPendingStore) {
+        if (sentToWh && onReceiveAllStoreItems) {
+          return {
+            label: 'Terima Barang',
+            shortLabel: 'Terima WH',
+            icon: <PackageCheck className="w-3.5 h-3.5 shrink-0" />,
+            variant: 'primary',
+            onClick: () => onReceiveAllStoreItems(order),
+          };
+        }
+        if (!sentToWh && onSendStoreReminder) {
+          return {
+            label: isSendingReminder ? 'Mengirim...' : 'Reminder Store',
+            shortLabel: isSendingReminder ? 'Kirim...' : 'Reminder',
+            icon: isSendingReminder ? (
+              <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+            ) : (
+              <BellRing className="w-3.5 h-3.5 shrink-0" />
+            ),
+            variant: 'primary',
+            disabled: isSendingReminder,
+            onClick: () => onSendStoreReminder(order),
+          };
+        }
       }
       if (!isStoreUser) {
         if (!order.is_picking_printed) {
@@ -334,9 +377,16 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
             const extraItemsCount = Math.max(0, (order.items || []).length - 1);
             const hasAlter = hasRealAlterItems(order);
             const needKirimWh =
+              isStoreUser &&
               order.status !== 'batal' &&
               isOrderEligibleKirimKeGudang(order) &&
               !isOrderSentToWarehouse(order);
+            const adminPendingStore =
+              !isStoreUser &&
+              userIsAdmin &&
+              order.status !== 'batal' &&
+              Boolean(hasPendingStoreFulfillment?.(order));
+            const adminStoreSent = adminPendingStore && isOrderSentToWarehouse(order);
             const { mktItems, sjList } = getOrderMktSjMeta(order);
             const isSelected = selectedOrders.has(key);
 
@@ -411,6 +461,17 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
                       {needKirimWh && (
                         <span className="text-[9.5px] font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 px-1.5 py-0.5 rounded">
                           Kirim WH
+                        </span>
+                      )}
+                      {adminPendingStore && (
+                        <span
+                          className={`text-[9.5px] font-bold px-1.5 py-0.5 rounded ${
+                            adminStoreSent
+                              ? 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/60'
+                              : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60'
+                          }`}
+                        >
+                          {adminStoreSent ? 'Terima WH' : 'Tunggu Store'}
                         </span>
                       )}
                       {order.no_resi ? (
@@ -974,19 +1035,36 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
                       </div>
                     </td>
 
-                    {/* Col 5: Aksi — Clean, predictable 2-control cluster */}
+                    {/* Col 5: Aksi — Clean, predictable action cluster (max 1 solid primary + neutral secondary) */}
                     <td className="py-3.5 px-3 align-top text-right">
                       <div className="inline-flex items-center justify-end gap-1.5">
                         <button
                           type="button"
+                          disabled={primaryAction.disabled}
                           onClick={primaryAction.onClick}
-                          className={`h-8 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${getPrimaryBtnClass(
+                          className={`h-8 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 whitespace-nowrap ${getPrimaryBtnClass(
                             primaryAction.variant
                           )}`}
                         >
                           {primaryAction.icon}
                           <span>{primaryAction.shortLabel}</span>
                         </button>
+                        {!isStoreUser &&
+                          userIsAdmin &&
+                          order.status !== 'batal' &&
+                          Boolean(hasPendingStoreFulfillment?.(order)) &&
+                          !isOrderSentToWarehouse(order) &&
+                          onReceiveAllStoreItems && (
+                            <button
+                              type="button"
+                              onClick={() => onReceiveAllStoreItems(order)}
+                              className="h-8 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-300 hover:border-emerald-300 text-slate-700 dark:text-slate-200 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                              title="Tandai seluruh item fulfillment store sudah diterima fisik di Gudang"
+                            >
+                              <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+                              <span>Terima</span>
+                            </button>
+                          )}
                         <button
                           type="button"
                           onClick={() => onOpenActionSheet(order)}
@@ -1386,18 +1464,35 @@ export const RekapOrderViews: React.FC<RekapOrderViewsProps> = ({
                 </div>
               )}
 
-              {/* 5. Native App 2-Control Footer: Primary CTA + Aksi Sheet */}
+              {/* 5. Native App Footer: Primary CTA + Contextual Neutral Secondary + Aksi Sheet */}
               <div className="px-3 py-2.5 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2">
                 <button
                   type="button"
+                  disabled={primaryAction.disabled}
                   onClick={primaryAction.onClick}
-                  className={`flex-1 h-10 sm:h-9 px-3 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${getPrimaryBtnClass(
+                  className={`flex-1 h-10 sm:h-9 px-3 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60 ${getPrimaryBtnClass(
                     primaryAction.variant
                   )}`}
                 >
                   {primaryAction.icon}
                   <span className="truncate">{primaryAction.label}</span>
                 </button>
+                {!isStoreUser &&
+                  userIsAdmin &&
+                  order.status !== 'batal' &&
+                  Boolean(hasPendingStoreFulfillment?.(order)) &&
+                  !isOrderSentToWarehouse(order) &&
+                  onReceiveAllStoreItems && (
+                    <button
+                      type="button"
+                      onClick={() => onReceiveAllStoreItems(order)}
+                      className="h-10 sm:h-9 px-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-300 hover:border-emerald-300 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                      title="Tandai seluruh item fulfillment store sudah diterima fisik di Gudang"
+                    >
+                      <PackageCheck className="w-3.5 h-3.5 shrink-0" />
+                      <span>Terima</span>
+                    </button>
+                  )}
                 <button
                   type="button"
                   onClick={() => onOpenActionSheet(order)}

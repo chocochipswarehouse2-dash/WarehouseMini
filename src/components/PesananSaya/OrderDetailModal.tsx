@@ -23,6 +23,7 @@ import {
   Store,
   Truck,
   X,
+  BellRing,
 } from 'lucide-react';
 import { ManualShipmentItem, ManualShipmentOrder, ProductItem } from '../../types';
 import { OutletItem, getValidPersonPicName } from '../../services/gasManualShipment';
@@ -46,6 +47,8 @@ export interface OrderDetailModalProps {
   isKirimKeStore: boolean;
   isSentToWarehouse: boolean;
   isEligibleKirimKeGudang: boolean;
+  hasPendingStoreFulfillment?: boolean;
+  isSendingStoreReminder?: boolean;
   isEligibleSjStruk: boolean;
   isOrderSelesai: boolean;
   isStoreFulfilledItem: (order: ManualShipmentOrder, item: ManualShipmentItem) => boolean;
@@ -63,6 +66,8 @@ export interface OrderDetailModalProps {
   onOpenJadwal: (order: ManualShipmentOrder) => void;
   onUpdateResi: (order: ManualShipmentOrder) => void;
   onKirimKeGudang: (order: ManualShipmentOrder) => void;
+  onReceiveAllStoreItems?: (order: ManualShipmentOrder) => void;
+  onSendStoreReminder?: (order: ManualShipmentOrder) => void;
   onPrintPicking: (order: ManualShipmentOrder) => void;
   onPrintLabel: (order: ManualShipmentOrder) => void;
   onPrintSjStruk: (order: ManualShipmentOrder) => void;
@@ -86,6 +91,8 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   isKirimKeStore,
   isSentToWarehouse,
   isEligibleKirimKeGudang,
+  hasPendingStoreFulfillment = false,
+  isSendingStoreReminder = false,
   isEligibleSjStruk,
   isOrderSelesai,
   isStoreFulfilledItem,
@@ -102,6 +109,8 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   onOpenJadwal,
   onUpdateResi,
   onKirimKeGudang,
+  onReceiveAllStoreItems,
+  onSendStoreReminder,
   onPrintPicking,
   onPrintLabel,
   onPrintSjStruk,
@@ -131,16 +140,39 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
   // Determine 1 crisp contextual primary action for the sticky footer (same rule as Table & Card!)
   const primaryCta = (() => {
     if (order.status !== 'batal') {
-      if (isEligibleKirimKeGudang && !isSentToWarehouse) {
+      // Store-only: Kirim ke Gudang
+      if (isStoreUser && isEligibleKirimKeGudang && !isSentToWarehouse) {
         return {
           label: 'Kirim ke Gudang',
           icon: <Truck className="w-4 h-4 shrink-0" />,
           cls: 'bg-indigo-600 hover:bg-indigo-700 text-white',
+          disabled: false,
           onClick: () => {
             onClose();
             onKirimKeGudang(order);
           },
         };
+      }
+      // Admin-only: Terima Barang Store (jika sudah kirim) atau Reminder Store via Live Chat (jika belum kirim)
+      if (!isStoreUser && userIsAdmin && hasPendingStoreFulfillment) {
+        if (isSentToWarehouse && onReceiveAllStoreItems) {
+          return {
+            label: 'Terima Barang Store',
+            icon: <PackageCheck className="w-4 h-4 shrink-0" />,
+            cls: 'bg-indigo-600 hover:bg-indigo-700 text-white',
+            disabled: false,
+            onClick: () => onReceiveAllStoreItems(order),
+          };
+        }
+        if (!isSentToWarehouse && onSendStoreReminder) {
+          return {
+            label: isSendingStoreReminder ? 'Mengirim Reminder...' : 'Reminder Store (Chat)',
+            icon: <BellRing className="w-4 h-4 shrink-0" />,
+            cls: 'bg-indigo-600 hover:bg-indigo-700 text-white',
+            disabled: isSendingStoreReminder,
+            onClick: () => onSendStoreReminder(order),
+          };
+        }
       }
       if (!isStoreUser) {
         if (!order.is_picking_printed) {
@@ -757,16 +789,42 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
           </div>
         </div>
 
-        {/* Sticky Native App Footer — ONLY 1 Primary CTA + Quick Copy + Unified Aksi Menu! */}
+        {/* Sticky Native App Footer — ONLY 1 Primary CTA + Contextual Secondary + Quick Copy + Unified Aksi Menu! */}
         <div className="px-4 sm:px-5 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center gap-2 shrink-0">
           <button
             type="button"
+            disabled={(primaryCta as any).disabled}
             onClick={primaryCta.onClick}
-            className={`flex-1 h-11 sm:h-10 px-4 rounded-xl text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer ${primaryCta.cls}`}
+            className={`flex-1 h-11 sm:h-10 px-4 rounded-xl text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-60 ${primaryCta.cls}`}
           >
             {primaryCta.icon}
             <span className="truncate">{primaryCta.label}</span>
           </button>
+
+          {!isStoreUser && userIsAdmin && order.status !== 'batal' && hasPendingStoreFulfillment && (
+            !isSentToWarehouse && onReceiveAllStoreItems ? (
+              <button
+                type="button"
+                onClick={() => onReceiveAllStoreItems(order)}
+                className="h-11 sm:h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/50 hover:text-emerald-700 dark:hover:text-emerald-300 hover:border-emerald-300 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+                title="Tandai seluruh item fulfillment store sudah diterima di Gudang"
+              >
+                <PackageCheck className="w-4 h-4 shrink-0" />
+                <span>Terima WH</span>
+              </button>
+            ) : isSentToWarehouse && onSendStoreReminder ? (
+              <button
+                type="button"
+                disabled={isSendingStoreReminder}
+                onClick={() => onSendStoreReminder(order)}
+                className="h-11 sm:h-10 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-amber-50 dark:hover:bg-amber-950/50 hover:text-amber-700 dark:hover:text-amber-300 hover:border-amber-300 text-slate-700 dark:text-slate-200 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 disabled:opacity-60"
+                title="Kirim ulang chat reminder ke Store terkait"
+              >
+                <BellRing className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Reminder</span>
+              </button>
+            ) : null
+          )}
 
           <button
             type="button"

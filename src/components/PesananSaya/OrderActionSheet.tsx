@@ -22,6 +22,7 @@ import {
   RotateCcw,
   Copy,
   ChevronRight,
+  BellRing,
 } from 'lucide-react';
 import { ManualShipmentOrder, ManualShipmentItem } from '../../types';
 
@@ -37,6 +38,8 @@ export interface OrderActionSheetProps {
   eligibleSjStruk: boolean;
   sentToWarehouse: boolean;
   eligibleKirimKeGudang: boolean;
+  hasPendingStoreFulfillment?: boolean;
+  isSendingStoreReminder?: boolean;
   kirimKeStore: boolean;
   hasMarketplaceItems: boolean;
   orderIsSelesai: boolean;
@@ -53,6 +56,8 @@ export interface OrderActionSheetProps {
   onPrintAlterSpkPenjahit: (order: ManualShipmentOrder) => void;
   onPrintAlterSpkGudang: (order: ManualShipmentOrder) => void;
   onKirimKeGudang: (order: ManualShipmentOrder) => void;
+  onReceiveAllStoreItems?: (order: ManualShipmentOrder) => void;
+  onSendStoreReminder?: (order: ManualShipmentOrder) => void;
   onInputSjDealpos: (order: ManualShipmentOrder) => void;
   onAturJadwalStore: (order: ManualShipmentOrder) => void;
   onUpdateResi: (order: ManualShipmentOrder) => void;
@@ -101,6 +106,8 @@ export const OrderActionSheet: React.FC<OrderActionSheetProps> = ({
   eligibleSjStruk,
   sentToWarehouse,
   eligibleKirimKeGudang,
+  hasPendingStoreFulfillment = false,
+  isSendingStoreReminder = false,
   kirimKeStore,
   hasMarketplaceItems,
   orderIsSelesai,
@@ -115,6 +122,8 @@ export const OrderActionSheet: React.FC<OrderActionSheetProps> = ({
   onPrintAlterSpkPenjahit,
   onPrintAlterSpkGudang,
   onKirimKeGudang,
+  onReceiveAllStoreItems,
+  onSendStoreReminder,
   onInputSjDealpos,
   onAturJadwalStore,
   onUpdateResi,
@@ -212,7 +221,8 @@ export const OrderActionSheet: React.FC<OrderActionSheetProps> = ({
   }
 
   const workflowItems: ActionRowItem[] = [];
-  if (eligibleKirimKeGudang && !sentToWarehouse) {
+  // Kirim ke Gudang HANYA untuk akun Store (bukan Admin)
+  if (isStoreUser && eligibleKirimKeGudang && !sentToWarehouse) {
     workflowItems.push({
       id: 'kirim_wh',
       label: 'Tandai Kirim ke Gudang',
@@ -221,6 +231,36 @@ export const OrderActionSheet: React.FC<OrderActionSheetProps> = ({
       tone: 'primary',
       onClick: () => runAndClose(() => onKirimKeGudang(order)),
     });
+  }
+  // Admin Gudang: Terima Barang dari Store & Reminder Ulang ke Store (Live Chat)
+  if (!isStoreUser && userIsAdmin && order.status !== 'batal' && hasPendingStoreFulfillment) {
+    if (onReceiveAllStoreItems) {
+      workflowItems.push({
+        id: 'receive_store_items',
+        label: 'Terima Barang dari Store (WH)',
+        description: sentToWarehouse
+          ? 'Store sudah konfirmasi kirim · Tandai seluruh item store diterima fisik di Gudang'
+          : 'Tandai seluruh item fulfillment store sudah diterima fisik di Gudang Pusat',
+        icon: <PackageCheck className="w-4 h-4" />,
+        badge: sentToWarehouse ? 'Siap Terima' : 'Belum Tiba',
+        badgeTone: sentToWarehouse ? 'emerald' : 'amber',
+        tone: sentToWarehouse ? 'primary' : 'default',
+        onClick: () => runAndClose(() => onReceiveAllStoreItems(order)),
+      });
+    }
+    if (onSendStoreReminder) {
+      workflowItems.push({
+        id: 'remind_store_chat',
+        label: 'Reminder Ulang Store (Live Chat)',
+        description: 'Kirim chat reminder ke Store terkait lengkap dengan tombol "Konfirmasi Sudah Kirim"',
+        icon: <BellRing className="w-4 h-4" />,
+        badge: sentToWarehouse ? 'Cek Ulang' : 'Belum Kirim',
+        badgeTone: 'amber',
+        tone: !sentToWarehouse ? 'primary' : 'default',
+        disabled: isSendingStoreReminder,
+        onClick: () => runAndClose(() => onSendStoreReminder(order)),
+      });
+    }
   }
   if (userIsAdmin && hasMarketplaceItems) {
     workflowItems.push({

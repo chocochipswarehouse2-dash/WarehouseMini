@@ -27,7 +27,10 @@ import {
   resolvePrimarySingleLocation,
   buildOutLogEntriesForPickingItem,
   resolvePickingItemActualPicker,
-  summarizePickSplitsLocations
+  summarizePickSplitsLocations,
+  getPickingPriorBaselinesForSj,
+  getCachedPickingPriorBaselinesForSj,
+  savePickingPriorBaselineForSj
 } from './supabase';
 import {
   pushMasterRecountDeltaToGoogleSheet,
@@ -1161,12 +1164,17 @@ export async function syncAllPickingOutboxBatches(): Promise<{
             (x) => (Number(x.qty_picked) || 0) > 0
           );
           if (allPicked.length > 0) {
-            const existingRows = await supabaseFetch<Array<{ sku: string; lokasi: string; qty: number }>>(
-              'log_produk',
-              'GET',
-              undefined,
-              `select=sku,lokasi,qty&invoice=eq.${encodeURIComponent(cleanNoSj)}&type=eq.OUT`
-            );
+            const [existingRows, fetchedBaselineMap] = await Promise.all([
+              supabaseFetch<Array<{ sku: string; lokasi: string; qty: number }>>(
+                'log_produk',
+                'GET',
+                undefined,
+                `select=sku,lokasi,qty&invoice=eq.${encodeURIComponent(cleanNoSj)}&type=eq.OUT`
+              ),
+              getPickingPriorBaselinesForSj(cleanNoSj, true).catch(() =>
+                getCachedPickingPriorBaselinesForSj(cleanNoSj)
+              )
+            ]);
 
             const existingOutBySku = new Map<string, number>();
             (existingRows || []).forEach((row) => {
@@ -1182,7 +1190,10 @@ export async function syncAllPickingOutboxBatches(): Promise<{
               if (!skuKey || pickedQty <= 0) continue;
 
               const alreadyOut = existingOutBySku.get(skuKey) || 0;
-              const deltaQty = Math.max(0, pickedQty - alreadyOut);
+              const itemPrevBaseline = Math.max(0, Number(it.prev_qty_picked) || 0);
+              const persistedBaseline = Math.max(0, Number(fetchedBaselineMap[skuKey]) || 0);
+              const alreadyProcessed = Math.max(alreadyOut, itemPrevBaseline, persistedBaseline);
+              const deltaQty = Math.max(0, pickedQty - alreadyProcessed);
               existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
               if (deltaQty <= 0) continue;
 
@@ -1190,7 +1201,7 @@ export async function syncAllPickingOutboxBatches(): Promise<{
                 cleanNoSj,
                 item: it,
                 deltaQty,
-                alreadyOut,
+                alreadyOut: alreadyProcessed,
                 fallbackPicker: batch.pickerName || 'Picker',
                 catatan: batch.catatan || '',
                 createdAtIso: batch.createdAtIso || new Date().toISOString()
@@ -1321,6 +1332,25 @@ export async function syncAllPickingOutboxBatches(): Promise<{
           batch.peminjamanSynced = true;
         } else {
           batch.peminjamanSynced = true;
+        }
+
+        // Step 5: Update persisted baseline if batch carried shortage/continuation tracking
+        const cachedBase = getCachedPickingPriorBaselinesForSj(cleanNoSj);
+        const hadBaseline =
+          Object.keys(cachedBase).length > 0 ||
+          (batch.items || []).some((it) => (Number(it.prev_qty_picked) || 0) > 0);
+        if (hadBaseline) {
+          const nextBase: Record<string, number> = { ...cachedBase };
+          (batch.items || []).forEach((it) => {
+            const skuKey = String(it.sku || '').trim().toUpperCase();
+            const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
+            if (skuKey && pickedQty > 0) {
+              nextBase[skuKey] = Math.max(nextBase[skuKey] || 0, pickedQty);
+            }
+          });
+          await savePickingPriorBaselineForSj(cleanNoSj, nextBase, {
+            updatedBy: batch.pickerName || 'Operator'
+          }).catch(() => {});
         }
 
         batch.status = 'PENDING';

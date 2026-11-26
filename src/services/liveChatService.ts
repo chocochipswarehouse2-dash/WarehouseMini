@@ -55,6 +55,19 @@ export interface ChatOrderContext {
   total_pcs?: number;
   status?: string;
   no_resi?: string;
+  // Interactive action card fields (backwards-compatible optional metadata)
+  action_type?: 'store_kirim_gudang_reminder';
+  target_store?: string;
+  items_detail?: Array<{
+    sku: string;
+    nama_produk: string;
+    size?: string;
+    qty: number;
+  }>;
+  action_confirmed_at?: string;
+  action_confirmed_by?: string;
+  action_confirmed_kurir?: string;
+  action_confirmed_resi?: string;
 }
 
 export interface ChatMessage {
@@ -421,7 +434,18 @@ function mergeMessagesIdempotent(
         text: isDeleted ? '' : (m.text ?? prev.text),
         attachment_url: isDeleted ? undefined : (m.attachment_url ?? prev.attachment_url),
         context_tags: isDeleted ? undefined : (m.context_tags ?? prev.context_tags),
-        order_context: isDeleted ? undefined : (m.order_context ?? prev.order_context),
+        order_context: isDeleted
+          ? undefined
+          : m.order_context && prev.order_context
+          ? {
+              ...prev.order_context,
+              ...m.order_context,
+              action_confirmed_at: m.order_context.action_confirmed_at || prev.order_context.action_confirmed_at,
+              action_confirmed_by: m.order_context.action_confirmed_by || prev.order_context.action_confirmed_by,
+              action_confirmed_kurir: m.order_context.action_confirmed_kurir || prev.order_context.action_confirmed_kurir,
+              action_confirmed_resi: m.order_context.action_confirmed_resi || prev.order_context.action_confirmed_resi,
+            }
+          : (m.order_context ?? prev.order_context),
         reactions: isDeleted ? undefined : (m.reactions ?? prev.reactions),
         read_by: Array.from(readMap.values()),
         is_edited: Boolean(prev.is_edited || m.is_edited),
@@ -3340,6 +3364,111 @@ class LiveChatManager {
     }
 
     return { success: true };
+  }
+
+  /**
+   * Update additive order_context metadata on an interactive chat card (e.g. Store confirms "Sudah Kirim").
+   * Safely merges with latest server hot messages, broadcasts via Realtime + CrossTab, and persists.
+   */
+  public async updateMessageOrderContext(
+    roomId: string,
+    messageId: string,
+    patch: Partial<ChatOrderContext>,
+    alsoConfirmMatchingReminder?: { orderId: string; targetStore?: string }
+  ): Promise<{ success: boolean; message?: ChatMessage; error?: string }> {
+    if (!roomId || !messageId) {
+      return { success: false, error: 'Parameter roomId/messageId tidak valid.' };
+    }
+
+    const room = this.state.rooms.find((r) => r.id === roomId);
+    const minValidMs = this.getMinValidMessageTimeMs(roomId, room);
+
+    const [localMsgs, serverHot] = await Promise.all([
+      (async () => {
+        const mem = this.state.messagesByRoom[roomId];
+        return Array.isArray(mem) && mem.length > 0 ? mem : await idbGetRoomMessages(roomId);
+      })(),
+      fetchSystemDocJson<ChatMessage[]>(`${ROOM_MSGS_DOC_PREFIX}${roomId}`).then((arr) =>
+        Array.isArray(arr) ? arr : []
+      ),
+    ]);
+
+    const mergedBase = mergeMessagesIdempotent(localMsgs, serverHot, minValidMs);
+    const matchOrderId = String(alsoConfirmMatchingReminder?.orderId || '')
+      .replace(/^#/, '')
+      .trim()
+      .toUpperCase();
+    const matchStoreLower = String(alsoConfirmMatchingReminder?.targetStore || '')
+      .trim()
+      .toLowerCase();
+
+    const patchedMessages: ChatMessage[] = [];
+    let primaryUpdated: ChatMessage | undefined;
+
+    for (const m of mergedBase) {
+      if (!m || m.is_deleted || !m.order_context) continue;
+      const isExact = m.id === messageId;
+      const isMatchingReminder =
+        Boolean(matchOrderId) &&
+        m.order_context.action_type === 'store_kirim_gudang_reminder' &&
+        String(m.order_context.order_id || '').replace(/^#/, '').trim().toUpperCase() === matchOrderId &&
+        (!matchStoreLower ||
+          !m.order_context.target_store ||
+          m.order_context.target_store.trim().toLowerCase() === matchStoreLower);
+
+      if (!isExact && !isMatchingReminder) continue;
+
+      const updated: ChatMessage = {
+        ...m,
+        order_context: {
+          ...m.order_context,
+          ...patch,
+        },
+      };
+      patchedMessages.push(updated);
+      if (isExact) primaryUpdated = updated;
+    }
+
+    if (patchedMessages.length === 0) {
+      return { success: false, error: 'Pesan reminder tidak ditemukan di ruang chat.' };
+    }
+
+    const updatedMsgs = mergeMessagesIdempotent(mergedBase, patchedMessages, minValidMs);
+    this.state.messagesByRoom[roomId] = updatedMsgs;
+    this.notify();
+
+    for (const updatedMsg of patchedMessages) {
+      try {
+        this.channel?.send({
+          type: 'broadcast',
+          event: 'chat:message_updated',
+          payload: {
+            roomId,
+            message: updatedMsg,
+            room,
+            clientInstanceId: this.clientInstanceId,
+          },
+        });
+      } catch {}
+
+      try {
+        this.crossTabChannel?.postMessage({
+          type: 'MESSAGE_UPDATED',
+          roomId,
+          message: updatedMsg,
+          room,
+          clientInstanceId: this.clientInstanceId,
+        });
+      } catch {}
+    }
+
+    await idbSaveRoomMessages(roomId, updatedMsgs);
+    await saveSystemDocJson(
+      `${ROOM_MSGS_DOC_PREFIX}${roomId}`,
+      updatedMsgs.slice(-HOT_MESSAGE_LIMIT_PER_ROOM)
+    );
+
+    return { success: true, message: primaryUpdated || patchedMessages[0] };
   }
 
   /**

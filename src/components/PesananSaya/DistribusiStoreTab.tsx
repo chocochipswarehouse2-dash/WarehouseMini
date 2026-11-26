@@ -6,7 +6,7 @@ import {
   Minus, Plus, RotateCcw, ArrowUpDown, ScanLine, Camera, Download,
   Edit3, ArrowLeftRight, Check, Search, Filter, Layers, ListFilter,
   Wifi, WifiOff, CloudOff, ArrowDownToLine, Truck, Calendar,
-  SlidersHorizontal, MoreVertical
+  SlidersHorizontal, MoreVertical, ClipboardList, Loader2
 } from 'lucide-react';
 import {
   UserSession,
@@ -44,7 +44,7 @@ import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { SuratJalanSelisihMessageParams, generateSuratJalanSelisihMessage, getWhatsAppWebUrl } from '../../services/whatsapp';
 import { formatProductNameWithSize, resolveProductName, resolveProductDisplaySize, cleanProductName, extractCleanSizeToken, isRealSize, isCorruptedColorCodeSize } from '../../utils/sortUtils';
 import { lookupProductBySku } from '../../utils/productLookup';
-import { isWarehouseLocation } from '../../services/supabase';
+import { isWarehouseLocation, shareShortageToPickingAppSupabase } from '../../services/supabase';
 import { DistribusiPickingModal } from './DistribusiPickingModal';
 import { MultiSelectDropsearch } from '../common/MultiSelectDropsearch';
 import { DistribusiSelisihWaModal } from './DistribusiSelisihWaModal';
@@ -423,6 +423,7 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
     total: number;
   } | null>(null);
   const [selisihWaModalParams, setSelisihWaModalParams] = useState<SuratJalanSelisihMessageParams | null>(null);
+  const [sharingShortagePickingNoSj, setSharingShortagePickingNoSj] = useState<string | null>(null);
 
   // Custom confirmation modal (replaces window.confirm which is blocked in mobile/iframe)
   const [confirmModal, setConfirmModal] = useState<{
@@ -1479,6 +1480,101 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
           (rec.destination || '').toLowerCase().includes('pusat')));
     return !isPenerimaan;
   }, []);
+
+  const canShareShortageToPicking = useCallback(
+    (doc?: { tipe_import?: string; destination?: string; source?: string } | null): boolean => {
+      if (!doc) return false;
+      const destLow = (doc.destination || '').toLowerCase();
+      const srcLow = (doc.source || '').toLowerCase();
+      const destIsWarehouse =
+        destLow.includes('warehouse') || destLow.includes('gudang') || destLow.includes('pusat');
+      const srcIsWarehouse =
+        srcLow.includes('warehouse') || srcLow.includes('gudang') || srcLow.includes('pusat');
+      if (isPengirimanTypeRecord(doc)) return true;
+      return srcIsWarehouse && !destIsWarehouse;
+    },
+    [isPengirimanTypeRecord]
+  );
+
+  const handleShareShortageToPicking = useCallback(
+    async (payload: {
+      no_sj: string;
+      destination: string;
+      source?: string;
+      tanggal_sj?: string;
+      items: Array<{
+        sku: string;
+        nama_produk?: string;
+        size?: string;
+        qty_sj: number;
+        qty_scan: number;
+        is_unexpected?: boolean;
+      }>;
+    }) => {
+      const cleanNoSj = String(payload.no_sj || '').trim().toUpperCase();
+      if (!cleanNoSj || sharingShortagePickingNoSj) return;
+
+      const regularItems = (payload.items || []).filter(
+        (it) => !it.is_unexpected && (Number(it.qty_sj) || 0) > 0
+      );
+      const shortItems = regularItems.filter(
+        (it) => (Number(it.qty_scan) || 0) < (Number(it.qty_sj) || 0)
+      );
+      if (shortItems.length === 0) {
+        onShowToast('Tidak ada item selisih kurang pada Surat Jalan ini.', 'warning');
+        return;
+      }
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        onShowToast('Koneksi internet diperlukan untuk mengirim kekurangan ke Tugas Picking.', 'warning');
+        return;
+      }
+
+      setSharingShortagePickingNoSj(cleanNoSj);
+      try {
+        const res = await shareShortageToPickingAppSupabase({
+          no_sj: cleanNoSj,
+          destination: payload.destination || 'Store',
+          source: payload.source || '',
+          tanggal_sj: payload.tanggal_sj,
+          operatorName: session?.name || session?.username || 'Admin',
+          items: regularItems.map((it) => ({
+            sku: it.sku,
+            nama_produk: it.nama_produk,
+            size: it.size,
+            qty_sj: Number(it.qty_sj) || 0,
+            qty_scan: Math.max(0, Number(it.qty_scan) || 0),
+          })),
+        });
+
+        if (!res.ok) {
+          playErrorBeep();
+          onShowToast(res.reason || 'Gagal mengirim kekurangan ke Tugas Picking.', 'error');
+          return;
+        }
+
+        playSuccessBeep();
+        const modeLabel =
+          res.mode === 'updated'
+            ? 'Tugas Picking SJ diperbarui (item cocok otomatis selesai)'
+            : 'Tugas Picking baru dibuat';
+        const prefilledNote =
+          res.alreadyFulfilledPcs > 0
+            ? ` ${res.alreadyFulfilledPcs} Pcs yg sudah diambil terisi otomatis & tidak potong stok lagi.`
+            : '';
+        onShowToast(
+          `✅ ${modeLabel}: ${res.shortageSkuCount} SKU kurang (${res.shortageTotalPcs} Pcs sisa) siap dipicking.${prefilledNote}`,
+          'success'
+        );
+      } catch (err: any) {
+        playErrorBeep();
+        onShowToast(err?.message || 'Gagal mengirim kekurangan ke Tugas Picking.', 'error');
+      } finally {
+        setSharingShortagePickingNoSj(null);
+      }
+    },
+    [sharingShortagePickingNoSj, session, onShowToast]
+  );
 
   const noSjReportMap = useMemo(
     () => buildNoSjReportIndex(pengirimanReports),
@@ -3181,35 +3277,69 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                       {summary.has_selisih && (
                         <div className="grid grid-cols-1 sm:flex items-center gap-2 mt-2.5">
                           {summary.kurang > 0 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const kurangItems = comparisonData
-                                  .filter(it => it.status === 'KURANG')
-                                  .map(it => ({
-                                    sku: it.sku,
-                                    nama_produk: it.nama_produk,
-                                    size: it.size,
-                                    qty_sj: it.qty_sj,
-                                    qty_scan: it.qty_scan,
-                                    selisih: it.selisih,
-                                  }));
-                                setSelisihWaModalParams({
-                                  no_sj: activeDraft.no_sj,
-                                  destination: activeDraft.destination,
-                                  source: activeDraft.source,
-                                  tanggal_sj: activeDraft.tanggal_sj,
-                                  items: kurangItems,
-                                  productCatalog,
-                                  type: 'kurang',
-                                });
-                              }}
-                              className="h-9 px-3 bg-white dark:bg-slate-900 hover:bg-emerald-50 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                              title="Kirim laporan selisih kurang via Bot Fonnte atau WhatsApp Web"
-                            >
-                              <Send className="w-3.5 h-3.5 text-[#25D366]" />
-                              <span>Share WA (Selisih Kurang)</span>
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const kurangItems = comparisonData
+                                    .filter(it => it.status === 'KURANG')
+                                    .map(it => ({
+                                      sku: it.sku,
+                                      nama_produk: it.nama_produk,
+                                      size: it.size,
+                                      qty_sj: it.qty_sj,
+                                      qty_scan: it.qty_scan,
+                                      selisih: it.selisih,
+                                    }));
+                                  setSelisihWaModalParams({
+                                    no_sj: activeDraft.no_sj,
+                                    destination: activeDraft.destination,
+                                    source: activeDraft.source,
+                                    tanggal_sj: activeDraft.tanggal_sj,
+                                    items: kurangItems,
+                                    productCatalog,
+                                    type: 'kurang',
+                                  });
+                                }}
+                                className="h-9 px-3 bg-white dark:bg-slate-900 hover:bg-emerald-50 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                                title="Kirim laporan selisih kurang via Bot Fonnte atau WhatsApp Web"
+                              >
+                                <Send className="w-3.5 h-3.5 text-[#25D366]" />
+                                <span>Share WA (Selisih Kurang)</span>
+                              </button>
+
+                              {canShareShortageToPicking(activeDraft) && (
+                                <button
+                                  type="button"
+                                  disabled={sharingShortagePickingNoSj === activeDraft.no_sj.trim().toUpperCase()}
+                                  onClick={() =>
+                                    handleShareShortageToPicking({
+                                      no_sj: activeDraft.no_sj,
+                                      destination: activeDraft.destination,
+                                      source: activeDraft.source,
+                                      tanggal_sj: activeDraft.tanggal_sj,
+                                      items: comparisonData.map((it) => ({
+                                        sku: it.sku,
+                                        nama_produk: it.nama_produk,
+                                        size: it.size,
+                                        qty_sj: it.qty_sj,
+                                        qty_scan: it.qty_scan,
+                                        is_unexpected: false,
+                                      })),
+                                    })
+                                  }
+                                  className="min-h-[40px] sm:h-9 px-3 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-60"
+                                  title="Kirim sisa produk selisih kurang ke Tugas Picking (item yang sudah terambil terisi otomatis & tidak potong stok ulang)"
+                                >
+                                  {sharingShortagePickingNoSj === activeDraft.no_sj.trim().toUpperCase() ? (
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                                  ) : (
+                                    <ClipboardList className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                  )}
+                                  <span>Share ke Tugas Picking</span>
+                                </button>
+                              )}
+                            </>
                           )}
 
                           {(summary.lebih > 0 || summary.unexpectedCount > 0) && (
@@ -4271,25 +4401,52 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                               </button>
 
                               {rec.items.some(i => i.status_item === 'KURANG' || i.selisih < 0) && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelisihWaModalParams({
-                                      no_sj: rec.no_sj,
-                                      destination: rec.destination,
-                                      source: rec.source,
-                                      tanggal_sj: rec.tanggal_sj,
-                                      items: rec.items,
-                                      productCatalog,
-                                      type: 'kurang',
-                                    });
-                                  }}
-                                  className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
-                                  title="Share daftar selisih kurang via Bot Fonnte / WhatsApp"
-                                >
-                                  <Send className="w-3.5 h-3.5 text-[#25D366]" />
-                                  Share WA (Kurang)
-                                </button>
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelisihWaModalParams({
+                                        no_sj: rec.no_sj,
+                                        destination: rec.destination,
+                                        source: rec.source,
+                                        tanggal_sj: rec.tanggal_sj,
+                                        items: rec.items,
+                                        productCatalog,
+                                        type: 'kurang',
+                                      });
+                                    }}
+                                    className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200 dark:border-slate-700 cursor-pointer"
+                                    title="Share daftar selisih kurang via Bot Fonnte / WhatsApp"
+                                  >
+                                    <Send className="w-3.5 h-3.5 text-[#25D366]" />
+                                    Share WA (Kurang)
+                                  </button>
+
+                                  {canShareShortageToPicking(rec) && (
+                                    <button
+                                      type="button"
+                                      disabled={sharingShortagePickingNoSj === rec.no_sj.trim().toUpperCase()}
+                                      onClick={() =>
+                                        handleShareShortageToPicking({
+                                          no_sj: rec.no_sj,
+                                          destination: rec.destination,
+                                          source: rec.source,
+                                          tanggal_sj: rec.tanggal_sj,
+                                          items: rec.items,
+                                        })
+                                      }
+                                      className="px-3 py-1.5 bg-white dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-indigo-200 dark:border-indigo-800 cursor-pointer disabled:opacity-60"
+                                      title="Kirim hanya sisa item selisih kurang ke Tugas Picking App"
+                                    >
+                                      {sharingShortagePickingNoSj === rec.no_sj.trim().toUpperCase() ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                                      ) : (
+                                        <ClipboardList className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                                      )}
+                                      Share ke Tugas Picking
+                                    </button>
+                                  )}
+                                </>
                               )}
 
                               {rec.items.some(i => i.status_item === 'LEBIH' || i.selisih > 0) && (
@@ -5278,25 +5435,49 @@ export const DistribusiStoreTab: React.FC<TarikanMDViewProps> = ({
                   </button>
 
                   {rec.items.some(i => i.status_item === 'KURANG' || i.selisih < 0) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMobileCardMenuRec(null);
-                        setSelisihWaModalParams({
-                          no_sj: rec.no_sj,
-                          destination: rec.destination,
-                          source: rec.source,
-                          tanggal_sj: rec.tanggal_sj,
-                          items: rec.items,
-                          productCatalog,
-                          type: 'kurang',
-                        });
-                      }}
-                      className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
-                    >
-                      <Send className="w-4 h-4 text-[#25D366]" />
-                      <span>Share WA (Selisih Kurang)</span>
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMobileCardMenuRec(null);
+                          setSelisihWaModalParams({
+                            no_sj: rec.no_sj,
+                            destination: rec.destination,
+                            source: rec.source,
+                            tanggal_sj: rec.tanggal_sj,
+                            items: rec.items,
+                            productCatalog,
+                            type: 'kurang',
+                          });
+                        }}
+                        className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 text-xs font-bold flex items-center gap-2.5 cursor-pointer"
+                      >
+                        <Send className="w-4 h-4 text-[#25D366]" />
+                        <span>Share WA (Selisih Kurang)</span>
+                      </button>
+
+                      {canShareShortageToPicking(rec) && (
+                        <button
+                          type="button"
+                          disabled={sharingShortagePickingNoSj === rec.no_sj.trim().toUpperCase()}
+                          onClick={() => {
+                            const targetRec = rec;
+                            setMobileCardMenuRec(null);
+                            handleShareShortageToPicking({
+                              no_sj: targetRec.no_sj,
+                              destination: targetRec.destination,
+                              source: targetRec.source,
+                              tanggal_sj: targetRec.tanggal_sj,
+                              items: targetRec.items,
+                            });
+                          }}
+                          className="w-full h-12 px-4 rounded-2xl bg-slate-50 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-bold flex items-center gap-2.5 cursor-pointer disabled:opacity-60"
+                        >
+                          <ClipboardList className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                          <span>Share Kekurangan ke Tugas Picking</span>
+                        </button>
+                      )}
+                    </>
                   )}
 
                   {rec.items.some(i => i.status_item === 'LEBIH' || i.selisih > 0) && (

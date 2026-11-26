@@ -1,11 +1,12 @@
 {
-  "version": "v2.31.1",
-  "versionCode": 511,
-  "buildDate": "25 November 2026",
-  "buildHash": "wms-261125-v511-1840",
-  "releaseTitle": "WMS v2.31.1 — Cetak Surat Jalan SPS Tanpa Kolom Lokasi",
+  "version": "v2.33.0",
+  "versionCode": 530,
+  "buildDate": "26 November 2026",
+  "buildHash": "wms-261126-v530-0623",
+  "releaseTitle": "WMS v2.33.0 — Share Kekurangan Pengecekan SJ ke Tugas Picking",
   "releaseNotes": [
-    "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
+    "Tombol Share ke Tugas Picking pada item selisih kurang di Pengecekan SJ Pengiriman",
+    "Rekonsiliasi SJ eksisting vs baru di picking_list, tampil hanya sisa kurang, dan anti-double #OUT via baseline persisten"
   ],
   "minSupportedVersion": "v2.0.0"
 }
