@@ -246,27 +246,55 @@ export function buildDetailedHrReport({
     const kNik = (k.nik || '').trim();
     const kNama = k.nama || '-';
     const kDivisi = k.divisi || '-';
+    const joinDate =
+      k.tgl_bergabung && /^\d{4}-\d{2}-\d{2}$/.test(k.tgl_bergabung.trim())
+        ? k.tgl_bergabung.trim()
+        : '';
+    const effectiveStartDate = joinDate && joinDate > startDate ? joinDate : startDate;
 
-    // Filter relevant records for this employee
-    const myRosters = rosterList.filter(
-      (r) => (r.nik || '').trim() === kNik && r.tanggal >= startDate && r.tanggal <= endDate
-    );
-    const myPresensi = presensiList.filter(
-      (p) => (p.nik || '').trim() === kNik && p.tanggal >= startDate && p.tanggal <= endDate
-    );
-    const myCuti = cutiList.filter(
-      (c) =>
-        (c.nik || '').trim() === kNik &&
-        !(c.tgl_selesai < startDate || c.tgl_mulai > endDate)
-    );
-    const myLembur = lemburList.filter(
-      (l) => (l.nik || '').trim() === kNik && l.tanggal >= startDate && l.tanggal <= endDate
-    );
+    // Filter relevant records for this employee (mulai dari Tanggal Bergabung jika join di tengah periode)
+    const myRosters =
+      effectiveStartDate > endDate
+        ? []
+        : rosterList.filter(
+            (r) =>
+              (r.nik || '').trim() === kNik &&
+              r.tanggal >= effectiveStartDate &&
+              r.tanggal <= endDate
+          );
+    const myPresensi =
+      effectiveStartDate > endDate
+        ? []
+        : presensiList.filter(
+            (p) =>
+              (p.nik || '').trim() === kNik &&
+              p.tanggal >= effectiveStartDate &&
+              p.tanggal <= endDate
+          );
+    const myCuti =
+      effectiveStartDate > endDate
+        ? []
+        : cutiList.filter(
+            (c) =>
+              (c.nik || '').trim() === kNik &&
+              !(c.tgl_selesai < effectiveStartDate || c.tgl_mulai > endDate)
+          );
+    const myLembur =
+      effectiveStartDate > endDate
+        ? []
+        : lemburList.filter(
+            (l) =>
+              (l.nik || '').trim() === kNik &&
+              l.tanggal >= effectiveStartDate &&
+              l.tanggal <= endDate
+          );
 
-    // Map scheduled working dates
+    // Map scheduled working dates (kecualikan tanggal Pra-Join < effectiveStartDate)
     // 1) If employee has explicit roster shifts
     let scheduledWorkDays: Array<{ tanggal: string; shift: string }> = [];
-    if (myRosters.length > 0) {
+    if (effectiveStartDate > endDate) {
+      scheduledWorkDays = [];
+    } else if (myRosters.length > 0) {
       scheduledWorkDays = myRosters
         .filter((r) => {
           const s = (r.shift || '').toLowerCase();
@@ -274,9 +302,13 @@ export function buildDetailedHrReport({
         })
         .map((r) => ({ tanggal: r.tanggal, shift: r.shift || 'Reguler' }));
     } else {
-      // 2) Fallback: Monday-Saturday in the date range
+      // 2) Fallback: Monday-Saturday in the effective date range
       scheduledWorkDays = datesInRange
-        .filter((d) => new Date(d + 'T00:00:00').getDay() !== 0) // exclude Sunday
+        .filter(
+          (d) =>
+            d >= effectiveStartDate &&
+            new Date(d + 'T00:00:00').getDay() !== 0 // exclude Sunday
+        )
         .map((d) => ({ tanggal: d, shift: 'Reguler' }));
     }
 

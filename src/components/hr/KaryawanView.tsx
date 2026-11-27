@@ -850,6 +850,18 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                       {selectedKaryawan.kontak_darurat || '-'}
                     </span>
                   </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Tanggal Bergabung (Join Date):</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-100">
+                      {selectedKaryawan.tgl_bergabung || '-'}
+                    </span>
+                  </div>
+                  <div className="p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400 block">Tanggal Lahir:</span>
+                    <span className="font-mono text-slate-800 dark:text-slate-100">
+                      {selectedKaryawan.tgl_lahir || '-'}
+                    </span>
+                  </div>
 
                   <div className="sm:col-span-2 p-3 bg-slate-50 dark:bg-slate-900/60 rounded-xl border border-slate-100 dark:border-slate-800">
                     <span className="text-[10px] text-slate-400 block">Alamat Domisili:</span>
@@ -1074,6 +1086,34 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                     onChange={(e) => setFormData({ ...formData, kontak_darurat: e.target.value })}
                     placeholder="e.g. Ibu Ani - 0812345678"
                     className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Tanggal Bergabung (Join Date)
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.tgl_bergabung || ''}
+                    onChange={(e) => setFormData({ ...formData, tgl_bergabung: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Menentukan prorata gaji &amp; status Pra-Join sebelum tanggal masuk.
+                  </p>
+                </div>
+                <div>
+                  <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                    Tanggal Lahir
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.tgl_lahir || ''}
+                    onChange={(e) => setFormData({ ...formData, tgl_lahir: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 dark:bg-[#131d31] border border-slate-300 dark:border-slate-700 rounded-xl text-xs font-mono text-slate-800 dark:text-slate-100 focus:outline-none focus:border-primary-500"
                   />
                 </div>
               </div>

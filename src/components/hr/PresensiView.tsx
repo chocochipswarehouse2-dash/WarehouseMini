@@ -548,10 +548,19 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
             <div>${slip.divisi} · ${slip.jabatan}</div>
           </div>
         </div>
+        ${
+          slip.isProrataKaryawanBaru
+            ? `<div style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:8px;padding:8px 10px;margin-bottom:12px;font-size:11px;color:#312e81;">
+                <b>Karyawan Baru · Perhitungan Prorata (Join: ${slip.tglBergabung || '-'})</b><br/>
+                Status Pra-Join (${slip.praJoinLabel || `${slip.totalHariBelumBergabung || 0} hari`}): <b>Belum Bergabung (Pra-Join)</b> — tidak dihitung Bolos.<br/>
+                Gaji Pokok &amp; Tunjangan diprorata <b>${slip.totalJadwalKerja}/${slip.totalHariKerjaPeriodePenuh || slip.totalJadwalKerja} hari kerja</b>.
+              </div>`
+            : ''
+        }
         <table>
           <tr><th>Komponen Pendapatan</th><th class="right">Nominal</th></tr>
-          <tr><td>Gaji Pokok</td><td class="right">Rp ${slip.gajiPokok.toLocaleString('id-ID')}</td></tr>
-          <tr><td>Tunjangan</td><td class="right">Rp ${slip.tunjangan.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Gaji Pokok${slip.isProrataKaryawanBaru ? ` (Prorata ${slip.totalJadwalKerja}/${slip.totalHariKerjaPeriodePenuh || slip.totalJadwalKerja}h)` : ''}</td><td class="right">Rp ${slip.gajiPokok.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Tunjangan${slip.isProrataKaryawanBaru && (slip.tunjanganBulanan || 0) > 0 ? ' (Prorata)' : ''}</td><td class="right">Rp ${slip.tunjangan.toLocaleString('id-ID')}</td></tr>
           <tr><td>Upah Lembur ACC (${slip.totalJamLembur} Jam)</td><td class="right">Rp ${slip.uangLembur.toLocaleString('id-ID')}</td></tr>
           <tr class="total"><td>Total Pendapatan Kotor</td><td class="right">Rp ${slip.totalPendapatanKotor.toLocaleString('id-ID')}</td></tr>
         </table>
@@ -2628,6 +2637,23 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 </div>
               </div>
 
+              {myPublishedPayslip.isProrataKaryawanBaru && (
+                <div className="p-3 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 text-[11px] text-indigo-900 dark:text-indigo-200 space-y-1">
+                  <div className="font-extrabold">
+                    Karyawan Baru · Perhitungan Prorata (Tanggal Bergabung: {myPublishedPayslip.tglBergabung || '-'})
+                  </div>
+                  <p>
+                    Tanggal <strong>{myPublishedPayslip.praJoinLabel || `${myPublishedPayslip.totalHariBelumBergabung || 0} hari`}</strong> berstatus{' '}
+                    <span className="font-bold underline decoration-indigo-400">Belum Bergabung (Pra-Join)</span> — tidak dihitung Bolos &amp; tidak memotong KPI.
+                    Gaji Pokok &amp; Tunjangan diprorata{' '}
+                    <strong>
+                      {myPublishedPayslip.totalJadwalKerja}/
+                      {myPublishedPayslip.totalHariKerjaPeriodePenuh || myPublishedPayslip.totalJadwalKerja} hari kerja aktif
+                    </strong>.
+                  </p>
+                </div>
+              )}
+
               {/* Ringkasan Kehadiran */}
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
@@ -2668,13 +2694,27 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                     Pendapatan
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-300">Gaji Pokok</span>
-                    <span className="font-mono font-bold">Rp {myPublishedPayslip.gajiPokok.toLocaleString('id-ID')}</span>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Gaji Pokok
+                      {myPublishedPayslip.isProrataKaryawanBaru && (
+                        <span className="ml-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                          (Prorata {myPublishedPayslip.totalJadwalKerja}/{myPublishedPayslip.totalHariKerjaPeriodePenuh || myPublishedPayslip.totalJadwalKerja}h)
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-mono font-bold shrink-0">Rp {myPublishedPayslip.gajiPokok.toLocaleString('id-ID')}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-600 dark:text-slate-300">Tunjangan</span>
-                    <span className="font-mono font-bold">Rp {myPublishedPayslip.tunjangan.toLocaleString('id-ID')}</span>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Tunjangan
+                      {myPublishedPayslip.isProrataKaryawanBaru && (myPublishedPayslip.tunjanganBulanan || 0) > 0 && (
+                        <span className="ml-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                          (Prorata)
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-mono font-bold shrink-0">Rp {myPublishedPayslip.tunjangan.toLocaleString('id-ID')}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600 dark:text-slate-300">

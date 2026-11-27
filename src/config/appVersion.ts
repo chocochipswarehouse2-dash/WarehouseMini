@@ -15,21 +15,34 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.35.0",
-  "versionCode": 550,
+  "version": "v2.36.0",
+  "versionCode": 560,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v550-1016",
-  "releaseTitle": "WMS v2.35.0 — Aturan Potongan Gaji Lengkap, Edit Absensi Inline, & Publish Slip Gaji",
+  "buildHash": "wms-261127-v560-1059",
+  "releaseTitle": "WMS v2.36.0 — Prorata Gaji Karyawan Baru, Join Date & Pemilih Periode Terpisah",
   "releaseNotes": [
-    "Aturan siklus periode administrasi & kalkulasi gaji bulanan tanggal 26 bulan lalu s/d 25 bulan berjalan (contoh: 26 Okt - 25 Nov = November)",
-    "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",
-    "Jadwal Shift (RosterShiftView) tetap ketat tanggal 1 s/d akhir bulan kalender",
-    "Perbaikan off-by-one zona waktu WIB pada getDatesInRange"
+    "Input Tanggal Bergabung (Join Date) & Tanggal Lahir ditambahkan di Master Karyawan (modal Tambah/Edit & Detail)",
+    "Tanggal sebelum join date otomatis berstatus Belum Bergabung (Pra-Join) tanpa Alpha/Bolos atau penalti KPI, dengan prorata Gaji Pokok & Tunjangan proporsional hari kerja aktif",
+    "Pemilih periode 26-25 di HR Rekap dipisah menjadi dropdown Nama Bulan (Januari-Desember) + panah bulan & field Tahun manual"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.35.0",
+    "versionCode": 550,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v550-1016",
+    "releaseTitle": "WMS v2.35.0 — Aturan Potongan Gaji Lengkap, Edit Absensi Inline, & Publish Slip Gaji",
+    "releaseNotes": [
+      "Aturan siklus periode administrasi & kalkulasi gaji bulanan tanggal 26 bulan lalu s/d 25 bulan berjalan (contoh: 26 Okt - 25 Nov = November)",
+      "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",
+      "Jadwal Shift (RosterShiftView) tetap ketat tanggal 1 s/d akhir bulan kalender",
+      "Perbaikan off-by-one zona waktu WIB pada getDatesInRange"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.34.1",
     "versionCode": 541,
@@ -111,17 +124,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "buildDate": "26 November 2026",
     "buildHash": "wms-261126-v520-0118",
     "releaseTitle": "WMS v2.32.0 — Pembaruan Sistem & Optimasi Operasional",
-    "releaseNotes": [
-      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.31.1",
-    "versionCode": 511,
-    "buildDate": "25 November 2026",
-    "buildHash": "wms-261125-v511-1840",
-    "releaseTitle": "WMS v2.31.1 — Cetak Surat Jalan SPS Tanpa Kolom Lokasi",
     "releaseNotes": [
       "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
     ],

@@ -33,6 +33,8 @@ import {
   Unlock,
   Loader2,
   Check,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { isSuperadmin, hasPermission } from '../../services/permissions';
 import {
@@ -83,6 +85,7 @@ import {
   SummaryKaryawanRow,
 } from '../../utils/hrExportUtils';
 import {
+  INDONESIAN_MONTHS,
   getActivePayrollPeriod,
   getPayrollPeriodByMonthKey,
   getPreviousPayrollPeriod,
@@ -114,6 +117,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
   // Siklus periode administrasi & gaji: Tgl 26 bulan sebelumnya s/d Tgl 25 bulan berjalan
   const initialPayrollPeriod = useMemo(() => getActivePayrollPeriod(), []);
   const [selectedPayrollMonth, setSelectedPayrollMonth] = useState<string>(initialPayrollPeriod.monthKey);
+  const [payrollYearDraft, setPayrollYearDraft] = useState<string>(String(initialPayrollPeriod.year));
   const [startDate, setStartDate] = useState<string>(initialPayrollPeriod.startDate);
   const [endDate, setEndDate] = useState<string>(initialPayrollPeriod.endDate);
 
@@ -192,12 +196,52 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     [startDate, endDate]
   );
 
+  const [selectedPayrollYear, selectedPayrollMonthNum] = useMemo(() => {
+    const parts = (selectedPayrollMonth || '').split('-').map(Number);
+    const fallbackYear = new Date().getFullYear();
+    const fallbackMonth = new Date().getMonth() + 1;
+    if (
+      parts.length === 2 &&
+      Number.isFinite(parts[0]) &&
+      Number.isFinite(parts[1]) &&
+      parts[1] >= 1 &&
+      parts[1] <= 12
+    ) {
+      return [parts[0], parts[1]];
+    }
+    return [fallbackYear, fallbackMonth];
+  }, [selectedPayrollMonth]);
+
+  useEffect(() => {
+    setPayrollYearDraft(String(selectedPayrollYear));
+  }, [selectedPayrollYear]);
+
   const handleSelectPayrollMonth = (monthKey: string) => {
     if (!monthKey) return;
     const period = getPayrollPeriodByMonthKey(monthKey);
     setSelectedPayrollMonth(period.monthKey);
+    setPayrollYearDraft(String(period.year));
     setStartDate(period.startDate);
     setEndDate(period.endDate);
+  };
+
+  const handleStepPayrollMonth = (deltaMonths: number) => {
+    const nextDate = new Date(selectedPayrollYear, selectedPayrollMonthNum - 1 + deltaMonths, 1);
+    const nextKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}`;
+    handleSelectPayrollMonth(nextKey);
+  };
+
+  const handlePayrollYearInputChange = (rawVal: string) => {
+    const cleanDigits = rawVal.replace(/\D/g, '').slice(0, 4);
+    setPayrollYearDraft(cleanDigits);
+    if (cleanDigits.length === 4) {
+      const parsedYear = Number(cleanDigits);
+      if (parsedYear >= 2000 && parsedYear <= 2100) {
+        handleSelectPayrollMonth(
+          `${parsedYear}-${String(selectedPayrollMonthNum).padStart(2, '0')}`
+        );
+      }
+    }
   };
 
   // Set Date Range Presets (Mengikuti siklus administrasi karyawan Tgl 26 bulan lalu - Tgl 25 bulan berjalan)
@@ -1088,17 +1132,66 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
-          {/* Pemilih Periode Bulan (Otomatis 26 bulan lalu - 25 bulan terpilih) */}
-          <div>
-            <label className="block text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-1">
-              Periode Bulan (26–25)
-            </label>
-            <input
-              type="month"
-              value={selectedPayrollMonth}
-              onChange={(e) => handleSelectPayrollMonth(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70 font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
+          {/* Pemilih Periode Bulan (Nama Bulan Saja) & Tahun Terpisah */}
+          <div className="sm:col-span-2 lg:col-span-2">
+            <div className="grid grid-cols-12 gap-2">
+              <div className="col-span-8">
+                <label className="block text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                  Periode Bulan (26–25)
+                </label>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleStepPayrollMonth(-1)}
+                    title="Bulan Sebelumnya"
+                    className="p-2 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer shrink-0"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <select
+                    aria-label="Pilih Bulan Periode"
+                    value={selectedPayrollMonthNum}
+                    onChange={(e) => {
+                      const m = Number(e.target.value) || 1;
+                      handleSelectPayrollMonth(
+                        `${selectedPayrollYear}-${String(m).padStart(2, '0')}`
+                      );
+                    }}
+                    className="w-full min-w-0 px-2.5 py-2 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    {INDONESIAN_MONTHS.map((mName, idx) => (
+                      <option key={mName} value={idx + 1}>
+                        {mName}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => handleStepPayrollMonth(1)}
+                    title="Bulan Berikutnya"
+                    className="p-2 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 transition-colors cursor-pointer shrink-0"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+              <div className="col-span-4">
+                <label className="block text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+                  Tahun
+                </label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={4}
+                  aria-label="Tahun Periode"
+                  value={payrollYearDraft}
+                  onChange={(e) => handlePayrollYearInputChange(e.target.value)}
+                  onBlur={() => setPayrollYearDraft(String(selectedPayrollYear))}
+                  placeholder={String(new Date().getFullYear())}
+                  className="w-full px-2.5 py-2 rounded-xl bg-indigo-50/60 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 font-bold font-mono text-center text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
           </div>
 
           {/* Tanggal Mulai */}
@@ -1590,7 +1683,17 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                         className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
                       >
                         <td className="py-3 px-3">
-                          <div className="font-extrabold text-slate-900 dark:text-white">{r.nama}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-extrabold text-slate-900 dark:text-white">{r.nama}</span>
+                            {r.isProrataKaryawanBaru && (
+                              <span
+                                title={`Karyawan baru masuk ${r.tglBergabung || '-'}. Pra-Join (${r.praJoinLabel || `${r.totalHariBelumBergabung} hari`}) tidak dihitung Bolos.`}
+                                className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+                              >
+                                Prorata · Join {r.tglBergabung}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-[10px] text-slate-400 font-mono">
                             {r.nik} · {r.divisi}
                           </div>
@@ -1609,9 +1712,19 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                             )}{' '}
                             · Telat: {r.totalMenitTerlambat}m
                           </div>
+                          {r.totalHariBelumBergabung > 0 && (
+                            <div className="text-[10px] font-semibold text-indigo-600 dark:text-indigo-300">
+                              Pra-Join: {r.totalHariBelumBergabung} hari (Belum Bergabung)
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-700 dark:text-slate-200">
-                          {showSalaryNumbers ? `Rp ${r.gajiPokok.toLocaleString('id-ID')}` : 'Rp ••••••'}
+                          <div>{showSalaryNumbers ? `Rp ${r.gajiPokok.toLocaleString('id-ID')}` : 'Rp ••••••'}</div>
+                          {r.isProrataKaryawanBaru && (
+                            <div className="text-[10px] text-indigo-500 font-sans font-semibold">
+                              Prorata {r.totalJadwalKerja}/{r.totalHariKerjaPeriodePenuh}h
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300">
                           {r.tunjangan > 0
@@ -1697,10 +1810,15 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                     className="p-3.5 flex items-center justify-between gap-3 active:bg-slate-50 dark:active:bg-slate-900/50 cursor-pointer"
                   >
                     <div className="min-w-0 flex-1 space-y-0.5">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
                           {r.nama}
                         </span>
+                        {r.isProrataKaryawanBaru && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 shrink-0">
+                            Prorata · Join {r.tglBergabung}
+                          </span>
+                        )}
                         {publishedPeriodDoc?.slipsByNik?.[(r.nik || '').trim().toUpperCase()] && (
                           <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 shrink-0">
                             Published
@@ -3128,19 +3246,52 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
             </div>
 
             <div className="space-y-2.5 text-xs">
+              {selectedPayrollSlip.isProrataKaryawanBaru && (
+                <div className="p-3 rounded-2xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70 text-[11px] text-indigo-900 dark:text-indigo-200 space-y-1">
+                  <div className="font-extrabold flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span>Karyawan Baru · Perhitungan Gaji Prorata (Join: {selectedPayrollSlip.tglBergabung})</span>
+                  </div>
+                  <p>
+                    Tanggal <strong>{selectedPayrollSlip.praJoinLabel || `${selectedPayrollSlip.totalHariBelumBergabung} hari`}</strong> ditandai sebagai{' '}
+                    <span className="font-bold underline decoration-indigo-400">Belum Bergabung (Pra-Join)</span> — tidak dihitung Bolos/Alpha &amp; tidak memotong KPI.
+                  </p>
+                  <p className="text-indigo-700 dark:text-indigo-300">
+                    Gaji Pokok &amp; Tunjangan diprorata <strong>{selectedPayrollSlip.totalJadwalKerja}/{selectedPayrollSlip.totalHariKerjaPeriodePenuh} hari kerja</strong> (dari bulanan penuh{' '}
+                    {showSalaryNumbers
+                      ? `Rp ${selectedPayrollSlip.gajiPokokBulanan.toLocaleString('id-ID')}`
+                      : 'Rp ••••••'}
+                    ).
+                  </p>
+                </div>
+              )}
               <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 space-y-2">
                 <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
                   Komponen Pendapatan
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Gaji Pokok</span>
-                  <span className="font-mono font-bold">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Gaji Pokok
+                    {selectedPayrollSlip.isProrataKaryawanBaru && (
+                      <span className="ml-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                        (Prorata {selectedPayrollSlip.totalJadwalKerja}/{selectedPayrollSlip.totalHariKerjaPeriodePenuh}h)
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-mono font-bold shrink-0">
                     {showSalaryNumbers ? `Rp ${selectedPayrollSlip.gajiPokok.toLocaleString('id-ID')}` : 'Rp ••••••'}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Tunjangan</span>
-                  <span className="font-mono font-bold">
+                <div className="flex justify-between gap-2">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Tunjangan
+                    {selectedPayrollSlip.isProrataKaryawanBaru && selectedPayrollSlip.tunjanganBulanan > 0 && (
+                      <span className="ml-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold">
+                        (Prorata)
+                      </span>
+                    )}
+                  </span>
+                  <span className="font-mono font-bold shrink-0">
                     {showSalaryNumbers ? `Rp ${selectedPayrollSlip.tunjangan.toLocaleString('id-ID')}` : 'Rp ••••••'}
                   </span>
                 </div>

@@ -35,6 +35,13 @@ export interface PublishedEmployeePayslip {
   rangeLabel: string;
   publishedAt: string;
   publishedBy: string;
+  tglBergabung?: string;
+  isProrataKaryawanBaru?: boolean;
+  totalHariKerjaPeriodePenuh?: number;
+  totalHariBelumBergabung?: number;
+  praJoinLabel?: string;
+  gajiPokokBulanan?: number;
+  tunjanganBulanan?: number;
   totalJadwalKerja: number;
   totalHadir: number;
   totalHariDibayar: number;
@@ -107,6 +114,13 @@ export function buildPublishedPayslipSnapshot(
     rangeLabel: period.rangeLabel,
     publishedAt,
     publishedBy,
+    tglBergabung: row.tglBergabung,
+    isProrataKaryawanBaru: row.isProrataKaryawanBaru,
+    totalHariKerjaPeriodePenuh: row.totalHariKerjaPeriodePenuh,
+    totalHariBelumBergabung: row.totalHariBelumBergabung,
+    praJoinLabel: row.praJoinLabel,
+    gajiPokokBulanan: row.gajiPokokBulanan,
+    tunjanganBulanan: row.tunjanganBulanan,
     totalJadwalKerja: row.totalJadwalKerja,
     totalHadir: row.totalHadir,
     totalHariDibayar: row.totalHariDibayar,

@@ -19,7 +19,7 @@ import { calculateKpiAbsensiBatch } from './kpiCalculator';
 export const PAYROLL_CUTOFF_START_DAY = 26;
 export const PAYROLL_CUTOFF_END_DAY = 25;
 
-const INDONESIAN_MONTHS = [
+export const INDONESIAN_MONTHS = [
   'Januari',
   'Februari',
   'Maret',
@@ -138,6 +138,19 @@ export interface EmployeeMonthlyPayrollRow {
   payrollPeriodLabel: string;
   startDate: string;
   endDate: string;
+  /** Tanggal bergabung karyawan (YYYY-MM-DD) jika diisi di Master Karyawan */
+  tglBergabung?: string;
+  /** True jika karyawan bergabung di tengah periode (tgl_bergabung > startDate) sehingga gaji diprorata */
+  isProrataKaryawanBaru: boolean;
+  /** Total hari kerja standar 1 periode penuh (sebagai pembagi prorata & upah harian) */
+  totalHariKerjaPeriodePenuh: number;
+  /** Jumlah hari kalender sebelum tanggal join dalam periode ini (status: Belum Bergabung / Pra-Join) */
+  totalHariBelumBergabung: number;
+  /** Rentang tanggal Pra-Join dalam periode ini, mis. "26 Okt 2026 – 10 Nov 2026 (16 hari)" */
+  praJoinLabel?: string;
+  /** Gaji pokok & tunjangan penuh per bulan (sebelum prorata karyawan baru) */
+  gajiPokokBulanan: number;
+  tunjanganBulanan: number;
   totalJadwalKerja: number;
   /** Hari dengan absen masuk & pulang lengkap */
   totalHadir: number;
@@ -592,46 +605,22 @@ export function calculateMonthlyPayroll({
     const empRosterMap = rosterByNikDate.get(nikUpper) || new Map<string, RosterShiftRecord>();
     const empCutiList = cutiByNik.get(nikUpper) || [];
 
-    const gajiPokok = Math.max(0, Number(emp?.gaji_pokok) || 0);
-    const tunjangan = Math.max(0, Number(emp?.tunjangan) || 0);
+    const gajiPokokBulanan = Math.max(0, Number(emp?.gaji_pokok) || 0);
+    const tunjanganBulanan = Math.max(0, Number(emp?.tunjangan) || 0);
     const rateLembur = Math.max(0, Number(emp?.rate_lembur) || 10000);
     const saldoKasbon = Math.max(0, Number(emp?.saldo_kasbon) || 0);
+
+    const rawJoinDate = (emp?.tgl_bergabung || '').trim();
+    const joinDate = /^\d{4}-\d{2}-\d{2}$/.test(rawJoinDate) ? rawJoinDate : '';
+    const isProrataKaryawanBaru = Boolean(joinDate && joinDate > period.startDate);
+    const effectiveEmpStartDate = isProrataKaryawanBaru ? joinDate : period.startDate;
 
     const uangLembur =
       summary.totalUangLembur > 0
         ? Math.round(summary.totalUangLembur)
         : Math.round(summary.totalJamLembur * rateLembur);
 
-    // Kumpulkan seluruh tanggal kerja terjadwal pada periode evaluasi (roster non-libur, atau Senin-Sabtu jika belum ada roster)
-    const scheduledDatesMap = new Map<string, { shiftJadwal: string; rosterRec?: RosterShiftRecord }>();
-    if (empRosterMap.size > 0) {
-      empRosterMap.forEach((r, tgl) => {
-        if (!isOffText(r.shift)) {
-          scheduledDatesMap.set(tgl, { shiftJadwal: r.shift || 'Shift 1', rosterRec: r });
-        }
-      });
-    } else {
-      allDatesInEvalRange.forEach((d) => {
-        const dayOfWeek = new Date(d + 'T00:00:00').getDay();
-        if (dayOfWeek !== 0) {
-          scheduledDatesMap.set(d, { shiftJadwal: 'Shift 1' });
-        }
-      });
-    }
-
-    // Sertakan juga tanggal di mana karyawan melakukan tap presensi non-libur
-    empPresensiMap.forEach((p, tgl) => {
-      if (!scheduledDatesMap.has(tgl) && !isOffText(p.status) && !isOffText(p.shift)) {
-        scheduledDatesMap.set(tgl, {
-          shiftJadwal: empRosterMap.get(tgl)?.shift || p.shift || 'Shift 1',
-          rosterRec: empRosterMap.get(tgl),
-        });
-      }
-    });
-
-    const sortedDates = Array.from(scheduledDatesMap.keys()).sort();
-
-    // Hitung jumlah hari kerja efektif (kecualikan hari ini yang masih jam kerja / belum tap pulang)
+    // Helper status hari ini yang masih jam kerja / belum tap pulang
     const isTodayStillWorking = (tgl: string): boolean => {
       if (tgl !== todayStr) return false;
       const pToday = empPresensiMap.get(tgl);
@@ -645,10 +634,86 @@ export function calculateMonthlyPayroll({
       return !(hasM && hasP);
     };
 
+    // Hitung segmen Pra-Join (tanggal < Tanggal Bergabung) agar TIDAK pernah dihitung Alpha/Bolos
+    const preJoinDates = isProrataKaryawanBaru
+      ? allDatesInEvalRange.filter((d) => d < effectiveEmpStartDate)
+      : [];
+    const totalHariBelumBergabung = preJoinDates.length;
+    const preJoinWorkDaysCount = preJoinDates.filter(
+      (d) => !isTodayStillWorking(d) && new Date(d + 'T00:00:00').getDay() !== 0
+    ).length;
+
+    let praJoinLabel: string | undefined;
+    if (totalHariBelumBergabung > 0) {
+      const lastPreJoinIso = preJoinDates[preJoinDates.length - 1];
+      praJoinLabel = `${formatIndonesianShortDate(preJoinDates[0])} – ${formatIndonesianShortDate(lastPreJoinIso)} (${totalHariBelumBergabung} hari)`;
+    }
+
+    // Kumpulkan tanggal kerja terjadwal MULAI dari tanggal efektif bergabung (>= effectiveEmpStartDate)
+    const scheduledDatesMap = new Map<string, { shiftJadwal: string; rosterRec?: RosterShiftRecord }>();
+    if (effectiveEmpStartDate <= effectiveEvalEndDate) {
+      const postJoinRosterEntries = Array.from(empRosterMap.entries()).filter(
+        ([tgl]) => tgl >= effectiveEmpStartDate
+      );
+      if (postJoinRosterEntries.length > 0) {
+        postJoinRosterEntries.forEach(([tgl, r]) => {
+          if (!isOffText(r.shift)) {
+            scheduledDatesMap.set(tgl, { shiftJadwal: r.shift || 'Shift 1', rosterRec: r });
+          }
+        });
+      } else {
+        allDatesInEvalRange.forEach((d) => {
+          if (d < effectiveEmpStartDate) return;
+          const dayOfWeek = new Date(d + 'T00:00:00').getDay();
+          if (dayOfWeek !== 0) {
+            scheduledDatesMap.set(d, { shiftJadwal: 'Shift 1' });
+          }
+        });
+      }
+
+      // Sertakan juga tanggal >= joinDate di mana karyawan melakukan tap presensi non-libur
+      empPresensiMap.forEach((p, tgl) => {
+        if (tgl < effectiveEmpStartDate) return;
+        if (!scheduledDatesMap.has(tgl) && !isOffText(p.status) && !isOffText(p.shift)) {
+          scheduledDatesMap.set(tgl, {
+            shiftJadwal: empRosterMap.get(tgl)?.shift || p.shift || 'Shift 1',
+            rosterRec: empRosterMap.get(tgl),
+          });
+        }
+      });
+    }
+
+    const sortedDates = Array.from(scheduledDatesMap.keys()).sort();
     const evaluatedDates = sortedDates.filter((d) => !isTodayStillWorking(d));
-    const totalJadwalKerja = evaluatedDates.length > 0 ? evaluatedDates.length : summary.totalJadwalKerja;
-    const pembagiHari = totalJadwalKerja > 0 ? totalJadwalKerja : resolvedConfig.defaultWorkingDaysDivisor;
-    const upahHarian = gajiPokok > 0 ? Math.round(gajiPokok / pembagiHari) : 0;
+
+    const totalJadwalKerja = isProrataKaryawanBaru
+      ? evaluatedDates.length
+      : evaluatedDates.length > 0
+      ? evaluatedDates.length
+      : summary.totalJadwalKerja;
+
+    const totalHariKerjaPeriodePenuh = isProrataKaryawanBaru
+      ? totalJadwalKerja + preJoinWorkDaysCount
+      : totalJadwalKerja;
+
+    const pembagiHari =
+      totalHariKerjaPeriodePenuh > 0
+        ? totalHariKerjaPeriodePenuh
+        : resolvedConfig.defaultWorkingDaysDivisor;
+    const upahHarian = gajiPokokBulanan > 0 ? Math.round(gajiPokokBulanan / pembagiHari) : 0;
+
+    // Prorata Gaji Pokok & Tunjangan jika karyawan baru masuk di tengah periode
+    const gajiPokok = isProrataKaryawanBaru
+      ? totalJadwalKerja > 0
+        ? Math.min(gajiPokokBulanan, Math.round((gajiPokokBulanan * totalJadwalKerja) / pembagiHari))
+        : 0
+      : gajiPokokBulanan;
+
+    const tunjangan = isProrataKaryawanBaru
+      ? totalJadwalKerja > 0
+        ? Math.min(tunjanganBulanan, Math.round((tunjanganBulanan * totalJadwalKerja) / pembagiHari))
+        : 0
+      : tunjanganBulanan;
 
     let totalHadir = 0;
     let totalHariDibayar = 0;
@@ -847,6 +912,13 @@ export function calculateMonthlyPayroll({
       payrollPeriodLabel: period.label,
       startDate: period.startDate,
       endDate: period.endDate,
+      tglBergabung: joinDate || undefined,
+      isProrataKaryawanBaru,
+      totalHariKerjaPeriodePenuh,
+      totalHariBelumBergabung,
+      praJoinLabel,
+      gajiPokokBulanan,
+      tunjanganBulanan,
       totalJadwalKerja,
       totalHadir,
       totalHariDibayar,
@@ -1003,6 +1075,7 @@ export function exportMonthlyPayrollToXlsx(result: MonthlyPayrollResult): void {
       'Pot. Kasbon (Rp)',
       'Total Potongan (Rp)',
       'Gaji Bersih / Take-Home Pay (Rp)',
+      'Status Masuk / Prorata',
     ],
   ];
 
@@ -1033,6 +1106,11 @@ export function exportMonthlyPayrollToXlsx(result: MonthlyPayrollResult): void {
       r.potonganKasbon,
       r.totalPotongan,
       r.gajiBersih,
+      r.isProrataKaryawanBaru
+        ? `Prorata · Join ${r.tglBergabung || '-'} · Pra-Join: ${r.praJoinLabel || `${r.totalHariBelumBergabung} hari`}`
+        : r.tglBergabung
+        ? `Penuh (Join ${r.tglBergabung})`
+        : 'Penuh',
     ]);
   });
 
@@ -1062,6 +1140,7 @@ export function exportMonthlyPayrollToXlsx(result: MonthlyPayrollResult): void {
     totals.totalPotonganKasbon,
     totals.totalPotongan,
     totals.totalGajiBersih,
+    '',
   ]);
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);
@@ -1091,6 +1170,7 @@ export function exportMonthlyPayrollToXlsx(result: MonthlyPayrollResult): void {
     { wch: 15 },
     { wch: 18 },
     { wch: 26 },
+    { wch: 36 },
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, `Gaji ${period.monthKey}`);

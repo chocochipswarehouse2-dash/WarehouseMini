@@ -4,6 +4,18 @@
 
 ---
 
+## v2.36.0 — 27 November 2026
+**Modul**: HR & Admin — Prorata Gaji Karyawan Baru (`Pra-Join`), Input Tanggal Join, & Pemilih Periode Bulan/Tahun Terpisah (`src/components/hr/KaryawanView.tsx`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`, `src/utils/hrPayrollUtils.ts`, `src/utils/kpiCalculator.ts`, `src/utils/hrExportUtils.ts`, `src/services/hrPayslipService.ts`)
+- **Input Tanggal Bergabung (`tgl_bergabung`) & Tanggal Lahir di Master Karyawan (`KaryawanView.tsx`)**:
+  - Menambahkan input tanggal `Tanggal Bergabung (Join Date)` dan `Tanggal Lahir` di modal Tambah/Edit Karyawan serta menampilkannya di modal Detail Karyawan agar tanggal masuk tercatat akurat di Supabase (`karyawan.tgl_bergabung`).
+- **Status `Belum Bergabung (Pra-Join)` & Prorata Gaji Karyawan Baru (`hrPayrollUtils.ts`, `kpiCalculator.ts`, `hrExportUtils.ts`, `hrPayslipService.ts`)**:
+  - Jika karyawan masuk di tengah siklus 26–25 (mis. join `11 Nov` pada periode `26 Okt – 25 Nov`), tanggal sebelum `tgl_bergabung` (`26 Okt – 10 Nov`) ditandai sebagai **`Belum Bergabung (Pra-Join)`** — **tidak pernah dihitung Alpha/Bolos**, tidak memotong KPI (`effectiveStartDate`), dan tidak masuk daftar ketidakhadiran.
+  - `gajiPokok` dan `tunjangan` diprorata proporsional terhadap hari kerja aktif (`totalJadwalKerja / totalHariKerjaPeriodePenuh`), sementara `upahHarian` tetap mengacu pada pembagi periode penuh; badge `Prorata · Join ...` dan banner informasi Pra-Join tampil jelas di tabel gaji, modal Slip Gaji HR, tab `Slip Gaji` karyawan (`PresensiView.tsx`), cetak PDF, serta kolom `Status Masuk / Prorata` pada ekspor Excel.
+- **Pemilih Periode Bulan & Tahun Terpisah (`HrRekapView.tsx`)**:
+  - Mengganti `<input type="month">` (`2026-12`) dengan dropdown yang hanya menampilkan **nama bulan** (`Januari` – `Desember`) disertai tombol navigasi `‹` / `›` dan field **Tahun** terpisah yang otomatis terisi tahun berjalan serta dapat diubah manual ke tahun tertentu.
+
+---
+
 ## v2.35.0 — 27 November 2026
 **Modul**: HR & Admin — Aturan Potongan Gaji Lengkap, Edit Absensi Ketidakhadiran, & Publish Slip Gaji (`src/utils/hrPayrollUtils.ts`, `src/services/hrPayslipService.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`, `src/services/supabase.ts`)
 - **Aturan Kalkulasi Gaji Akurat (`hrPayrollUtils.ts`)**:

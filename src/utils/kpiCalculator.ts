@@ -8,7 +8,7 @@ import {
 } from '../types';
 
 interface KpiCalculatorParams {
-  karyawan: { nik: string; nama: string; divisi?: string };
+  karyawan: { nik: string; nama: string; divisi?: string; tgl_bergabung?: string | null };
   presensiList: PresensiRecord[];
   rosterList: RosterShiftRecord[];
   lemburList?: LemburRecord[];
@@ -59,23 +59,55 @@ export function calculateKpiAbsensi({
 }: KpiCalculatorParams): KpiAbsensiSummary {
   const nikUpper = (karyawan.nik || '').trim().toUpperCase();
 
-  // Effective cutoff date: jangan pernah menghukum tanggal masa depan atau hari ini yang belum selesai shift-nya
+  // Effective cutoff date: jangan pernah menghukum tanggal masa depan, hari ini yang belum selesai,
+  // atau tanggal sebelum karyawan resmi bergabung (Pra-Join)
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const effectiveEndDate = endDate > todayStr ? todayStr : endDate;
+  const joinDate =
+    karyawan.tgl_bergabung && /^\d{4}-\d{2}-\d{2}$/.test(karyawan.tgl_bergabung.trim())
+      ? karyawan.tgl_bergabung.trim()
+      : '';
+  const effectiveStartDate = joinDate && joinDate > startDate ? joinDate : startDate;
 
-  // Filter relevant records for this staff within effective date range (<= today)
+  if (effectiveStartDate > effectiveEndDate) {
+    return {
+      nik: nikUpper,
+      nama: karyawan.nama,
+      divisi: karyawan.divisi || 'Warehouse',
+      totalHariKerja: 0,
+      totalHadir: 0,
+      totalOnTime: 0,
+      totalTerlambat: 0,
+      totalMenitTerlambat: 0,
+      totalPulangNormal: 0,
+      totalPulangAwalIzin: 0,
+      totalPulangAwalTanpaIzin: 0,
+      totalCutiIzin: 0,
+      totalAlpha: 0,
+      totalLemburJam: 0,
+      persenKehadiran: 100,
+      persenOnTime: 100,
+      skorBerangkat: 100,
+      skorPulang: 100,
+      nilaiKpiAbsensi: 100,
+      grade: 'A+',
+      labelStatus: 'Belum Bergabung (Pra-Join)',
+    };
+  }
+
+  // Filter relevant records for this staff within effective date range (tgl_bergabung..today)
   const myPresensi = presensiList.filter(
     (p) =>
       (p.nik || '').trim().toUpperCase() === nikUpper &&
-      p.tanggal >= startDate &&
+      p.tanggal >= effectiveStartDate &&
       p.tanggal <= effectiveEndDate
   );
 
   const myRoster = rosterList.filter(
     (r) =>
       (r.nik || '').trim().toUpperCase() === nikUpper &&
-      r.tanggal >= startDate &&
+      r.tanggal >= effectiveStartDate &&
       r.tanggal <= effectiveEndDate
   );
 
@@ -112,7 +144,7 @@ export function calculateKpiAbsensi({
     (l) =>
       (l.nik || '').trim().toUpperCase() === nikUpper &&
       l.status === 'Disetujui' &&
-      l.tanggal >= startDate &&
+      l.tanggal >= effectiveStartDate &&
       l.tanggal <= effectiveEndDate
   );
 
@@ -120,14 +152,14 @@ export function calculateKpiAbsensi({
     (c) =>
       (c.nik || '').trim().toUpperCase() === nikUpper &&
       c.status === 'Disetujui' &&
-      !(c.tgl_selesai < startDate || c.tgl_mulai > effectiveEndDate)
+      !(c.tgl_selesai < effectiveStartDate || c.tgl_mulai > effectiveEndDate)
   );
 
   const myIzinPulang = izinPulangAwalList.filter(
     (i) =>
       (i.nik || '').trim().toUpperCase() === nikUpper &&
       i.status === 'Disetujui' &&
-      i.tanggal >= startDate &&
+      i.tanggal >= effectiveStartDate &&
       i.tanggal <= effectiveEndDate
   );
 
@@ -375,7 +407,7 @@ export function calculateKpiAbsensiBatch({
   startDate,
   endDate,
 }: {
-  karyawanList: { nik: string; nama: string; divisi?: string }[];
+  karyawanList: { nik: string; nama: string; divisi?: string; tgl_bergabung?: string | null }[];
   presensiList: PresensiRecord[];
   rosterList: RosterShiftRecord[];
   lemburList?: LemburRecord[];
