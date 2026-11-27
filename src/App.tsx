@@ -5471,6 +5471,7 @@ export default function App() {
 
       {/* Non-blocking Floating Download Progress Widget */}
       <AppUpdateFloatingWidget
+        session={session}
         onOpenModal={() => setIsUpdateModalOpen(true)}
         onNotify={showToast}
       />

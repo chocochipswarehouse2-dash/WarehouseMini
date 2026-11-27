@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.33.1",
-  "versionCode": 531,
-  "buildDate": "26 November 2026",
-  "buildHash": "wms-261126-v531-1206",
-  "releaseTitle": "WMS v2.33.1 — Proteksi Reset 0 Pcs & Undo Reset Picking",
+  "version": "v2.33.2",
+  "versionCode": 532,
+  "buildDate": "27 November 2026",
+  "buildHash": "wms-261127-v532-0050",
+  "releaseTitle": "WMS v2.33.2 — Catatan Rilis Khusus Owner Warehouse",
   "releaseNotes": [
-    "Hapus tombol Reset 0 Pcs di sebelah Lanjutkan Picking pada kartu antrean agar tidak kepencet tidak sengaja",
-    "Wajib ketik RESET untuk konfirmasi reset progres + backup Undo Reset otomatis 24 jam ke Supabase & draft lokal"
+    "Catatan Rilis Terbaru dan Riwayat Pembaruan Sebelumnya di modal pembaruan kini hanya tampil untuk akun owner @warehouse",
+    "Tooltip floating widget pembaruan menyesuaikan peran akun non-owner"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.33.1",
+    "versionCode": 531,
+    "buildDate": "26 November 2026",
+    "buildHash": "wms-261126-v531-1206",
+    "releaseTitle": "WMS v2.33.1 — Proteksi Reset 0 Pcs & Undo Reset Picking",
+    "releaseNotes": [
+      "Hapus tombol Reset 0 Pcs di sebelah Lanjutkan Picking pada kartu antrean agar tidak kepencet tidak sengaja",
+      "Wajib ketik RESET untuk konfirmasi reset progres + backup Undo Reset otomatis 24 jam ke Supabase & draft lokal"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.33.0",
     "versionCode": 530,
@@ -103,19 +115,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseTitle": "WMS v2.30.0 — Riwayat Picking Lengkap, Multi-Lokasi Split & Picker Per-Produk",
     "releaseNotes": [
       "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.29.1",
-    "versionCode": 491,
-    "buildDate": "24 November 2026",
-    "buildHash": "wms-261124-v491-0340",
-    "releaseTitle": "WMS v2.29.1 — Optimasi PostgREST Egress Lintas Layanan",
-    "releaseNotes": [
-      "Watermark delta sync pengecekan_sj & lazy-load QC Mutasi",
-      "Watermark gate wms_settings & recount_audit_results + probe ringan 60s PickingTasksView",
-      "Guard watermark penerimaan_produksi, manual_shipment, stok fisik, & skill egress guardrails"
     ],
     "minSupportedVersion": "v2.0.0"
   }

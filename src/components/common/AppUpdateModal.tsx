@@ -23,7 +23,7 @@ import {
   isNewerVersion
 } from '../../config/appVersion';
 import { UserSession } from '../../types';
-import { canAccessUpdateDatabase } from '../../services/permissions';
+import { canAccessUpdateDatabase, isWarehouseAccountOnly } from '../../services/permissions';
 import { CacheManagerPanel } from './CacheManagerPanel';
 
 interface AppUpdateModalProps {
@@ -60,6 +60,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const [isClearingCache, setIsClearingCache] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showCacheManager, setShowCacheManager] = useState(false);
+  const isOwnerWarehouse = isWarehouseAccountOnly(session);
   const userIsAdmin = canAccessUpdateDatabase(session);
 
   if (!isOpen) return null;
@@ -284,13 +285,14 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             </div>
           </div>
 
-          {/* RELEASE HIGHLIGHTS / CHANGELOG BOX */}
-          <div className="space-y-2 pt-1">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Layers className="w-3.5 h-3.5 text-primary-500" />
-                Catatan Rilis Terbaru
-              </h4>
+          {/* RELEASE HIGHLIGHTS / CHANGELOG BOX — KHUSUS OWNER (@warehouse) */}
+          {isOwnerWarehouse && (
+            <div className="space-y-2 pt-1">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-primary-500" />
+                  Catatan Rilis Terbaru
+                </h4>
               <span className="text-[10px] font-bold text-slate-400 font-mono">
                 {releaseInfo?.version || currentVersion} · {releaseInfo?.buildDate || CURRENT_APP_VERSION_INFO.buildDate}
               </span>
@@ -353,6 +355,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
               </div>
             )}
           </div>
+          )}
 
           {/* SUPERADMIN ONLY TOOLS: Database Update & Master Produk */}
           {userIsAdmin && (

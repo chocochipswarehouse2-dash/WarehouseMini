@@ -75,6 +75,10 @@ node tools/bump_version.cjs verify-release --output C:/Users/Chocochips\ Warehou
   - Never use multi-step simulated download progress bars (`setInterval`).
   - Applying an update or clearing cache (`clearCacheAndReload`) MUST preserve `localStorage` session tokens (`wms_session_token`, `wms_user_role`, `wms_user_permissions`, `wms_user_store_code`, `wms_active_staging_scans`).
 
+- **Owner-Only Release Notes Visibility (`isWarehouseAccountOnly`)**:
+  - Bagian **Catatan Rilis Terbaru** (`releaseTitle`, `releaseNotes`) dan **Riwayat Pembaruan Sebelumnya** (`VERSION_HISTORY`) di `src/components/common/AppUpdateModal.tsx` **HANYA boleh ditampilkan** jika `isWarehouseAccountOnly(session)` bernilai `true` (akun owner `@warehouse`).
+  - Seluruh akun non-owner (Admin lain, Staff Gudang, Picker, Packing, Produksi, HR, Store) tetap dapat melihat versi aktif/terbaru, tombol Perbarui/Background/Reset PWA, & Kelola Cache tanpa melihat isi catatan rilis. Tooltip di `AppUpdateFloatingWidget.tsx` juga wajib menyesuaikan peran.
+
 ### 4. Auto-Heal & Deploy
 - If `verify-release` reports any version drift or `skipWaiting: true` hazard, auto-heal it immediately, run `npm run build`, commit all 3 version files with the code changes, and push to `origin/main`.
 

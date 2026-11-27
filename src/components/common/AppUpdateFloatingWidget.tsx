@@ -3,15 +3,19 @@ import { Sparkles, RotateCw, X, Info, Check } from 'lucide-react';
 import { useAppUpdate } from '../../hooks/useAppUpdate';
 import { CURRENT_APP_VERSION_INFO, isNewerVersion } from '../../config/appVersion';
 import { DraggableFloatingBubble, BubbleDragHandle } from './DraggableFloatingBubble';
+import { UserSession } from '../../types';
+import { isWarehouseAccountOnly } from '../../services/permissions';
 
 interface AppUpdateFloatingWidgetProps {
+  session?: UserSession | null;
   onOpenModal: () => void;
   onNotify?: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
-export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = ({ onOpenModal, onNotify }) => {
+export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = ({ session = null, onOpenModal, onNotify }) => {
   const { status, latestVersion, currentVersion, releaseInfo, isMinimized, prepareUpdateInBackground, setMinimized } = useAppUpdate();
   const [isPrepared, setIsPrepared] = useState(false);
+  const isOwnerWarehouse = isWarehouseAccountOnly(session);
 
   const hasUpdate =
     status === 'available' ||
@@ -71,7 +75,7 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
         <div
           onClick={onOpenModal}
           className="flex items-center gap-2 cursor-pointer pr-1 group min-w-0 flex-1"
-          title="Lihat detail pembaruan & catatan rilis"
+          title={isOwnerWarehouse ? 'Lihat detail pembaruan & catatan rilis' : 'Lihat detail pembaruan aplikasi'}
         >
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-amber-500/20 border border-amber-400/30 text-amber-400 flex items-center justify-center shrink-0">
             <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -118,7 +122,7 @@ export const AppUpdateFloatingWidget: React.FC<AppUpdateFloatingWidgetProps> = (
             type="button"
             onClick={onOpenModal}
             className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
-            title="Lihat catatan rilis & opsi pembaruan"
+            title={isOwnerWarehouse ? 'Lihat catatan rilis & opsi pembaruan' : 'Lihat opsi pembaruan aplikasi'}
           >
             <Info className="w-3.5 h-3.5" />
           </button>

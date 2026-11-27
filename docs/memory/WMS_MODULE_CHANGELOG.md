@@ -4,6 +4,15 @@
 
 ---
 
+## v2.33.2 — 26 November 2026
+**Modul**: Pembaruan Sistem & Aplikasi (`src/components/common/AppUpdateModal.tsx`, `src/components/common/AppUpdateFloatingWidget.tsx`, `src/App.tsx`, `.agents/skills/wms-app-release-update/SKILL.md`)
+- **Catatan Rilis Update Eksklusif Akun Owner (`@warehouse`)**:
+  - Membatasi visibilitas blok **Catatan Rilis Terbaru** (`releaseTitle` & `releaseNotes`) serta **Riwayat Pembaruan Sebelumnya** (`VERSION_HISTORY`) di `AppUpdateModal` hanya saat `isWarehouseAccountOnly(session)` bernilai `true` (view akun owner `@warehouse`).
+  - Akun non-owner (Admin lain, Staff, Store, HR, Produksi) tetap mendapatkan fungsi pembaruan aplikasi, pemeriksaan versi, Kelola Cache, dan Reset PWA secara penuh tanpa menampilkan daftar catatan rilis internal.
+  - Meneruskan prop `session` ke `AppUpdateFloatingWidget` agar tooltip widget ikut menyesuaikan peran (tanpa referensi catatan rilis untuk non-owner).
+
+---
+
 ## v2.33.1 — 26 November 2026
 **Modul**: Antrean Tugas Picking (`src/components/PickingTasksView.tsx`, `src/services/supabase.ts`, `.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md`)
 - **Proteksi Tombol `Reset 0 Pcs` Anti-Kepencet & Cadangan `Undo Reset` 24 Jam**:
