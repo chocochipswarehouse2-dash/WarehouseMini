@@ -25,7 +25,9 @@ import {
   X,
   Save,
   Eye,
+  EyeOff,
   Info,
+  Wallet,
 } from 'lucide-react';
 import { isSuperadmin, hasPermission } from '../../services/permissions';
 import {
@@ -67,6 +69,17 @@ import {
   evaluatePresensiForAudit,
   SummaryKaryawanRow,
 } from '../../utils/hrExportUtils';
+import {
+  getActivePayrollPeriod,
+  getPayrollPeriodByMonthKey,
+  getPreviousPayrollPeriod,
+  detectMatchingPayrollPeriod,
+  formatLocalIsoDate,
+  calculateMonthlyPayroll,
+  exportMonthlyPayrollToXlsx,
+  BolosDeductionMode,
+  EmployeeMonthlyPayrollRow,
+} from '../../utils/hrPayrollUtils';
 
 interface HrRekapViewProps {
   session: UserSession | null;
@@ -81,22 +94,28 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
   const [editingCuti, setEditingCuti] = useState<PerijinanCutiRecord | null>(null);
   const [editingPresensi, setEditingPresensi] = useState<PresensiRecord | null>(null);
   const [selectedEmployeeDetail, setSelectedEmployeeDetail] = useState<SummaryKaryawanRow | null>(null);
+  const [selectedPayrollSlip, setSelectedPayrollSlip] = useState<EmployeeMonthlyPayrollRow | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | number | null>(null);
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
-  const startOfMonthStr = useMemo(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d.toISOString().slice(0, 10);
-  }, []);
 
-  const [startDate, setStartDate] = useState<string>(startOfMonthStr);
-  const [endDate, setEndDate] = useState<string>(todayStr);
+  // Siklus periode administrasi & gaji: Tgl 26 bulan sebelumnya s/d Tgl 25 bulan berjalan
+  const initialPayrollPeriod = useMemo(() => getActivePayrollPeriod(), []);
+  const [selectedPayrollMonth, setSelectedPayrollMonth] = useState<string>(initialPayrollPeriod.monthKey);
+  const [startDate, setStartDate] = useState<string>(initialPayrollPeriod.startDate);
+  const [endDate, setEndDate] = useState<string>(initialPayrollPeriod.endDate);
+
+  // Pengaturan kalkulasi gaji bulanan
+  const [potonganBolosMode, setPotonganBolosMode] = useState<BolosDeductionMode>('proporsional');
+  const [potonganBolosNominal, setPotonganBolosNominal] = useState<number>(100000);
+  const [potonganTerlambatPerKejadian, setPotonganTerlambatPerKejadian] = useState<number>(0);
+  const [sertakanPotonganKasbon, setSertakanPotonganKasbon] = useState<boolean>(false);
+  const [showSalaryNumbers, setShowSalaryNumbers] = useState<boolean>(true);
+
   const [selectedNik, setSelectedNik] = useState<string>('ALL');
   const [selectedDivisi, setSelectedDivisi] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [presensiShiftFilter, setPresensiShiftFilter] = useState<string>('ALL');
   const [presensiStatusFilter, setPresensiStatusFilter] = useState<string>('ALL');
-  const [activeTab, setActiveTab] = useState<'ringkasan' | 'kpi' | 'lembur' | 'cuti' | 'absensi'>('ringkasan');
+  const [activeTab, setActiveTab] = useState<'ringkasan' | 'gaji' | 'kpi' | 'lembur' | 'cuti' | 'absensi'>('ringkasan');
   const [loading, setLoading] = useState<boolean>(false);
 
   const [karyawanList, setKaryawanList] = useState<KaryawanRecord[]>([]);
@@ -136,26 +155,41 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     loadData();
   }, [loadData]);
 
-  // Set Date Range Presets
+  // Deteksi apakah rentang tanggal saat ini cocok dengan siklus cut-off 26–25
+  const matchingPayrollPeriod = useMemo(
+    () => detectMatchingPayrollPeriod(startDate, endDate),
+    [startDate, endDate]
+  );
+
+  const handleSelectPayrollMonth = (monthKey: string) => {
+    if (!monthKey) return;
+    const period = getPayrollPeriodByMonthKey(monthKey);
+    setSelectedPayrollMonth(period.monthKey);
+    setStartDate(period.startDate);
+    setEndDate(period.endDate);
+  };
+
+  // Set Date Range Presets (Mengikuti siklus administrasi karyawan Tgl 26 bulan lalu - Tgl 25 bulan berjalan)
   const setDatePreset = (preset: 'today' | 'this_month' | 'last_month' | 'all') => {
     const today = new Date();
     if (preset === 'today') {
-      const d = today.toISOString().slice(0, 10);
+      const d = formatLocalIsoDate(today);
       setStartDate(d);
       setEndDate(d);
     } else if (preset === 'this_month') {
-      const first = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
-      const last = today.toISOString().slice(0, 10);
-      setStartDate(first);
-      setEndDate(last);
+      const activePeriod = getActivePayrollPeriod(today);
+      setSelectedPayrollMonth(activePeriod.monthKey);
+      setStartDate(activePeriod.startDate);
+      setEndDate(activePeriod.endDate);
     } else if (preset === 'last_month') {
-      const first = new Date(today.getFullYear(), today.getMonth() - 1, 1).toISOString().slice(0, 10);
-      const last = new Date(today.getFullYear(), today.getMonth(), 0).toISOString().slice(0, 10);
-      setStartDate(first);
-      setEndDate(last);
+      const prevPeriod = getPreviousPayrollPeriod(today);
+      setSelectedPayrollMonth(prevPeriod.monthKey);
+      setStartDate(prevPeriod.startDate);
+      setEndDate(prevPeriod.endDate);
     } else if (preset === 'all') {
-      setStartDate('2026-01-01');
-      setEndDate('2026-12-31');
+      const y = today.getFullYear();
+      setStartDate(`${y - 1}-12-26`);
+      setEndDate(`${y}-12-25`);
     }
   };
 
@@ -493,6 +527,42 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     return list;
   }, [filteredKaryawan, kpiBatchMap]);
 
+  // Kalkulasi Gaji Bulanan (Siklus Periode 26 Bulan Lalu – 25 Bulan Berjalan; Jadwal Shift Tetap 1 – Akhir Bulan)
+  const monthlyPayroll = useMemo(() => {
+    return calculateMonthlyPayroll({
+      monthKey: matchingPayrollPeriod?.monthKey || selectedPayrollMonth,
+      startDateOverride: startDate,
+      endDateOverride: endDate,
+      karyawanList: filteredKaryawan,
+      presensiList,
+      rosterList,
+      lemburList,
+      cutiList,
+      izinPulangAwalList: izinPulangList,
+      config: {
+        potonganBolosMode,
+        potonganBolosNominal,
+        potonganTerlambatPerKejadian,
+        sertakanPotonganKasbon,
+      },
+    });
+  }, [
+    matchingPayrollPeriod,
+    selectedPayrollMonth,
+    startDate,
+    endDate,
+    filteredKaryawan,
+    presensiList,
+    rosterList,
+    lemburList,
+    cutiList,
+    izinPulangList,
+    potonganBolosMode,
+    potonganBolosNominal,
+    potonganTerlambatPerKejadian,
+    sertakanPotonganKasbon,
+  ]);
+
   // Grand Totals
   const grandTotals = useMemo(() => {
     let jamLembur = 0;
@@ -532,6 +602,24 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
 
   // Export to Excel XLSX (Multi-sheet with neat table formatting)
   const exportToXLSX = () => {
+    if (activeTab === 'gaji') {
+      if (monthlyPayroll.rows.length === 0) {
+        onShowToast('Tidak ada data karyawan untuk kalkulasi gaji.', 'warning');
+        return;
+      }
+      try {
+        exportMonthlyPayrollToXlsx(monthlyPayroll);
+        onShowToast(
+          `File Excel (.xlsx) Kalkulasi Gaji Periode ${monthlyPayroll.period.label} berhasil diunduh!`,
+          'success'
+        );
+      } catch (err: any) {
+        console.error('Error export payroll XLSX:', err);
+        onShowToast('Gagal mengekspor Excel gaji: ' + (err?.message || 'Error'), 'error');
+      }
+      return;
+    }
+
     if (summaryPerKaryawan.length === 0) {
       onShowToast('Tidak ada data karyawan untuk diekspor.', 'warning');
       return;
@@ -541,6 +629,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
         data: detailedReport,
         startDate,
         endDate,
+        periodLabel: matchingPayrollPeriod?.label,
       });
       onShowToast('File Excel (.xlsx) Rekap Karyawan berhasil diunduh!', 'success');
     } catch (err: any) {
@@ -562,6 +651,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           data: detailedReport,
           startDate,
           endDate,
+          periodLabel: matchingPayrollPeriod?.label,
         });
         onShowToast('File CSV Rekap Lengkap berhasil diunduh!', 'success');
       } catch (err: any) {
@@ -572,9 +662,17 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
     }
 
     let csvContent = 'data:text/csv;charset=utf-8,';
-    csvContent += `REKAPITULASI KARYAWAN & ABSENSI (${startDate} s/d ${endDate})\n\n`;
+    const periodeHeader = matchingPayrollPeriod
+      ? `Periode ${matchingPayrollPeriod.label} (${startDate} s/d ${endDate})`
+      : `${startDate} s/d ${endDate}`;
+    csvContent += `REKAPITULASI KARYAWAN & ABSENSI (${periodeHeader})\n\n`;
 
-    if (activeTab === 'kpi') {
+    if (activeTab === 'gaji') {
+      csvContent += 'No,NIK,Nama,Divisi,Periode,Rentang,Jadwal,Hadir,Cuti,Bolos,Terlambat,Lembur (Jam),Gaji Pokok,Tunjangan,Uang Lembur,Pendapatan Kotor,Potongan Bolos,Potongan Terlambat,Potongan Kasbon,Total Potongan,Gaji Bersih\n';
+      monthlyPayroll.rows.forEach((r) => {
+        csvContent += `${r.no},"${r.nik}","${r.nama}","${r.divisi}","${r.payrollPeriodLabel}","${r.startDate} s/d ${r.endDate}",${r.totalJadwalKerja},${r.totalHadir},${r.totalHariCuti},${r.totalHariBolos},${r.totalTerlambat},${r.totalJamLembur},${r.gajiPokok},${r.tunjangan},${r.uangLembur},${r.totalPendapatanKotor},${r.potonganBolos},${r.potonganTerlambat},${r.potonganKasbon},${r.totalPotongan},${r.gajiBersih}\n`;
+      });
+    } else if (activeTab === 'kpi') {
       csvContent += 'Rank,NIK,Nama,Divisi,Grade,Nilai KPI,Status Kedisiplinan,Skor Berangkat,Skor Pulang,% On-Time,% Kehadiran,Total Hadir,Jadwal Kerja,Terlambat (x),Total Menit Terlambat,Pulang Normal,Izin Pulang Awal,Alpha\n';
       kpiSummaryList.forEach((k, idx) => {
         csvContent += `${idx + 1},"${k.nik}","${k.nama}","${k.divisi}","${k.grade}",${k.nilaiKpiAbsensi},"${k.labelStatus}",${k.skorBerangkat},${k.skorPulang},${k.persenOnTime}%,${k.persenKehadiran}%,${k.totalHadir},${k.totalHariKerja},${k.totalTerlambat},${k.totalMenitTerlambat},${k.totalPulangNormal},${k.totalPulangAwalIzin},${k.totalAlpha}\n`;
@@ -658,9 +756,18 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       {/* FILTER BAR */}
       <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl p-5 shadow-sm space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800/80 pb-3">
-          <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
+          <div className="flex flex-wrap items-center gap-2 text-xs font-extrabold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
             <Filter className="w-4 h-4 text-primary-500" />
-            <span>Filter Periode & Karyawan</span>
+            <span>Filter Periode &amp; Karyawan</span>
+            {matchingPayrollPeriod ? (
+              <span className="normal-case font-bold text-[11px] px-2.5 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/60">
+                Periode {matchingPayrollPeriod.label} ({matchingPayrollPeriod.shortRangeLabel})
+              </span>
+            ) : (
+              <span className="normal-case font-mono font-bold text-[11px] px-2.5 py-0.5 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                Rentang Kustom: {startDate} s/d {endDate}
+              </span>
+            )}
           </div>
           {/* Quick Date Presets */}
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -675,28 +782,53 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
             <button
               type="button"
               onClick={() => setDatePreset('this_month')}
+              title={`Siklus 26–25 aktif: ${initialPayrollPeriod.label} (${initialPayrollPeriod.shortRangeLabel})`}
               className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-primary-500 hover:text-white transition-all cursor-pointer"
             >
-              Bulan Ini
+              Periode Ini (26–25)
             </button>
             <button
               type="button"
               onClick={() => setDatePreset('last_month')}
+              title="Siklus 26–25 periode sebelumnya"
               className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-primary-500 hover:text-white transition-all cursor-pointer"
             >
-              Bulan Lalu
+              Periode Lalu (26–25)
             </button>
             <button
               type="button"
               onClick={() => setDatePreset('all')}
               className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-primary-50 dark:bg-primary-950/40 text-primary-600 dark:text-primary-400 hover:bg-primary-500 hover:text-white transition-all cursor-pointer"
             >
-              Semua Periode (2026)
+              Semua Periode ({new Date().getFullYear()})
             </button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+        {/* Info Siklus Cut-Off 26-25 vs Jadwal Shift 1-Akhir Bulan */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 text-[11px] text-slate-600 dark:text-slate-300">
+          <div className="flex items-start sm:items-center gap-2">
+            <Info className="w-3.5 h-3.5 text-indigo-500 shrink-0 mt-0.5 sm:mt-0" />
+            <span>
+              <strong>Siklus Administrasi &amp; Gaji:</strong> Tgl <strong>26 bulan sebelumnya</strong> s/d Tgl <strong>25 bulan berjalan</strong> (contoh: 26 Okt – 25 Nov = <strong>November</strong>). Jadwal Shift (Roster) tetap <strong>Tgl 1 – Akhir Bulan</strong>.
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 text-xs">
+          {/* Pemilih Periode Bulan (Otomatis 26 bulan lalu - 25 bulan terpilih) */}
+          <div>
+            <label className="block text-[11px] font-bold text-indigo-600 dark:text-indigo-400 mb-1">
+              Periode Bulan (26–25)
+            </label>
+            <input
+              type="month"
+              value={selectedPayrollMonth}
+              onChange={(e) => handleSelectPayrollMonth(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/70 font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
           {/* Tanggal Mulai */}
           <div>
             <label className="block text-[11px] font-bold text-slate-400 mb-1">
@@ -706,7 +838,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
 
@@ -719,7 +851,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-medium font-mono focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
 
@@ -865,10 +997,10 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       </div>
 
       {/* TABS HEADER */}
-      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto pb-1">
+      <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar pb-1">
         <button
           onClick={() => setActiveTab('ringkasan')}
-          className={`px-2 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer ${
+          className={`px-3 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer ${
             activeTab === 'ringkasan'
               ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -877,15 +1009,26 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           Ringkasan Per Karyawan ({summaryPerKaryawan.length})
         </button>
         <button
+          onClick={() => setActiveTab('gaji')}
+          className={`px-3 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'gaji'
+              ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
+              : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          <Wallet className="w-3.5 h-3.5" />
+          <span>Kalkulasi Gaji ({monthlyPayroll.rows.length})</span>
+        </button>
+        <button
           onClick={() => setActiveTab('kpi')}
-          className={`px-2 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+          className={`px-3 py-2.5 text-xs font-extrabold rounded-2xl whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
             activeTab === 'kpi'
               ? 'bg-primary-500 text-white shadow-md shadow-primary-500/20'
               : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
           }`}
         >
           <Award className="w-3.5 h-3.5" />
-          <span>KPI & Nilai Absensi ({kpiSummaryList.length})</span>
+          <span>KPI &amp; Nilai Absensi ({kpiSummaryList.length})</span>
         </button>
         <button
           onClick={() => setActiveTab('lembur')}
@@ -918,6 +1061,305 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
           Detail Log Presensi ({filteredPresensi.length})
         </button>
       </div>
+
+      {/* TAB KALKULASI GAJI BULANAN (SIKLUS 26 BULAN LALU - 25 BULAN BERJALAN) */}
+      {activeTab === 'gaji' && (
+        <div className="space-y-4">
+          {/* Header & Parameter Kalkulasi Gaji */}
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl p-4 sm:p-5 shadow-sm space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h2 className="text-sm sm:text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Wallet className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>Kalkulasi Gaji Bulanan — Periode {monthlyPayroll.period.label}</span>
+                </h2>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  Siklus Gaji: <strong className="font-mono text-slate-700 dark:text-slate-200">{monthlyPayroll.period.startDate}</strong> s/d <strong className="font-mono text-slate-700 dark:text-slate-200">{monthlyPayroll.period.endDate}</strong> ({monthlyPayroll.period.rangeLabel}) · Sumber Jadwal Shift tetap kalender 1–akhir bulan ({monthlyPayroll.shiftCalendarMonths.previousMonth.label} &amp; {monthlyPayroll.shiftCalendarMonths.currentMonth.label}).
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowSalaryNumbers((v) => !v)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                >
+                  {showSalaryNumbers ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showSalaryNumbers ? 'Sembunyikan Nominal' : 'Tampilkan Nominal'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={exportToXLSX}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition-colors cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Export Excel Gaji (.xlsx)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Pengaturan Formula Potongan */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Metode Potongan Bolos
+                </label>
+                <select
+                  value={potonganBolosMode}
+                  onChange={(e) => setPotonganBolosMode(e.target.value as BolosDeductionMode)}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="proporsional">Proporsional (Gaji Pokok ÷ Hari Kerja)</option>
+                  <option value="nominal">Nominal Tetap per Hari Bolos</option>
+                  <option value="tanpa_potongan">Tanpa Potongan Bolos</option>
+                </select>
+              </div>
+
+              {potonganBolosMode === 'nominal' && (
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                    Nominal Potongan / Hari Bolos (Rp)
+                  </label>
+                  <NumberInput
+                    value={potonganBolosNominal}
+                    onValueChange={(val) => setPotonganBolosNominal(Math.max(0, val))}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono font-bold"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                  Potongan Terlambat / Kejadian (Rp)
+                </label>
+                <NumberInput
+                  value={potonganTerlambatPerKejadian}
+                  onValueChange={(val) => setPotonganTerlambatPerKejadian(Math.max(0, val))}
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono font-bold"
+                />
+              </div>
+
+              <div className="flex items-end">
+                <label className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 cursor-pointer select-none">
+                  <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200">
+                    Potong Saldo Kasbon
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={sertakanPotonganKasbon}
+                    onChange={(e) => setSertakanPotonganKasbon(e.target.checked)}
+                    className="w-4 h-4 accent-indigo-600 rounded cursor-pointer"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {/* 4 Ringkasan Total Payroll */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Gaji Pokok + Tunjangan
+                </span>
+                <div className="text-base sm:text-lg font-black font-mono tabular-nums text-slate-900 dark:text-white mt-1">
+                  {showSalaryNumbers
+                    ? `Rp ${(monthlyPayroll.totals.totalGajiPokok + monthlyPayroll.totals.totalTunjangan).toLocaleString('id-ID')}`
+                    : 'Rp •••••••'}
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  {monthlyPayroll.totals.totalKaryawan} karyawan
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Total Upah Lembur ACC
+                </span>
+                <div className="text-base sm:text-lg font-black font-mono tabular-nums text-emerald-600 dark:text-emerald-400 mt-1">
+                  {showSalaryNumbers
+                    ? `Rp ${monthlyPayroll.totals.totalUangLembur.toLocaleString('id-ID')}`
+                    : 'Rp •••••••'}
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  {monthlyPayroll.totals.totalJamLembur} jam disetujui
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
+                  Total Potongan
+                </span>
+                <div className="text-base sm:text-lg font-black font-mono tabular-nums text-rose-600 dark:text-rose-400 mt-1">
+                  {showSalaryNumbers
+                    ? `Rp ${monthlyPayroll.totals.totalPotongan.toLocaleString('id-ID')}`
+                    : 'Rp •••••••'}
+                </div>
+                <span className="text-[10px] text-slate-400">
+                  {monthlyPayroll.totals.totalHariBolos} hari bolos · {monthlyPayroll.totals.totalTerlambat}x telat
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/70">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 block">
+                  Total Gaji Bersih (Take-Home)
+                </span>
+                <div className="text-base sm:text-lg font-black font-mono tabular-nums text-indigo-700 dark:text-indigo-200 mt-1">
+                  {showSalaryNumbers
+                    ? `Rp ${monthlyPayroll.totals.totalGajiBersih.toLocaleString('id-ID')}`
+                    : 'Rp •••••••'}
+                </div>
+                <span className="text-[10px] text-indigo-600/80 dark:text-indigo-300/80">
+                  Periode {monthlyPayroll.period.label}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabel Kalkulasi Gaji (Desktop) + Kartu Ringkas (Mobile) */}
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-400 font-extrabold uppercase tracking-wider text-[10px]">
+                    <th className="py-2.5 px-3">Karyawan</th>
+                    <th className="py-2.5 px-3 text-center">Kehadiran (26–25)</th>
+                    <th className="py-2.5 px-3 text-right">Gaji Pokok</th>
+                    <th className="py-2.5 px-3 text-right">Tunjangan</th>
+                    <th className="py-2.5 px-3 text-right">Lembur ACC</th>
+                    <th className="py-2.5 px-3 text-right text-rose-500">Potongan</th>
+                    <th className="py-2.5 px-3 text-right text-indigo-600 dark:text-indigo-400">Gaji Bersih</th>
+                    <th className="py-2.5 px-3 text-center">Slip</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 font-medium">
+                  {monthlyPayroll.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-400">
+                        Tidak ada data karyawan pada periode ini.
+                      </td>
+                    </tr>
+                  ) : (
+                    monthlyPayroll.rows.map((r) => (
+                      <tr
+                        key={r.nik}
+                        className="hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors"
+                      >
+                        <td className="py-3 px-3">
+                          <div className="font-extrabold text-slate-900 dark:text-white">{r.nama}</div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {r.nik} · {r.divisi}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="font-bold text-slate-800 dark:text-slate-100 font-mono tabular-nums">
+                            {r.totalHadir}/{r.totalJadwalKerja} Hari
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            Cuti: {r.totalHariCuti} · Bolos:{' '}
+                            <span className={r.totalHariBolos > 0 ? 'text-rose-500 font-bold' : ''}>
+                              {r.totalHariBolos}
+                            </span>{' '}
+                            · Telat: {r.totalTerlambat}x
+                          </div>
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-700 dark:text-slate-200">
+                          {showSalaryNumbers ? `Rp ${r.gajiPokok.toLocaleString('id-ID')}` : 'Rp ••••••'}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-600 dark:text-slate-300">
+                          {r.tunjangan > 0
+                            ? showSalaryNumbers
+                              ? `Rp ${r.tunjangan.toLocaleString('id-ID')}`
+                              : 'Rp ••••'
+                            : '-'}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="font-mono tabular-nums font-bold text-emerald-600 dark:text-emerald-400">
+                            {r.uangLembur > 0
+                              ? showSalaryNumbers
+                                ? `+Rp ${r.uangLembur.toLocaleString('id-ID')}`
+                                : '+Rp ••••'
+                              : '-'}
+                          </div>
+                          {r.totalJamLembur > 0 && (
+                            <div className="text-[10px] text-slate-400 font-mono">{r.totalJamLembur} Jam</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right">
+                          <div className="font-mono tabular-nums font-bold text-rose-600 dark:text-rose-400">
+                            {r.totalPotongan > 0
+                              ? showSalaryNumbers
+                                ? `-Rp ${r.totalPotongan.toLocaleString('id-ID')}`
+                                : '-Rp ••••'
+                              : '-'}
+                          </div>
+                          {r.totalPotongan > 0 && (
+                            <div className="text-[10px] text-slate-400">
+                              {[
+                                r.potonganBolos > 0 ? `Bolos ${r.totalHariBolos}h` : null,
+                                r.potonganTerlambat > 0 ? `Telat ${r.totalTerlambat}x` : null,
+                                r.potonganKasbon > 0 ? 'Kasbon' : null,
+                              ]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </div>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-right font-mono tabular-nums font-black text-indigo-700 dark:text-indigo-300 text-sm">
+                          {showSalaryNumbers ? `Rp ${r.gajiBersih.toLocaleString('id-ID')}` : 'Rp •••••••'}
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setSelectedPayrollSlip(r)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-indigo-500" />
+                            <span>Slip</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Compact List-Table (Zero Horizontal Scroll) */}
+            <div className="md:hidden divide-y divide-slate-100 dark:divide-slate-800">
+              {monthlyPayroll.rows.length === 0 ? (
+                <div className="py-10 text-center text-xs text-slate-400">
+                  Tidak ada data karyawan pada periode ini.
+                </div>
+              ) : (
+                monthlyPayroll.rows.map((r) => (
+                  <div
+                    key={r.nik}
+                    onClick={() => setSelectedPayrollSlip(r)}
+                    className="p-3.5 flex items-center justify-between gap-3 active:bg-slate-50 dark:active:bg-slate-900/50 cursor-pointer"
+                  >
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="font-extrabold text-sm text-slate-900 dark:text-white truncate">
+                        {r.nama}
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-mono truncate">
+                        {r.nik} · {r.divisi} · Hadir {r.totalHadir}/{r.totalJadwalKerja}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        Bolos: <strong className={r.totalHariBolos > 0 ? 'text-rose-500' : ''}>{r.totalHariBolos}h</strong> · Lembur: {r.totalJamLembur}j
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs font-black font-mono tabular-nums text-indigo-600 dark:text-indigo-400">
+                        {showSalaryNumbers ? `Rp ${r.gajiBersih.toLocaleString('id-ID')}` : 'Rp ••••••'}
+                      </div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">Lihat Slip →</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TAB KPI & NILAI ABSENSI */}
       {activeTab === 'kpi' && (
@@ -2238,6 +2680,166 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                 type="button"
                 onClick={() => setSelectedEmployeeDetail(null)}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 transition-colors cursor-pointer"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RINCIAN SLIP GAJI BULANAN (SIKLUS 26-25) */}
+      {selectedPayrollSlip && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-800 rounded-3xl max-w-lg w-full p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+                  Rincian Kalkulasi Gaji · Periode {selectedPayrollSlip.payrollPeriodLabel}
+                </span>
+                <h3 className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                  {selectedPayrollSlip.nama}
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-mono">
+                  {selectedPayrollSlip.nik} · {selectedPayrollSlip.divisi} · {selectedPayrollSlip.startDate} s/d {selectedPayrollSlip.endDate}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedPayrollSlip(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800">
+                <div className="text-[10px] text-slate-400 font-bold">Hadir</div>
+                <div className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
+                  {selectedPayrollSlip.totalHadir}/{selectedPayrollSlip.totalJadwalKerja}
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800">
+                <div className="text-[10px] text-slate-400 font-bold">Cuti/Izin</div>
+                <div className="text-sm font-black font-mono text-teal-600 dark:text-teal-400">
+                  {selectedPayrollSlip.totalHariCuti}h
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800">
+                <div className="text-[10px] text-slate-400 font-bold">Bolos</div>
+                <div className="text-sm font-black font-mono text-rose-600 dark:text-rose-400">
+                  {selectedPayrollSlip.totalHariBolos}h
+                </div>
+              </div>
+              <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-100 dark:border-slate-800">
+                <div className="text-[10px] text-slate-400 font-bold">Lembur</div>
+                <div className="text-sm font-black font-mono text-indigo-600 dark:text-indigo-400">
+                  {selectedPayrollSlip.totalJamLembur}j
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 space-y-2">
+                <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                  Komponen Pendapatan
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">Gaji Pokok</span>
+                  <span className="font-mono font-bold">
+                    {showSalaryNumbers ? `Rp ${selectedPayrollSlip.gajiPokok.toLocaleString('id-ID')}` : 'Rp ••••••'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">Tunjangan</span>
+                  <span className="font-mono font-bold">
+                    {showSalaryNumbers ? `Rp ${selectedPayrollSlip.tunjangan.toLocaleString('id-ID')}` : 'Rp ••••••'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Upah Lembur ACC ({selectedPayrollSlip.totalJamLembur} Jam)
+                  </span>
+                  <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                    {showSalaryNumbers ? `+Rp ${selectedPayrollSlip.uangLembur.toLocaleString('id-ID')}` : '+Rp ••••'}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between font-black">
+                  <span>Total Pendapatan Kotor</span>
+                  <span className="font-mono">
+                    {showSalaryNumbers ? `Rp ${selectedPayrollSlip.totalPendapatanKotor.toLocaleString('id-ID')}` : 'Rp ••••••'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-slate-800 space-y-2">
+                <div className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                  Komponen Potongan
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Potongan Bolos ({selectedPayrollSlip.totalHariBolos} hari)
+                  </span>
+                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                    {showSalaryNumbers ? `-Rp ${selectedPayrollSlip.potonganBolos.toLocaleString('id-ID')}` : '-Rp ••••'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Potongan Terlambat ({selectedPayrollSlip.totalTerlambat}x)
+                  </span>
+                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                    {showSalaryNumbers ? `-Rp ${selectedPayrollSlip.potonganTerlambat.toLocaleString('id-ID')}` : '-Rp ••••'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600 dark:text-slate-300">
+                    Potongan Kasbon (Saldo: Rp {selectedPayrollSlip.saldoKasbon.toLocaleString('id-ID')})
+                  </span>
+                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400">
+                    {showSalaryNumbers ? `-Rp ${selectedPayrollSlip.potonganKasbon.toLocaleString('id-ID')}` : '-Rp ••••'}
+                  </span>
+                </div>
+                <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between font-black text-rose-600 dark:text-rose-400">
+                  <span>Total Potongan</span>
+                  <span className="font-mono">
+                    {showSalaryNumbers ? `-Rp ${selectedPayrollSlip.totalPotongan.toLocaleString('id-ID')}` : '-Rp ••••'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-indigo-600 text-white flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-100">
+                    Gaji Bersih (Take-Home Pay)
+                  </div>
+                  <div className="text-[11px] text-indigo-100">
+                    Periode {selectedPayrollSlip.payrollPeriodLabel} (Siklus 26–25)
+                  </div>
+                </div>
+                <div className="text-xl font-black font-mono tabular-nums">
+                  {showSalaryNumbers ? `Rp ${selectedPayrollSlip.gajiBersih.toLocaleString('id-ID')}` : 'Rp •••••••'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  const detail = selectedPayrollSlip.summaryRow;
+                  setSelectedPayrollSlip(null);
+                  setSelectedEmployeeDetail(detail);
+                }}
+                className="px-3.5 py-2 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                Lihat Audit Absensi &amp; Lembur
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedPayrollSlip(null)}
+                className="px-4 py-2 rounded-xl text-xs font-bold bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 cursor-pointer"
               >
                 Tutup
               </button>

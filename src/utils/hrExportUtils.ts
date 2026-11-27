@@ -195,11 +195,17 @@ export interface DetailedHrReportResult {
 export function getDatesInRange(start: string, end: string): string[] {
   const dates: string[] = [];
   if (!start || !end) return dates;
-  const curr = new Date(start + 'T00:00:00');
-  const stop = new Date(end + 'T00:00:00');
+  const sParts = start.split('-').map(Number);
+  const eParts = end.split('-').map(Number);
+  if (sParts.length !== 3 || eParts.length !== 3) return dates;
+  const curr = new Date(sParts[0], sParts[1] - 1, sParts[2]);
+  const stop = new Date(eParts[0], eParts[1] - 1, eParts[2]);
   if (isNaN(curr.getTime()) || isNaN(stop.getTime())) return dates;
   while (curr <= stop) {
-    dates.push(curr.toISOString().slice(0, 10));
+    const y = curr.getFullYear();
+    const m = String(curr.getMonth() + 1).padStart(2, '0');
+    const d = String(curr.getDate()).padStart(2, '0');
+    dates.push(`${y}-${m}-${d}`);
     curr.setDate(curr.getDate() + 1);
   }
   return dates;
@@ -534,19 +540,24 @@ export function exportHrReportToXlsx({
   data,
   startDate,
   endDate,
+  periodLabel,
 }: {
   data: DetailedHrReportResult;
   startDate: string;
   endDate: string;
+  periodLabel?: string;
 }) {
   const wb = XLSX.utils.book_new();
+  const periodeTitle = periodLabel
+    ? `Periode ${periodLabel} (${startDate} s/d ${endDate})`
+    : `Periode: ${startDate} s/d ${endDate}`;
 
   // ----------------------------------------------------
   // SHEET 1: REKAPITULASI KARYAWAN (Summary)
   // ----------------------------------------------------
   const sheet1Data: any[][] = [
     ['REKAPITULASI LAPORAN KARYAWAN WMS'],
-    [`Periode: ${startDate} s/d ${endDate}`],
+    [periodeTitle],
     [`Dicetak pada: ${new Date().toLocaleString('id-ID')}`],
     ['Catatan Audit: Karyawan yang tidak melakukan absen pulang ditandai sebagai BOLOS dan tidak dihitung masuk kerja, namun catatan absensi tetap tersimpan untuk audit.'],
     [], // empty row
@@ -855,16 +866,22 @@ export function exportHrReportToCsv({
   data,
   startDate,
   endDate,
+  periodLabel,
 }: {
   data: DetailedHrReportResult;
   startDate: string;
   endDate: string;
+  periodLabel?: string;
 }) {
   const csvRows: string[] = [];
 
   // Title and metadata
   csvRows.push(`"REKAPITULASI LAPORAN KARYAWAN WMS"`);
-  csvRows.push(`"Periode: ${startDate} s/d ${endDate}"`);
+  csvRows.push(
+    periodLabel
+      ? `"Periode ${periodLabel} (${startDate} s/d ${endDate})"`
+      : `"Periode: ${startDate} s/d ${endDate}"`
+  );
   csvRows.push(`"Waktu Ekspor: ${new Date().toLocaleString('id-ID')}"`);
   csvRows.push(''); // blank row
 

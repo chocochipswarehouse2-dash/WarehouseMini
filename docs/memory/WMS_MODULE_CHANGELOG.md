@@ -4,6 +4,18 @@
 
 ---
 
+## v2.34.0 — 26 November 2026
+**Modul**: HR & Admin — Rekap & Kalkulasi Gaji Bulanan (`src/utils/hrPayrollUtils.ts`, `src/utils/hrExportUtils.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/KaryawanView.tsx`, `src/components/hr/PresensiView.tsx`)
+- **Aturan Siklus Periode Administrasi & Penggajian Bulanan (26 Bulan Lalu – 25 Bulan Berjalan)**:
+  - Menambahkan modul utilitas terpusat `src/utils/hrPayrollUtils.ts` dengan konstanta `PAYROLL_CUTOFF_START_DAY = 26`, `PAYROLL_CUTOFF_END_DAY = 25`, serta fungsi periode zona-waktu lokal (`getPayrollPeriodForMonth`, `getPayrollPeriodByMonthKey`, `getActivePayrollPeriod`, `getPreviousPayrollPeriod`, `detectMatchingPayrollPeriod`) sehingga periode bulan November selalu memetakan **26 Oktober – 25 November** (termasuk lintas tahun Desember–Januari).
+  - Menjaga **Jadwal Shift (`RosterShiftView.tsx`) tetap ketat berdasarkan tanggal 1 s/d akhir bulan kalender** (`getShiftCalendarPeriodForMonth`), sementara rekap & kalkulasi gaji otomatis menggabungkan data roster/presensi lintas bulan kalender (`26–akhir bulan lalu` + `1–25 bulan berjalan`).
+- **Fungsi & Tab Baru `Kalkulasi Gaji` (`calculateMonthlyPayroll` + Export Excel)**:
+  - Menambahkan fungsi `calculateMonthlyPayroll` untuk menghitung gaji pokok, tunjangan, uang lembur approved (dengan fallback `durasi × rate_lembur`), upah harian, potongan absen/alpha yang dapat dikonfigurasi (`proporsional` / `nominal` / `tanpa_potongan`), potongan terlambat, potongan kasbon opsional, pendapatan kotor, total potongan, serta Take-Home Pay (`gajiBersih`) per karyawan beserta KPI & audit log.
+  - Menambahkan tab **`Kalkulasi Gaji`** di `HrRekapView.tsx` lengkap dengan pemilih **Periode Bulan (26–25)**, tombol sembunyikan/tampilkan nominal gaji, 4 kartu ringkasan, tabel Desktop + kartu kompak Mobile, modal **Rincian Slip Gaji**, dan ekspor Excel (`exportMonthlyPayrollToXlsx`).
+  - Menyelaraskan rentang KPI bulan aktif di `KaryawanView.tsx` dan `PresensiView.tsx` (termasuk preset `Periode Ini (26–25)`) serta memperbaiki bug off-by-one zona waktu WIB (`toISOString`) pada `getDatesInRange` di `src/utils/hrExportUtils.ts`.
+
+---
+
 ## v2.33.2 — 26 November 2026
 **Modul**: Pembaruan Sistem & Aplikasi (`src/components/common/AppUpdateModal.tsx`, `src/components/common/AppUpdateFloatingWidget.tsx`, `src/App.tsx`, `.agents/skills/wms-app-release-update/SKILL.md`)
 - **Catatan Rilis Update Eksklusif Akun Owner (`@warehouse`)**:

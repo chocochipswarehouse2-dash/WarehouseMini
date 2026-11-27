@@ -67,6 +67,7 @@ import {
 import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
 import { evaluatePresensiForAudit } from '../../utils/hrExportUtils';
+import { getActivePayrollPeriod } from '../../utils/hrPayrollUtils';
 import {
   getPresensiLocationConfig,
   savePresensiLocationConfig,
@@ -326,9 +327,9 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       setLogStartDate(formatTodayIso(d));
       setLogEndDate(end);
     } else if (preset === 'this_month') {
-      const d = new Date(now.getFullYear(), now.getMonth(), 1);
-      setLogStartDate(formatTodayIso(d));
-      setLogEndDate(end);
+      const activePeriod = getActivePayrollPeriod(now);
+      setLogStartDate(activePeriod.startDate);
+      setLogEndDate(activePeriod.endDate);
     }
   };
 
@@ -398,17 +399,17 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     if (!userNik) return;
     setLoadingKpi(true);
     try {
-      const d = new Date();
-      d.setDate(1);
-      const startOfMonth = d.toISOString().slice(0, 10);
-      const today = new Date().toISOString().slice(0, 10);
+      const activePeriod = getActivePayrollPeriod();
+      const todayStr = formatTodayIso(new Date());
+      const kpiStartDate = activePeriod.startDate;
+      const kpiEndDate = todayStr < activePeriod.endDate ? todayStr : activePeriod.endDate;
 
       const [presensis, rosters, lemburs, cutis, izins, kList] = await Promise.all([
-        fetchPresensiRange(startOfMonth, today, userNik),
-        fetchRosterShiftList(userNik, startOfMonth, today),
-        fetchLemburRecords(userNik, startOfMonth, today),
-        fetchCutiRecords(userNik, startOfMonth, today),
-        fetchIzinPulangAwalList(userNik, undefined, startOfMonth, today),
+        fetchPresensiRange(kpiStartDate, kpiEndDate, userNik),
+        fetchRosterShiftList(userNik, kpiStartDate, kpiEndDate),
+        fetchLemburRecords(userNik, kpiStartDate, kpiEndDate),
+        fetchCutiRecords(userNik, kpiStartDate, kpiEndDate),
+        fetchIzinPulangAwalList(userNik, undefined, kpiStartDate, kpiEndDate),
         fetchKaryawanDirectory(),
       ]);
 
@@ -425,8 +426,8 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         lemburList: lemburs,
         cutiList: cutis,
         izinPulangAwalList: izins,
-        startDate: startOfMonth,
-        endDate: today,
+        startDate: kpiStartDate,
+        endDate: kpiEndDate,
       });
 
       setMyKpiSummary(kpi);
@@ -1481,7 +1482,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 <span>KPI &amp; Nilai Kedisiplinan Absensi Saya</span>
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Periode Bulan Ini ({new Date().toLocaleString('id-ID', { month: 'long', year: 'numeric' })}) — Dinilai otomatis dari ketepatan jam berangkat, jam pulang, dan absensi.
+                Periode {getActivePayrollPeriod().label} ({getActivePayrollPeriod().shortRangeLabel}, siklus 26–25) — Dinilai otomatis dari ketepatan jam berangkat, jam pulang, dan absensi.
               </p>
             </div>
             <button
@@ -1730,7 +1731,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 onClick={() => setLogDatePreset('this_month')}
                 className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition cursor-pointer"
               >
-                Bulan Ini
+                Periode Ini (26–25)
               </button>
               <button
                 type="button"

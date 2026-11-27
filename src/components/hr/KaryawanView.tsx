@@ -52,6 +52,7 @@ import {
   fetchIzinPulangAwalList,
 } from '../../services/supabase';
 import { calculateKpiAbsensiBatch } from '../../utils/kpiCalculator';
+import { getActivePayrollPeriod, formatLocalIsoDate } from '../../utils/hrPayrollUtils';
 
 interface KaryawanViewProps {
   session: UserSession | null;
@@ -118,18 +119,18 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
       // Unblock directory UI immediately so employee cards/tables render without waiting for 5 KPI tables!
       setLoading(false);
 
-      // Compute KPI for current month asynchronously
-      const d = new Date();
-      d.setDate(1);
-      const startOfMonth = d.toISOString().slice(0, 10);
-      const today = new Date().toISOString().slice(0, 10);
+      // Compute KPI for active administrative payroll cycle (26 bulan lalu s/d 25 bulan berjalan)
+      const activePeriod = getActivePayrollPeriod();
+      const todayIso = formatLocalIsoDate(new Date());
+      const kpiStartDate = activePeriod.startDate;
+      const kpiEndDate = todayIso < activePeriod.endDate ? todayIso : activePeriod.endDate;
 
       const [presensis, rosters, lemburs, cutis, izins] = await Promise.all([
-        fetchPresensiRange(startOfMonth, today),
-        fetchRosterShiftList(undefined, startOfMonth, today),
-        fetchLemburRecords(undefined, startOfMonth, today),
-        fetchCutiRecords(undefined, startOfMonth, today),
-        fetchIzinPulangAwalList(undefined, undefined, startOfMonth, today),
+        fetchPresensiRange(kpiStartDate, kpiEndDate),
+        fetchRosterShiftList(undefined, kpiStartDate, kpiEndDate),
+        fetchLemburRecords(undefined, kpiStartDate, kpiEndDate),
+        fetchCutiRecords(undefined, kpiStartDate, kpiEndDate),
+        fetchIzinPulangAwalList(undefined, undefined, kpiStartDate, kpiEndDate),
       ]);
 
       const map = calculateKpiAbsensiBatch({
@@ -139,8 +140,8 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
         lemburList: lemburs,
         cutiList: cutis,
         izinPulangAwalList: izins,
-        startDate: startOfMonth,
-        endDate: today,
+        startDate: kpiStartDate,
+        endDate: kpiEndDate,
       });
       setKpiMap(map);
     } catch (err: any) {
@@ -867,7 +868,9 @@ export const KaryawanView: React.FC<KaryawanViewProps> = ({ session, onShowToast
                         <>
                           <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600 text-white flex items-center justify-between shadow-md">
                             <div>
-                              <div className="text-xs text-amber-100 font-bold uppercase">Nilai KPI Absensi Bulan Ini</div>
+                              <div className="text-xs text-amber-100 font-bold uppercase">
+                                Nilai KPI Absensi — Periode {getActivePayrollPeriod().label} ({getActivePayrollPeriod().shortRangeLabel})
+                              </div>
                               <div className="text-4xl font-black font-mono mt-1">{kpi.nilaiKpiAbsensi} Pts</div>
                               <div className="text-xs text-amber-100 font-bold mt-0.5">{kpi.labelStatus}</div>
                             </div>
