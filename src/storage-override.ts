@@ -31,7 +31,10 @@ class MemoryStorage implements Storage {
   }
 }
 
-function clearKnownLargeCaches(): void {
+const PROTECTED_STORAGE_KEY_REGEX =
+  /^(wms_session_|wms_user_|wms_endpoint_|wms_supabase_|wms_gas_|wms_fonnte_|wms_wa_webhook_|wms_active_staging_scans$|wms_active_picking_session$|wms_active_putaway_session$|wms_recount_workspace_draft_v1$|wms_draft_|wms_offline_)|outbox/i;
+
+function clearKnownLargeCaches(protectedKey?: string): void {
   const keysToEvict = [
     'wms_product_cache',
     'wms_picking_cache',
@@ -39,18 +42,72 @@ function clearKnownLargeCaches(): void {
     'wms_cached_pengecekan_sj_records',
     'wms_cached_tarikan_md',
     'wms_cached_pengecekan_sj_drafts',
-    'wms_offline_queue_pengecekan_sj',
     'wms_local_perbaikan_tickets',
     'wms_local_qc_reports',
     'wms_local_penerimaan_produksi',
     'gas_delta_sync_Stok Real',
     'gas_delta_sync_Mutasi Log',
+    'wms_trello_up_catalog_cache',
+    'wms_katalog_manual_data',
+    'wms_peminjaman_cache',
+    'wms_peminjaman_records',
+    'wms_recount_audit_map',
+    'wms_recount_logs',
+    'wms_so_queue_cache_ALL',
+    'wms_so_queue_cache_PENDING',
+    'wms_so_queue_cache_APPROVED',
+    'wms_putaway_tasks_cache_v1',
+    'wms_stok_real_fisik_light',
+    'wms_stok_real_fisik_cache',
+    'wms_mutasi_cache',
+    'wms_produksi_matrix_metrics_cache',
+    'wms_katalog_search_cache',
+    'wms_staging_scan_cache',
+    'wms_jne_rekap_member_cache',
+    'wms_pengiriman_store_reports',
+    'wms_pengiriman_store_trips',
+    'wms_penerimaan_mutasi_store',
+    'wms_penerimaan_paket',
+    'wms_handover_paket',
+    'wms_ig_live_orders_v1',
+    'wms_picking_reset_undo_backups_v1',
+    'wms_ai_chat_history',
   ];
   for (const k of keysToEvict) {
+    if (k === protectedKey) continue;
     try {
       window.localStorage.removeItem(k);
     } catch {}
   }
+}
+
+function evictLargestDisposableKeys(
+  protectedKey: string,
+  writeAttempt: () => void
+): boolean {
+  try {
+    const candidates: Array<{ key: string; len: number }> = [];
+    for (let i = 0; i < window.localStorage.length; i++) {
+      const k = window.localStorage.key(i);
+      if (!k || k === protectedKey || PROTECTED_STORAGE_KEY_REGEX.test(k)) continue;
+      const v = window.localStorage.getItem(k);
+      candidates.push({ key: k, len: v ? v.length : 0 });
+    }
+    candidates.sort((a, b) => b.len - a.len);
+
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        window.localStorage.removeItem(candidates[i].key);
+      } catch {}
+      if ((i + 1) % 3 === 0 || i === candidates.length - 1 || candidates[i].len >= 4096) {
+        try {
+          writeAttempt();
+          return true;
+        } catch {}
+      }
+    }
+  } catch {}
+  return false;
 }
 
 function isSecurityErrorValue(val: unknown): boolean {
@@ -254,11 +311,16 @@ try {
           e?.code === 1014;
 
         if (isQuota) {
-          clearKnownLargeCaches();
+          clearKnownLargeCaches(key);
           try {
             originalLocalSetItem(key, value);
           } catch {
-            console.warn(`[QuotaExceeded] Still failed to set "${key}" after clearing caches. Suppressing error.`);
+            const recovered = evictLargestDisposableKeys(key, () =>
+              originalLocalSetItem(key, value)
+            );
+            if (!recovered) {
+              console.warn(`[QuotaExceeded] Still failed to set "${key}" after clearing caches. Suppressing error.`);
+            }
           }
         } else {
           console.warn(`[StorageError] Could not save key "${key}":`, e);

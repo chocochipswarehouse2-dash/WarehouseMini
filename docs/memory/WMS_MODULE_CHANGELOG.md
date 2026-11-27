@@ -4,6 +4,18 @@
 
 ---
 
+## v2.38.1 — 27 November 2026
+**Modul**: Scanner Gudang & Offline Outbox (`src/storage-override.ts`, `src/services/scannerOutboxService.ts`, `src/App.tsx`)
+- **Fix Bug Kritis Hilangnya Data Scan saat `localStorage` Penuh (`QuotaExceededError`)**:
+  - Memperbaiki `src/storage-override.ts` dengan daftar eviction cache modern yang menyeluruh serta pembersihan dinamis berurutan dari key cache terbesar (**melindungi ketat** sesi login, konfigurasi, draft aktif, dan seluruh antrean outbox) saat kuota browser hampir habis — mencegah gagal tulis diam-diam pada batch scan `> 5` item.
+- **Perlindungan 3-Lapis & Anti-Race-Condition pada Seluruh Outbox (`scannerOutboxService.ts`)**:
+  - Menambahkan cermin **In-Memory** + **IndexedDB (`outbox_*_v1`)** + `commitBatchUpdateToLiveQueue` untuk ke-4 antrean outbox (`Scanner`, `Recount`, `Picking`, `Putaway`) serta *awaitable sync drain* (`active*SyncPromise`), sehingga simpan cepat beruntun atau kuota `localStorage` penuh tidak pernah menghilangkan batch scan.
+- **Verifikasi Sinkronisasi Nyata (`syncedBatchIds`) & Dukungan Ganti Lokasi Tag (`App.tsx`)**:
+  - `handleSaveData` & `handleProcessImport` kini wajib memverifikasi `syncRes.syncedBatchIds.includes(batchId)` sebelum menampilkan notifikasi `✅ Data Scan Tersimpan` & konfeti (nol *false-positive* jika batch belum mendarat di Supabase), dan menahan `scannedData` jika penulisan lokal gagal.
+  - Scan tag `#IN X002`, `#OUT X002`, maupun tag langsung `#X002` (`getAreaFromLokasi !== 'Anomali'`) kini langsung memperbarui lokasi rak aktif meski lokasi sebelumnya sudah terisi.
+
+---
+
 ## v2.38.0 — 27 November 2026
 **Modul**: Inventory, Kapasitas Rak, Putaway, Scanner & GAS Webhook — Penambahan Lokasi E Warehouse (`E001–E050`) (`src/services/supabase.ts`, `src/services/rackCapacityService.ts`, `src/services/putawayService.ts`, `src/components/inventory/RackCapacityDashboard.tsx`, `src/components/inventory/RackCapacityMobileView.tsx`, `src/components/CetakLabel/CetakLokasiRakTab.tsx`, `src/utils/locationPurgeUtils.ts`, `src/utils/anomalyUtils.ts`, `src/utils/stockTakeRecommendationUtils.ts`, `gas/Code.js`, `gas/fonnte_handler.js`)
 - **Lokasi Baru Warehouse — Lokasi E (`zone_wh_e`)**:

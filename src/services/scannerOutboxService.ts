@@ -38,6 +38,7 @@ import {
 } from './gasProduksiSync';
 import { lookupProductBySku } from '../utils/productLookup';
 import { cleanProductName, resolveProductDisplaySize } from '../utils/sortUtils';
+import { getLocalDbMeta, setLocalDbMeta } from './localDb';
 
 const OUTBOX_STORAGE_KEY = 'wms_scanner_outbox_queue_v1';
 const LEGACY_OFFLINE_LOGS_KEY = 'wms_offline_logs';
@@ -108,8 +109,121 @@ export interface RecountWorkspaceDraftState {
   draftsByCode: Record<string, RecountCodeDraftEntry>;
 }
 
+const OUTBOX_IDB_KEY = 'outbox_scanner_v1';
+const RECOUNT_OUTBOX_IDB_KEY = 'outbox_recount_v1';
+const PICKING_OUTBOX_IDB_KEY = 'outbox_picking_v1';
+const PUTAWAY_OUTBOX_IDB_KEY = 'outbox_putaway_v1';
+
+let memoryScannerOutbox: ScannerOutboxBatch[] | null = null;
+let memoryRecountOutbox: RecountOutboxBatch[] | null = null;
+let memoryPickingOutbox: PickingOutboxBatch[] | null = null;
+let memoryPutawayOutbox: PutawayOutboxBatch[] | null = null;
+
 let isOutboxSyncing = false;
 let isRecountOutboxSyncing = false;
+let activeScannerSyncPromise: Promise<{
+  syncedBatches: number;
+  syncedItems: number;
+  syncedBatchIds: string[];
+  remainingBatches: number;
+  errors: string[];
+}> | null = null;
+let activeRecountSyncPromise: Promise<{
+  syncedBatches: number;
+  remainingBatches: number;
+  errors: string[];
+}> | null = null;
+let scannerIdbHydrated = false;
+let recountIdbHydrated = false;
+let pickingIdbHydrated = false;
+let putawayIdbHydrated = false;
+
+function mergeBatchesById<T extends { batchId: string }>(primary: T[], secondary: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const item of secondary) {
+    if (item?.batchId) map.set(item.batchId, item);
+  }
+  for (const item of primary) {
+    if (item?.batchId) map.set(item.batchId, item);
+  }
+  return Array.from(map.values());
+}
+
+function readOutboxMerged<T extends { batchId: string }>(
+  storageKey: string,
+  memoryList: T[] | null,
+  setMemory: (next: T[]) => void
+): T[] {
+  if (typeof window === 'undefined') return memoryList ? [...memoryList] : [];
+  let lsList: T[] = [];
+  try {
+    const raw = localStorage.getItem(storageKey);
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (Array.isArray(parsed)) lsList = parsed;
+  } catch {}
+  const merged = memoryList === null ? lsList : mergeBatchesById(memoryList, lsList);
+  setMemory(merged);
+  return [...merged];
+}
+
+function writeOutboxDurable<T extends { batchId: string }>(
+  storageKey: string,
+  idbKey: string,
+  batches: T[],
+  setMemory: (next: T[]) => void,
+  notify: () => void,
+  logLabel: string
+): void {
+  const snapshot = [...batches];
+  setMemory(snapshot);
+  if (typeof window === 'undefined') return;
+  try {
+    if (snapshot.length === 0) {
+      localStorage.removeItem(storageKey);
+    } else {
+      localStorage.setItem(storageKey, JSON.stringify(snapshot));
+    }
+  } catch (err) {
+    console.warn(`[${logLabel}] Failed saving outbox to localStorage:`, err);
+  }
+  setLocalDbMeta(idbKey, snapshot).catch(() => {});
+  notify();
+}
+
+async function hydrateOutboxFromIdbOnce<T extends { batchId: string }>(
+  alreadyHydrated: boolean,
+  markHydrated: () => void,
+  idbKey: string,
+  getLive: () => T[],
+  saveLive: (batches: T[]) => void
+): Promise<void> {
+  if (alreadyHydrated || typeof window === 'undefined') return;
+  markHydrated();
+  try {
+    const fromIdb = await getLocalDbMeta<T[]>(idbKey);
+    if (Array.isArray(fromIdb) && fromIdb.length > 0) {
+      const live = getLive();
+      const merged = mergeBatchesById(live, fromIdb);
+      if (merged.length > live.length) {
+        saveLive(merged);
+      }
+    }
+  } catch {}
+}
+
+function commitBatchUpdateToLiveQueue<T extends { batchId: string }>(
+  getLive: () => T[],
+  saveLive: (batches: T[]) => void,
+  updatedBatch: T,
+  isComplete: (b: T) => boolean
+): void {
+  const live = getLive();
+  const exists = live.some((b) => b.batchId === updatedBatch.batchId);
+  const next = exists
+    ? live.map((b) => (b.batchId === updatedBatch.batchId ? updatedBatch : b))
+    : [...live, updatedBatch];
+  saveLive(next.filter((b) => !isComplete(b)));
+}
 
 function notifyOutboxUpdated() {
   if (typeof window !== 'undefined') {
@@ -177,8 +291,17 @@ function migrateLegacyOfflineLogsIfNeeded(existingBatches: ScannerOutboxBatch[])
       status: 'PENDING'
     };
 
-    const next = [...existingBatches, migratedBatch];
-    localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(next));
+    const next = mergeBatchesById(existingBatches, [migratedBatch]);
+    writeOutboxDurable(
+      OUTBOX_STORAGE_KEY,
+      OUTBOX_IDB_KEY,
+      next,
+      (v) => {
+        memoryScannerOutbox = v;
+      },
+      notifyOutboxUpdated,
+      'ScannerOutbox'
+    );
     return next;
   } catch {
     return existingBatches;
@@ -187,14 +310,14 @@ function migrateLegacyOfflineLogsIfNeeded(existingBatches: ScannerOutboxBatch[])
 
 export function getScannerOutboxBatches(): ScannerOutboxBatch[] {
   if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(OUTBOX_STORAGE_KEY);
-    const parsed: ScannerOutboxBatch[] = raw ? JSON.parse(raw) : [];
-    const list = Array.isArray(parsed) ? parsed : [];
-    return migrateLegacyOfflineLogsIfNeeded(list);
-  } catch {
-    return [];
-  }
+  const merged = readOutboxMerged<ScannerOutboxBatch>(
+    OUTBOX_STORAGE_KEY,
+    memoryScannerOutbox,
+    (v) => {
+      memoryScannerOutbox = v;
+    }
+  );
+  return migrateLegacyOfflineLogsIfNeeded(merged);
 }
 
 export function getPendingScannerOutboxCount(): number {
@@ -206,17 +329,16 @@ export function getPendingScannerOutboxItemCount(): number {
 }
 
 function saveScannerOutboxBatches(batches: ScannerOutboxBatch[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (batches.length === 0) {
-      localStorage.removeItem(OUTBOX_STORAGE_KEY);
-    } else {
-      localStorage.setItem(OUTBOX_STORAGE_KEY, JSON.stringify(batches));
-    }
-  } catch (err) {
-    console.warn('[ScannerOutbox] Failed saving outbox to localStorage:', err);
-  }
-  notifyOutboxUpdated();
+  writeOutboxDurable(
+    OUTBOX_STORAGE_KEY,
+    OUTBOX_IDB_KEY,
+    batches,
+    (v) => {
+      memoryScannerOutbox = v;
+    },
+    notifyOutboxUpdated,
+    'ScannerOutbox'
+  );
 }
 
 export function enqueueScannerOutboxBatch(params: {
@@ -433,83 +555,107 @@ export async function syncAllScannerOutboxBatches(
 ): Promise<{
   syncedBatches: number;
   syncedItems: number;
+  syncedBatchIds: string[];
   remainingBatches: number;
   errors: string[];
 }> {
-  const current = getScannerOutboxBatches();
-  if (current.length === 0) {
-    return { syncedBatches: 0, syncedItems: 0, remainingBatches: 0, errors: [] };
-  }
-
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const currentOffline = getScannerOutboxBatches();
     return {
       syncedBatches: 0,
       syncedItems: 0,
-      remainingBatches: current.length,
-      errors: ['Perangkat sedang offline']
+      syncedBatchIds: [],
+      remainingBatches: currentOffline.length,
+      errors: currentOffline.length > 0 ? ['Perangkat sedang offline'] : []
     };
   }
 
-  if (isOutboxSyncing) {
+  if (isOutboxSyncing && activeScannerSyncPromise) {
+    const prevRes = await activeScannerSyncPromise;
+    if (getScannerOutboxBatches().length === 0) {
+      return prevRes;
+    }
+    const followUp = await syncAllScannerOutboxBatches(productCatalog);
     return {
-      syncedBatches: 0,
-      syncedItems: 0,
-      remainingBatches: current.length,
-      errors: []
+      syncedBatches: prevRes.syncedBatches + followUp.syncedBatches,
+      syncedItems: prevRes.syncedItems + followUp.syncedItems,
+      syncedBatchIds: Array.from(new Set([...prevRes.syncedBatchIds, ...followUp.syncedBatchIds])),
+      remainingBatches: followUp.remainingBatches,
+      errors: [...prevRes.errors, ...followUp.errors]
     };
   }
 
-  isOutboxSyncing = true;
-  let syncedBatches = 0;
-  let syncedItems = 0;
-  const errors: string[] = [];
-  const workingList = [...current];
+  const runSync = async () => {
+    isOutboxSyncing = true;
+    let syncedBatches = 0;
+    let syncedItems = 0;
+    const syncedBatchIds: string[] = [];
+    const errors: string[] = [];
+    const processedIds = new Set<string>();
+    const isComplete = (b: ScannerOutboxBatch) => Boolean(b.logsSynced && b.soSynced);
 
-  try {
-    for (let i = 0; i < workingList.length; i++) {
-      const batch = workingList[i];
-      batch.status = 'SYNCING';
-      saveScannerOutboxBatches(workingList.filter((b) => !(b.logsSynced && b.soSynced)));
+    try {
+      await hydrateOutboxFromIdbOnce(
+        scannerIdbHydrated,
+        () => {
+          scannerIdbHydrated = true;
+        },
+        OUTBOX_IDB_KEY,
+        getScannerOutboxBatches,
+        saveScannerOutboxBatches
+      );
 
-      try {
-        // Step 1: Sync log_produk with pre-flight delta check
-        await syncBatchLogsIdempotent(batch);
-        // Immediately persist Step 1 progress so if Step 2 fails, Step 1 is never repeated
-        saveScannerOutboxBatches(workingList.filter((b) => !(b.logsSynced && b.soSynced)));
+      while (true) {
+        const nextPending = getScannerOutboxBatches().find((b) => !processedIds.has(b.batchId));
+        if (!nextPending) break;
+        processedIds.add(nextPending.batchId);
 
-        // Step 2: Sync stock_opname_queue with UUID on_conflict=id
-        await syncBatchStockOpnameIdempotent(batch, productCatalog);
+        const batch: ScannerOutboxBatch = { ...nextPending, status: 'SYNCING' };
+        commitBatchUpdateToLiveQueue(getScannerOutboxBatches, saveScannerOutboxBatches, batch, isComplete);
 
-        batch.status = 'PENDING';
-        batch.lastError = undefined;
-        syncedBatches++;
-        syncedItems += batch.totalItemsCount || batch.logs.length;
-      } catch (err: any) {
-        batch.attempts = (batch.attempts || 0) + 1;
-        batch.status = 'FAILED';
-        batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi';
-        errors.push(batch.lastError!);
+        try {
+          // Step 1: Sync log_produk with pre-flight delta check
+          await syncBatchLogsIdempotent(batch);
+          commitBatchUpdateToLiveQueue(getScannerOutboxBatches, saveScannerOutboxBatches, batch, isComplete);
+
+          // Step 2: Sync stock_opname_queue with UUID on_conflict=id
+          await syncBatchStockOpnameIdempotent(batch, productCatalog);
+
+          batch.status = 'PENDING';
+          batch.lastError = undefined;
+          syncedBatches++;
+          syncedItems += batch.totalItemsCount || batch.logs.length;
+          syncedBatchIds.push(batch.batchId);
+        } catch (err: any) {
+          batch.attempts = (batch.attempts || 0) + 1;
+          batch.status = 'FAILED';
+          batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi';
+          errors.push(batch.lastError!);
+        }
+
+        commitBatchUpdateToLiveQueue(getScannerOutboxBatches, saveScannerOutboxBatches, batch, isComplete);
       }
 
-      // Persist updated state after each batch
-      const stillPending = workingList.filter((b) => !(b.logsSynced && b.soSynced));
-      saveScannerOutboxBatches(stillPending);
+      if (syncedBatches > 0) {
+        invalidateStokFisikCache();
+      }
+    } finally {
+      isOutboxSyncing = false;
+      activeScannerSyncPromise = null;
     }
 
-    if (syncedBatches > 0) {
-      invalidateStokFisikCache();
-    }
-  } finally {
-    isOutboxSyncing = false;
-  }
-
-  const remaining = getScannerOutboxBatches();
-  return {
-    syncedBatches,
-    syncedItems,
-    remainingBatches: remaining.length,
-    errors
+    const remaining = getScannerOutboxBatches();
+    return {
+      syncedBatches,
+      syncedItems,
+      syncedBatchIds,
+      remainingBatches: remaining.length,
+      errors
+    };
   };
+
+  activeScannerSyncPromise = runSync();
+  return activeScannerSyncPromise;
 }
 
 // ============================================================================
@@ -517,14 +663,13 @@ export async function syncAllScannerOutboxBatches(
 // ============================================================================
 
 export function getRecountOutboxBatches(): RecountOutboxBatch[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(RECOUNT_OUTBOX_STORAGE_KEY);
-    const parsed: RecountOutboxBatch[] = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return readOutboxMerged<RecountOutboxBatch>(
+    RECOUNT_OUTBOX_STORAGE_KEY,
+    memoryRecountOutbox,
+    (v) => {
+      memoryRecountOutbox = v;
+    }
+  );
 }
 
 export function getPendingRecountOutboxCount(): number {
@@ -532,17 +677,16 @@ export function getPendingRecountOutboxCount(): number {
 }
 
 function saveRecountOutboxBatches(batches: RecountOutboxBatch[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (batches.length === 0) {
-      localStorage.removeItem(RECOUNT_OUTBOX_STORAGE_KEY);
-    } else {
-      localStorage.setItem(RECOUNT_OUTBOX_STORAGE_KEY, JSON.stringify(batches));
-    }
-  } catch (err) {
-    console.warn('[RecountOutbox] Failed saving recount outbox:', err);
-  }
-  notifyOutboxUpdated();
+  writeOutboxDurable(
+    RECOUNT_OUTBOX_STORAGE_KEY,
+    RECOUNT_OUTBOX_IDB_KEY,
+    batches,
+    (v) => {
+      memoryRecountOutbox = v;
+    },
+    notifyOutboxUpdated,
+    'RecountOutbox'
+  );
 }
 
 export function enqueueRecountOutboxBatch(params: {
@@ -598,146 +742,165 @@ export async function syncAllRecountOutboxBatches(): Promise<{
   remainingBatches: number;
   errors: string[];
 }> {
-  const current = getRecountOutboxBatches();
-  if (current.length === 0) {
-    return { syncedBatches: 0, remainingBatches: 0, errors: [] };
-  }
-
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const offlineList = getRecountOutboxBatches();
     return {
       syncedBatches: 0,
-      remainingBatches: current.length,
-      errors: ['Perangkat sedang offline']
+      remainingBatches: offlineList.length,
+      errors: offlineList.length > 0 ? ['Perangkat sedang offline'] : []
     };
   }
 
-  if (isRecountOutboxSyncing) {
-    return { syncedBatches: 0, remainingBatches: current.length, errors: [] };
+  if (isRecountOutboxSyncing && activeRecountSyncPromise) {
+    const prevRes = await activeRecountSyncPromise;
+    if (getRecountOutboxBatches().length === 0) return prevRes;
+    const followUp = await syncAllRecountOutboxBatches();
+    return {
+      syncedBatches: prevRes.syncedBatches + followUp.syncedBatches,
+      remainingBatches: followUp.remainingBatches,
+      errors: [...prevRes.errors, ...followUp.errors]
+    };
   }
 
-  isRecountOutboxSyncing = true;
-  let syncedBatches = 0;
-  const errors: string[] = [];
-  const workingList = [...current];
+  const runRecountSync = async () => {
+    isRecountOutboxSyncing = true;
+    let syncedBatches = 0;
+    const errors: string[] = [];
+    const processedIds = new Set<string>();
+    const isComplete = (b: RecountOutboxBatch) =>
+      Boolean(b.itemsSynced && b.auditRecordSynced && b.logSynced);
 
-  try {
-    for (let i = 0; i < workingList.length; i++) {
-      const batch = workingList[i];
-      batch.status = 'SYNCING';
-      saveRecountOutboxBatches(
-        workingList.filter((b) => !(b.itemsSynced && b.auditRecordSynced && b.logSynced))
+    try {
+      await hydrateOutboxFromIdbOnce(
+        recountIdbHydrated,
+        () => {
+          recountIdbHydrated = true;
+        },
+        RECOUNT_OUTBOX_IDB_KEY,
+        getRecountOutboxBatches,
+        saveRecountOutboxBatches
       );
 
-      try {
-        // Step 1: Idempotent PATCH on penerimaan_produksi rows
-        if (!batch.itemsSynced && batch.updatedItems.length > 0) {
-          for (const item of batch.updatedItems) {
-            const patchPayload: Record<string, any> = {
-              qty: Number(item.qty) || 0,
-              recount_qty: item.recount_qty,
-              recount_selisih: item.recount_selisih,
-              recount_status: item.recount_status,
-              recount_round: item.recount_round,
-              recount_notes: item.recount_notes,
-              recount_auditor: item.recount_auditor,
-              recount_updated_at: item.recount_updated_at
-            };
+      while (true) {
+        const nextPending = getRecountOutboxBatches().find((b) => !processedIds.has(b.batchId));
+        if (!nextPending) break;
+        processedIds.add(nextPending.batchId);
+
+        const batch: RecountOutboxBatch = { ...nextPending, status: 'SYNCING' };
+        commitBatchUpdateToLiveQueue(getRecountOutboxBatches, saveRecountOutboxBatches, batch, isComplete);
+
+        try {
+          // Step 1: Idempotent PATCH on penerimaan_produksi rows
+          if (!batch.itemsSynced && batch.updatedItems.length > 0) {
+            for (const item of batch.updatedItems) {
+              const patchPayload: Record<string, any> = {
+                qty: Number(item.qty) || 0,
+                recount_qty: item.recount_qty,
+                recount_selisih: item.recount_selisih,
+                recount_status: item.recount_status,
+                recount_round: item.recount_round,
+                recount_notes: item.recount_notes,
+                recount_auditor: item.recount_auditor,
+                recount_updated_at: item.recount_updated_at
+              };
+              try {
+                if (item.id && typeof item.id === 'number' && item.id < 1000000000) {
+                  await supabaseFetch(
+                    'penerimaan_produksi',
+                    'PATCH',
+                    patchPayload,
+                    `id=eq.${encodeURIComponent(String(item.id))}`
+                  );
+                } else if (item.kode_produksi && item.warna && item.size && item.tanggal_penerimaan) {
+                  const q = `kode_produksi=eq.${encodeURIComponent(item.kode_produksi)}&warna=eq.${encodeURIComponent(
+                    item.warna
+                  )}&size=eq.${encodeURIComponent(item.size)}&tanggal_penerimaan=eq.${encodeURIComponent(
+                    item.tanggal_penerimaan
+                  )}`;
+                  await supabaseFetch('penerimaan_produksi', 'PATCH', patchPayload, q);
+                }
+              } catch (patchErr: any) {
+                const msg = String(patchErr?.message || patchErr || '').toLowerCase();
+                const isMissingCol =
+                  (msg.includes('42703') ||
+                    msg.includes('pgrst204') ||
+                    msg.includes('does not exist') ||
+                    msg.includes('could not find the')) &&
+                  (msg.includes('recount_') || msg.includes('qty_retur'));
+                if (isMissingCol) {
+                  // Kolom recount_* tidak ada di tabel penerimaan_produksi; data disimpan via recount_audit_map di Step 2
+                  break;
+                }
+                throw patchErr;
+              }
+            }
+            batch.itemsSynced = true;
+          } else {
+            batch.itemsSynced = true;
+          }
+
+          // Step 2: Sync recount_audit_results to Cloud Settings / wms_system_docs
+          if (!batch.auditRecordSynced && batch.auditRecord) {
+            await saveRecountAuditRecord(batch.auditRecord);
+            batch.auditRecordSynced = true;
+          } else {
+            batch.auditRecordSynced = true;
+          }
+
+          // Step 3: Sync recount_history_logs_v1
+          if (!batch.logSynced && batch.logRecord) {
+            await savePenerimaanRecountLog(batch.logRecord);
+            batch.logSynced = true;
+          } else {
+            batch.logSynced = true;
+          }
+
+          // Step 4: Best-effort Google Sheet Delta push
+          if (!batch.sheetSynced && batch.sheetDelta) {
             try {
-              if (item.id && typeof item.id === 'number' && item.id < 1000000000) {
-                await supabaseFetch(
-                  'penerimaan_produksi',
-                  'PATCH',
-                  patchPayload,
-                  `id=eq.${encodeURIComponent(String(item.id))}`
-                );
-              } else if (item.kode_produksi && item.warna && item.size && item.tanggal_penerimaan) {
-                const q = `kode_produksi=eq.${encodeURIComponent(item.kode_produksi)}&warna=eq.${encodeURIComponent(
-                  item.warna
-                )}&size=eq.${encodeURIComponent(item.size)}&tanggal_penerimaan=eq.${encodeURIComponent(
-                  item.tanggal_penerimaan
-                )}`;
-                await supabaseFetch('penerimaan_produksi', 'PATCH', patchPayload, q);
-              }
-            } catch (patchErr: any) {
-              const msg = String(patchErr?.message || patchErr || '').toLowerCase();
-              const isMissingCol =
-                (msg.includes('42703') ||
-                  msg.includes('pgrst204') ||
-                  msg.includes('does not exist') ||
-                  msg.includes('could not find the')) &&
-                (msg.includes('recount_') || msg.includes('qty_retur'));
-              if (isMissingCol) {
-                // Kolom recount_* tidak ada di tabel penerimaan_produksi; data disimpan via recount_audit_map di Step 2
-                break;
-              }
-              throw patchErr;
+              await pushMasterRecountDeltaToGoogleSheet(batch.sheetDelta);
+              batch.sheetSynced = true;
+            } catch {
+              // Sheet sync is non-blocking once Supabase database is synced
+              batch.sheetSynced = true;
             }
           }
-          batch.itemsSynced = true;
-        } else {
-          batch.itemsSynced = true;
+
+          batch.status = 'PENDING';
+          batch.lastError = undefined;
+          syncedBatches++;
+        } catch (err: any) {
+          batch.attempts = (batch.attempts || 0) + 1;
+          batch.status = 'FAILED';
+          batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi hitung ulang';
+          errors.push(batch.lastError!);
         }
 
-        // Step 2: Sync recount_audit_results to Cloud Settings / wms_system_docs
-        if (!batch.auditRecordSynced && batch.auditRecord) {
-          await saveRecountAuditRecord(batch.auditRecord);
-          batch.auditRecordSynced = true;
-        } else {
-          batch.auditRecordSynced = true;
-        }
-
-        // Step 3: Sync recount_history_logs_v1
-        if (!batch.logSynced && batch.logRecord) {
-          await savePenerimaanRecountLog(batch.logRecord);
-          batch.logSynced = true;
-        } else {
-          batch.logSynced = true;
-        }
-
-        // Step 4: Best-effort Google Sheet Delta push
-        if (!batch.sheetSynced && batch.sheetDelta) {
-          try {
-            await pushMasterRecountDeltaToGoogleSheet(batch.sheetDelta);
-            batch.sheetSynced = true;
-          } catch {
-            // Sheet sync is non-blocking once Supabase database is synced
-            batch.sheetSynced = true;
-          }
-        }
-
-        batch.status = 'PENDING';
-        batch.lastError = undefined;
-        syncedBatches++;
-      } catch (err: any) {
-        batch.attempts = (batch.attempts || 0) + 1;
-        batch.status = 'FAILED';
-        batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi hitung ulang';
-        errors.push(batch.lastError!);
+        commitBatchUpdateToLiveQueue(getRecountOutboxBatches, saveRecountOutboxBatches, batch, isComplete);
       }
 
-      const stillPending = workingList.filter(
-        (b) => !(b.itemsSynced && b.auditRecordSynced && b.logSynced)
-      );
-      saveRecountOutboxBatches(stillPending);
-    }
-
-    if (syncedBatches > 0) {
-      invalidatePenerimaanProduksiCache();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('wms_penerimaan_produksi_updated'));
-        window.dispatchEvent(new CustomEvent('wms_recount_audit_updated'));
+      if (syncedBatches > 0) {
+        invalidatePenerimaanProduksiCache();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('wms_penerimaan_produksi_updated'));
+          window.dispatchEvent(new CustomEvent('wms_recount_audit_updated'));
+        }
       }
+    } finally {
+      isRecountOutboxSyncing = false;
+      activeRecountSyncPromise = null;
     }
-  } finally {
-    isRecountOutboxSyncing = false;
-  }
 
-  const remaining = getRecountOutboxBatches();
-  return {
-    syncedBatches,
-    remainingBatches: remaining.length,
-    errors
+    const remaining = getRecountOutboxBatches();
+    return {
+      syncedBatches,
+      remainingBatches: remaining.length,
+      errors
+    };
   };
+
+  activeRecountSyncPromise = runRecountSync();
+  return activeRecountSyncPromise;
 }
 
 // ============================================================================
@@ -1035,6 +1198,11 @@ export interface PickingSjDraftEntry {
 }
 
 let isPickingOutboxSyncing = false;
+let activePickingSyncPromise: Promise<{
+  syncedBatches: number;
+  remainingBatches: number;
+  errors: string[];
+}> | null = null;
 
 function notifyPickingOutboxUpdated() {
   if (typeof window !== 'undefined') {
@@ -1050,14 +1218,13 @@ export function notifyPickingSessionUpdated() {
 }
 
 export function getPickingOutboxBatches(): PickingOutboxBatch[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(PICKING_OUTBOX_STORAGE_KEY);
-    const parsed: PickingOutboxBatch[] = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return readOutboxMerged<PickingOutboxBatch>(
+    PICKING_OUTBOX_STORAGE_KEY,
+    memoryPickingOutbox,
+    (v) => {
+      memoryPickingOutbox = v;
+    }
+  );
 }
 
 export function getPendingPickingOutboxCount(): number {
@@ -1065,17 +1232,16 @@ export function getPendingPickingOutboxCount(): number {
 }
 
 function savePickingOutboxBatches(batches: PickingOutboxBatch[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (batches.length === 0) {
-      localStorage.removeItem(PICKING_OUTBOX_STORAGE_KEY);
-    } else {
-      localStorage.setItem(PICKING_OUTBOX_STORAGE_KEY, JSON.stringify(batches));
-    }
-  } catch (err) {
-    console.warn('[PickingOutbox] Failed saving picking outbox:', err);
-  }
-  notifyPickingOutboxUpdated();
+  writeOutboxDurable(
+    PICKING_OUTBOX_STORAGE_KEY,
+    PICKING_OUTBOX_IDB_KEY,
+    batches,
+    (v) => {
+      memoryPickingOutbox = v;
+    },
+    notifyPickingOutboxUpdated,
+    'PickingOutbox'
+  );
 }
 
 export function enqueuePickingOutboxBatch(params: {
@@ -1125,263 +1291,285 @@ export async function syncAllPickingOutboxBatches(): Promise<{
   remainingBatches: number;
   errors: string[];
 }> {
-  const current = getPickingOutboxBatches();
-  if (current.length === 0) {
-    return { syncedBatches: 0, remainingBatches: 0, errors: [] };
-  }
-
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const offlineList = getPickingOutboxBatches();
     return {
       syncedBatches: 0,
-      remainingBatches: current.length,
-      errors: ['Perangkat sedang offline']
+      remainingBatches: offlineList.length,
+      errors: offlineList.length > 0 ? ['Perangkat sedang offline'] : []
     };
   }
 
-  if (isPickingOutboxSyncing) {
-    return { syncedBatches: 0, remainingBatches: current.length, errors: [] };
+  if (isPickingOutboxSyncing && activePickingSyncPromise) {
+    const prevRes = await activePickingSyncPromise;
+    if (getPickingOutboxBatches().length === 0) return prevRes;
+    const followUp = await syncAllPickingOutboxBatches();
+    return {
+      syncedBatches: prevRes.syncedBatches + followUp.syncedBatches,
+      remainingBatches: followUp.remainingBatches,
+      errors: [...prevRes.errors, ...followUp.errors]
+    };
   }
 
-  isPickingOutboxSyncing = true;
-  let syncedBatches = 0;
-  const errors: string[] = [];
-  const workingList = [...current];
+  const runPickingSync = async () => {
+    isPickingOutboxSyncing = true;
+    let syncedBatches = 0;
+    const errors: string[] = [];
+    const processedIds = new Set<string>();
 
-  const isComplete = (b: PickingOutboxBatch) =>
-    b.logsSynced && b.itemsSynced && b.unexpectedSynced && b.peminjamanSynced;
+    const isComplete = (b: PickingOutboxBatch) =>
+      b.logsSynced && b.itemsSynced && b.unexpectedSynced && b.peminjamanSynced;
 
-  try {
-    for (let i = 0; i < workingList.length; i++) {
-      const batch = workingList[i];
-      const cleanNoSj = String(batch.no_sj || '').trim().toUpperCase();
-      batch.status = 'SYNCING';
-      savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
+    try {
+      await hydrateOutboxFromIdbOnce(
+        pickingIdbHydrated,
+        () => {
+          pickingIdbHydrated = true;
+        },
+        PICKING_OUTBOX_IDB_KEY,
+        getPickingOutboxBatches,
+        savePickingOutboxBatches
+      );
 
-      try {
-        // Step 1: Idempotent sync to log_produk (#OUT) with pre-flight delta check
-        if (!batch.logsSynced && batch.syncOutToLog) {
-          const allPicked = [...(batch.items || []), ...(batch.unexpectedItems || [])].filter(
-            (x) => (Number(x.qty_picked) || 0) > 0
-          );
-          if (allPicked.length > 0) {
-            const [existingRows, fetchedBaselineMap] = await Promise.all([
-              supabaseFetch<Array<{ sku: string; lokasi: string; qty: number }>>(
-                'log_produk',
-                'GET',
-                undefined,
-                `select=sku,lokasi,qty&invoice=eq.${encodeURIComponent(cleanNoSj)}&type=eq.OUT`
-              ),
-              getPickingPriorBaselinesForSj(cleanNoSj, true).catch(() =>
-                getCachedPickingPriorBaselinesForSj(cleanNoSj)
-              )
-            ]);
+      while (true) {
+        const nextPending = getPickingOutboxBatches().find((b) => !processedIds.has(b.batchId));
+        if (!nextPending) break;
+        processedIds.add(nextPending.batchId);
 
-            const existingOutBySku = new Map<string, number>();
-            (existingRows || []).forEach((row) => {
-              const skuKey = String(row.sku || '').toUpperCase().trim();
-              if (!skuKey) return;
-              existingOutBySku.set(skuKey, (existingOutBySku.get(skuKey) || 0) + (Number(row.qty) || 0));
-            });
+        const batch: PickingOutboxBatch = { ...nextPending, status: 'SYNCING' };
+        const cleanNoSj = String(batch.no_sj || '').trim().toUpperCase();
+        commitBatchUpdateToLiveQueue(getPickingOutboxBatches, savePickingOutboxBatches, batch, isComplete);
 
-            const logsOut: LogProdukItem[] = [];
-            for (const it of allPicked) {
-              const skuKey = String(it.sku || '').toUpperCase().trim();
-              const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
-              if (!skuKey || pickedQty <= 0) continue;
+        try {
+          // Step 1: Idempotent sync to log_produk (#OUT) with pre-flight delta check
+          if (!batch.logsSynced && batch.syncOutToLog) {
+            const allPicked = [...(batch.items || []), ...(batch.unexpectedItems || [])].filter(
+              (x) => (Number(x.qty_picked) || 0) > 0
+            );
+            if (allPicked.length > 0) {
+              const [existingRows, fetchedBaselineMap] = await Promise.all([
+                supabaseFetch<Array<{ sku: string; lokasi: string; qty: number }>>(
+                  'log_produk',
+                  'GET',
+                  undefined,
+                  `select=sku,lokasi,qty&invoice=eq.${encodeURIComponent(cleanNoSj)}&type=eq.OUT`
+                ),
+                getPickingPriorBaselinesForSj(cleanNoSj, true).catch(() =>
+                  getCachedPickingPriorBaselinesForSj(cleanNoSj)
+                )
+              ]);
 
-              const alreadyOut = existingOutBySku.get(skuKey) || 0;
-              const itemPrevBaseline = Math.max(0, Number(it.prev_qty_picked) || 0);
-              const persistedBaseline = Math.max(0, Number(fetchedBaselineMap[skuKey]) || 0);
-              const alreadyProcessed = Math.max(alreadyOut, itemPrevBaseline, persistedBaseline);
-              const deltaQty = Math.max(0, pickedQty - alreadyProcessed);
-              existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
-              if (deltaQty <= 0) continue;
-
-              const itemLogs = buildOutLogEntriesForPickingItem({
-                cleanNoSj,
-                item: it,
-                deltaQty,
-                alreadyOut: alreadyProcessed,
-                fallbackPicker: batch.pickerName || 'Picker',
-                catatan: batch.catatan || '',
-                createdAtIso: batch.createdAtIso || new Date().toISOString()
+              const existingOutBySku = new Map<string, number>();
+              (existingRows || []).forEach((row) => {
+                const skuKey = String(row.sku || '').toUpperCase().trim();
+                if (!skuKey) return;
+                existingOutBySku.set(skuKey, (existingOutBySku.get(skuKey) || 0) + (Number(row.qty) || 0));
               });
-              logsOut.push(...itemLogs);
-            }
 
-            if (logsOut.length > 0) {
-              const CHUNK_SIZE = 100;
-              for (let c = 0; c < logsOut.length; c += CHUNK_SIZE) {
-                await supabaseFetch('log_produk', 'POST', logsOut.slice(c, c + CHUNK_SIZE));
+              const logsOut: LogProdukItem[] = [];
+              for (const it of allPicked) {
+                const skuKey = String(it.sku || '').toUpperCase().trim();
+                const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
+                if (!skuKey || pickedQty <= 0) continue;
+
+                const alreadyOut = existingOutBySku.get(skuKey) || 0;
+                const itemPrevBaseline = Math.max(0, Number(it.prev_qty_picked) || 0);
+                const persistedBaseline = Math.max(0, Number(fetchedBaselineMap[skuKey]) || 0);
+                const alreadyProcessed = Math.max(alreadyOut, itemPrevBaseline, persistedBaseline);
+                const deltaQty = Math.max(0, pickedQty - alreadyProcessed);
+                existingOutBySku.set(skuKey, Math.max(0, alreadyOut - pickedQty));
+                if (deltaQty <= 0) continue;
+
+                const itemLogs = buildOutLogEntriesForPickingItem({
+                  cleanNoSj,
+                  item: it,
+                  deltaQty,
+                  alreadyOut: alreadyProcessed,
+                  fallbackPicker: batch.pickerName || 'Picker',
+                  catatan: batch.catatan || '',
+                  createdAtIso: batch.createdAtIso || new Date().toISOString()
+                });
+                logsOut.push(...itemLogs);
+              }
+
+              if (logsOut.length > 0) {
+                const CHUNK_SIZE = 100;
+                for (let c = 0; c < logsOut.length; c += CHUNK_SIZE) {
+                  await supabaseFetch('log_produk', 'POST', logsOut.slice(c, c + CHUNK_SIZE));
+                }
               }
             }
+            batch.logsSynced = true;
+            commitBatchUpdateToLiveQueue(getPickingOutboxBatches, savePickingOutboxBatches, batch, isComplete);
+          } else {
+            batch.logsSynced = true;
           }
-          batch.logsSynced = true;
-          savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
-        } else {
-          batch.logsSynced = true;
-        }
 
-        // Step 2: Patch picking_list rows as SELESAI (bounded parallel chunks + SJ-wide orphan sweep)
-        if (!batch.itemsSynced) {
-          const batchItems = batch.items || [];
-          const PATCH_CONCURRENCY = 8;
-          for (let c = 0; c < batchItems.length; c += PATCH_CONCURRENCY) {
-            const chunk = batchItems.slice(c, c + PATCH_CONCURRENCY);
-            await Promise.all(
-              chunk.map(async (item) => {
-                const condition =
-                  item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
-                    ? `id=eq.${item.id}`
-                    : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
+          // Step 2: Patch picking_list rows as SELESAI (bounded parallel chunks + SJ-wide orphan sweep)
+          if (!batch.itemsSynced) {
+            const batchItems = batch.items || [];
+            const PATCH_CONCURRENCY = 8;
+            for (let c = 0; c < batchItems.length; c += PATCH_CONCURRENCY) {
+              const chunk = batchItems.slice(c, c + PATCH_CONCURRENCY);
+              await Promise.all(
+                chunk.map(async (item) => {
+                  const condition =
+                    item.id && (typeof item.id === 'number' || (typeof item.id === 'string' && !item.id.startsWith('pick_')))
+                      ? `id=eq.${item.id}`
+                      : `no_sj=eq.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(item.sku)}`;
 
-                const itemPicker = resolvePickingItemActualPicker(item, batch.pickerName || 'Operator');
-                const splitLocSummary = summarizePickSplitsLocations(item.pick_splits);
-                const pickedLocToSave =
-                  (Number(item.qty_picked) || 0) > 0
-                    ? splitLocSummary || resolvePrimarySingleLocation(item.lokasi_picked || '') || ''
-                    : '';
+                  const itemPicker = resolvePickingItemActualPicker(item, batch.pickerName || 'Operator');
+                  const splitLocSummary = summarizePickSplitsLocations(item.pick_splits);
+                  const pickedLocToSave =
+                    (Number(item.qty_picked) || 0) > 0
+                      ? splitLocSummary || resolvePrimarySingleLocation(item.lokasi_picked || '') || ''
+                      : '';
 
-                try {
-                  const payload: Record<string, any> = {
-                    qty_picked: item.qty_picked,
-                    status: 'SELESAI',
-                    picker_name: itemPicker
-                  };
-                  if (pickedLocToSave) {
-                    payload.lokasi = pickedLocToSave;
-                  }
-                  if (batch.catatan) {
-                    payload.catatan = batch.catatan;
-                  }
-                  await supabaseFetch('picking_list', 'PATCH', payload, condition);
-                } catch (patchErr: any) {
-                  const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
-                  if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
-                    const minimalPayload: Record<string, any> = {
+                  try {
+                    const payload: Record<string, any> = {
                       qty_picked: item.qty_picked,
                       status: 'SELESAI',
                       picker_name: itemPicker
                     };
                     if (pickedLocToSave) {
-                      minimalPayload.lokasi = pickedLocToSave;
+                      payload.lokasi = pickedLocToSave;
                     }
-                    await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
-                  } else {
-                    throw patchErr;
+                    if (batch.catatan) {
+                      payload.catatan = batch.catatan;
+                    }
+                    await supabaseFetch('picking_list', 'PATCH', payload, condition);
+                  } catch (patchErr: any) {
+                    const errMsg = String(patchErr?.message || patchErr || '').toLowerCase();
+                    if (errMsg.includes('column') || errMsg.includes('catatan') || errMsg.includes('400')) {
+                      const minimalPayload: Record<string, any> = {
+                        qty_picked: item.qty_picked,
+                        status: 'SELESAI',
+                        picker_name: itemPicker
+                      };
+                      if (pickedLocToSave) {
+                        minimalPayload.lokasi = pickedLocToSave;
+                      }
+                      await supabaseFetch('picking_list', 'PATCH', minimalPayload, condition);
+                    } else {
+                      throw patchErr;
+                    }
                   }
-                }
-              })
-            );
-          }
-
-          // SJ-wide orphan sweep to ensure zero rows remain stuck in PENDING / SEDANG PICKING
-          const sweepCond = `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&status=neq.SELESAI`;
-          try {
-            await supabaseFetch(
-              'picking_list',
-              'PATCH',
-              { status: 'SELESAI', picker_name: batch.pickerName },
-              sweepCond
-            );
-          } catch {
-            await supabaseFetch('picking_list', 'PATCH', { status: 'SELESAI' }, sweepCond);
-          }
-
-          batch.itemsSynced = true;
-          savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
-        }
-
-        // Step 3: Insert unexpected items if any
-        if (!batch.unexpectedSynced && (batch.unexpectedItems || []).length > 0) {
-          const nowIso = batch.createdAtIso || new Date().toISOString();
-          const unexpPayloads = batch.unexpectedItems.map((unexp) => ({
-            no_sj: cleanNoSj,
-            tanggal: nowIso.slice(0, 10),
-            tujuan: batch.tujuan || batch.items[0]?.tujuan || 'Marketplace',
-            sku: unexp.sku,
-            nama_produk: unexp.nama_produk || unexp.sku,
-            qty_req: 0,
-            qty_picked: unexp.qty_picked,
-            lokasi:
-              summarizePickSplitsLocations(unexp.pick_splits) ||
-              resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') ||
-              '-',
-            status: 'SELESAI',
-            picker_name: resolvePickingItemActualPicker(unexp, batch.pickerName || 'Operator'),
-            created_at: nowIso
-          }));
-          const ok = await insertPickingListRowsToSupabase(unexpPayloads);
-          if (!ok) {
-            throw new Error('Gagal menyimpan item tambahan picking ke Supabase');
-          }
-          batch.unexpectedSynced = true;
-          savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
-        } else {
-          batch.unexpectedSynced = true;
-        }
-
-        // Step 4: Patch peminjaman if SPS / PJM
-        if (!batch.peminjamanSynced && (cleanNoSj.startsWith('SPS') || cleanNoSj.startsWith('PJM'))) {
-          await supabaseFetch(
-            'peminjaman',
-            'PATCH',
-            { status: 'SELESAI' },
-            `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}`
-          ).catch(() => {});
-          batch.peminjamanSynced = true;
-        } else {
-          batch.peminjamanSynced = true;
-        }
-
-        // Step 5: Update persisted baseline if batch carried shortage/continuation tracking
-        const cachedBase = getCachedPickingPriorBaselinesForSj(cleanNoSj);
-        const hadBaseline =
-          Object.keys(cachedBase).length > 0 ||
-          (batch.items || []).some((it) => (Number(it.prev_qty_picked) || 0) > 0);
-        if (hadBaseline) {
-          const nextBase: Record<string, number> = { ...cachedBase };
-          (batch.items || []).forEach((it) => {
-            const skuKey = String(it.sku || '').trim().toUpperCase();
-            const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
-            if (skuKey && pickedQty > 0) {
-              nextBase[skuKey] = Math.max(nextBase[skuKey] || 0, pickedQty);
+                })
+              );
             }
-          });
-          await savePickingPriorBaselineForSj(cleanNoSj, nextBase, {
-            updatedBy: batch.pickerName || 'Operator'
-          }).catch(() => {});
+
+            // SJ-wide orphan sweep to ensure zero rows remain stuck in PENDING / SEDANG PICKING
+            const sweepCond = `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&status=neq.SELESAI`;
+            try {
+              await supabaseFetch(
+                'picking_list',
+                'PATCH',
+                { status: 'SELESAI', picker_name: batch.pickerName },
+                sweepCond
+              );
+            } catch {
+              await supabaseFetch('picking_list', 'PATCH', { status: 'SELESAI' }, sweepCond);
+            }
+
+            batch.itemsSynced = true;
+            commitBatchUpdateToLiveQueue(getPickingOutboxBatches, savePickingOutboxBatches, batch, isComplete);
+          }
+
+          // Step 3: Insert unexpected items if any
+          if (!batch.unexpectedSynced && (batch.unexpectedItems || []).length > 0) {
+            const nowIso = batch.createdAtIso || new Date().toISOString();
+            const unexpPayloads = batch.unexpectedItems.map((unexp) => ({
+              no_sj: cleanNoSj,
+              tanggal: nowIso.slice(0, 10),
+              tujuan: batch.tujuan || batch.items[0]?.tujuan || 'Marketplace',
+              sku: unexp.sku,
+              nama_produk: unexp.nama_produk || unexp.sku,
+              qty_req: 0,
+              qty_picked: unexp.qty_picked,
+              lokasi:
+                summarizePickSplitsLocations(unexp.pick_splits) ||
+                resolvePrimarySingleLocation(unexp.lokasi_picked || unexp.lokasi || '') ||
+                '-',
+              status: 'SELESAI',
+              picker_name: resolvePickingItemActualPicker(unexp, batch.pickerName || 'Operator'),
+              created_at: nowIso
+            }));
+            const ok = await insertPickingListRowsToSupabase(unexpPayloads);
+            if (!ok) {
+              throw new Error('Gagal menyimpan item tambahan picking ke Supabase');
+            }
+            batch.unexpectedSynced = true;
+            commitBatchUpdateToLiveQueue(getPickingOutboxBatches, savePickingOutboxBatches, batch, isComplete);
+          } else {
+            batch.unexpectedSynced = true;
+          }
+
+          // Step 4: Patch peminjaman if SPS / PJM
+          if (!batch.peminjamanSynced && (cleanNoSj.startsWith('SPS') || cleanNoSj.startsWith('PJM'))) {
+            await supabaseFetch(
+              'peminjaman',
+              'PATCH',
+              { status: 'SELESAI' },
+              `no_peminjaman=ilike.${encodeURIComponent(cleanNoSj)}`
+            ).catch(() => {});
+            batch.peminjamanSynced = true;
+          } else {
+            batch.peminjamanSynced = true;
+          }
+
+          // Step 5: Update persisted baseline if batch carried shortage/continuation tracking
+          const cachedBase = getCachedPickingPriorBaselinesForSj(cleanNoSj);
+          const hadBaseline =
+            Object.keys(cachedBase).length > 0 ||
+            (batch.items || []).some((it) => (Number(it.prev_qty_picked) || 0) > 0);
+          if (hadBaseline) {
+            const nextBase: Record<string, number> = { ...cachedBase };
+            (batch.items || []).forEach((it) => {
+              const skuKey = String(it.sku || '').trim().toUpperCase();
+              const pickedQty = Math.max(0, Number(it.qty_picked) || 0);
+              if (skuKey && pickedQty > 0) {
+                nextBase[skuKey] = Math.max(nextBase[skuKey] || 0, pickedQty);
+              }
+            });
+            await savePickingPriorBaselineForSj(cleanNoSj, nextBase, {
+              updatedBy: batch.pickerName || 'Operator'
+            }).catch(() => {});
+          }
+
+          batch.status = 'PENDING';
+          batch.lastError = undefined;
+          syncedBatches++;
+        } catch (err: any) {
+          batch.attempts = (batch.attempts || 0) + 1;
+          batch.status = 'FAILED';
+          batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi tugas picking';
+          errors.push(batch.lastError!);
         }
 
-        batch.status = 'PENDING';
-        batch.lastError = undefined;
-        syncedBatches++;
-      } catch (err: any) {
-        batch.attempts = (batch.attempts || 0) + 1;
-        batch.status = 'FAILED';
-        batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi tugas picking';
-        errors.push(batch.lastError!);
+        commitBatchUpdateToLiveQueue(getPickingOutboxBatches, savePickingOutboxBatches, batch, isComplete);
       }
 
-      savePickingOutboxBatches(workingList.filter((b) => !isComplete(b)));
-    }
-
-    if (syncedBatches > 0) {
-      invalidateStokFisikCache();
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('wms_picking_list_updated'));
+      if (syncedBatches > 0) {
+        invalidateStokFisikCache();
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('wms_picking_list_updated'));
+        }
       }
+    } finally {
+      isPickingOutboxSyncing = false;
+      activePickingSyncPromise = null;
     }
-  } finally {
-    isPickingOutboxSyncing = false;
-  }
 
-  const remaining = getPickingOutboxBatches();
-  return {
-    syncedBatches,
-    remainingBatches: remaining.length,
-    errors
+    const remaining = getPickingOutboxBatches();
+    return {
+      syncedBatches,
+      remainingBatches: remaining.length,
+      errors
+    };
   };
+
+  activePickingSyncPromise = runPickingSync();
+  return activePickingSyncPromise;
 }
 
 // ============================================================================
@@ -1861,6 +2049,11 @@ export interface ActivePutawaySessionData {
 }
 
 let isPutawayOutboxSyncing = false;
+let activePutawaySyncPromise: Promise<{
+  syncedBatches: number;
+  remainingBatches: number;
+  errors: string[];
+}> | null = null;
 
 function notifyPutawayOutboxUpdated() {
   if (typeof window !== 'undefined') {
@@ -1876,14 +2069,13 @@ export function notifyPutawaySessionUpdated() {
 }
 
 export function getPutawayOutboxBatches(): PutawayOutboxBatch[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = localStorage.getItem(PUTAWAY_OUTBOX_STORAGE_KEY);
-    const parsed: PutawayOutboxBatch[] = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
+  return readOutboxMerged<PutawayOutboxBatch>(
+    PUTAWAY_OUTBOX_STORAGE_KEY,
+    memoryPutawayOutbox,
+    (v) => {
+      memoryPutawayOutbox = v;
+    }
+  );
 }
 
 export function getPendingPutawayOutboxCount(): number {
@@ -1891,17 +2083,16 @@ export function getPendingPutawayOutboxCount(): number {
 }
 
 function savePutawayOutboxBatches(batches: PutawayOutboxBatch[]): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (batches.length === 0) {
-      localStorage.removeItem(PUTAWAY_OUTBOX_STORAGE_KEY);
-    } else {
-      localStorage.setItem(PUTAWAY_OUTBOX_STORAGE_KEY, JSON.stringify(batches));
-    }
-  } catch (err) {
-    console.warn('[PutawayOutbox] Failed saving putaway outbox:', err);
-  }
-  notifyPutawayOutboxUpdated();
+  writeOutboxDurable(
+    PUTAWAY_OUTBOX_STORAGE_KEY,
+    PUTAWAY_OUTBOX_IDB_KEY,
+    batches,
+    (v) => {
+      memoryPutawayOutbox = v;
+    },
+    notifyPutawayOutboxUpdated,
+    'PutawayOutbox'
+  );
 }
 
 export function enqueuePutawayOutboxBatch(params: {
@@ -1955,202 +2146,225 @@ export async function syncAllPutawayOutboxBatches(): Promise<{
   remainingBatches: number;
   errors: string[];
 }> {
-  const current = getPutawayOutboxBatches();
-  if (current.length === 0) {
-    return { syncedBatches: 0, remainingBatches: 0, errors: [] };
-  }
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
+    const offlineList = getPutawayOutboxBatches();
     return {
       syncedBatches: 0,
-      remainingBatches: current.length,
-      errors: ['Perangkat sedang offline'],
+      remainingBatches: offlineList.length,
+      errors: offlineList.length > 0 ? ['Perangkat sedang offline'] : [],
     };
   }
-  if (isPutawayOutboxSyncing) {
-    return { syncedBatches: 0, remainingBatches: current.length, errors: [] };
+  if (isPutawayOutboxSyncing && activePutawaySyncPromise) {
+    const prevRes = await activePutawaySyncPromise;
+    if (getPutawayOutboxBatches().length === 0) return prevRes;
+    const followUp = await syncAllPutawayOutboxBatches();
+    return {
+      syncedBatches: prevRes.syncedBatches + followUp.syncedBatches,
+      remainingBatches: followUp.remainingBatches,
+      errors: [...prevRes.errors, ...followUp.errors],
+    };
   }
 
-  isPutawayOutboxSyncing = true;
-  let syncedBatches = 0;
-  const errors: string[] = [];
-  const workingList = [...current];
-  const allMovedSkus = new Set<string>();
-  const isComplete = (b: PutawayOutboxBatch) => b.logsSynced && b.taskSynced;
+  const runPutawaySync = async () => {
+    isPutawayOutboxSyncing = true;
+    let syncedBatches = 0;
+    const errors: string[] = [];
+    const processedIds = new Set<string>();
+    const allMovedSkus = new Set<string>();
+    const isComplete = (b: PutawayOutboxBatch) => b.logsSynced && b.taskSynced;
 
-  try {
-    for (let i = 0; i < workingList.length; i++) {
-      const batch = workingList[i];
-      batch.status = 'SYNCING';
-      savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
+    try {
+      await hydrateOutboxFromIdbOnce(
+        putawayIdbHydrated,
+        () => {
+          putawayIdbHydrated = true;
+        },
+        PUTAWAY_OUTBOX_IDB_KEY,
+        getPutawayOutboxBatches,
+        savePutawayOutboxBatches
+      );
 
-      try {
-        // Step 1: Idempotent sync to log_produk (OUT + IN)
-        if (!batch.logsSynced && batch.logs.length > 0) {
-          const existingRows = await supabaseFetch<Array<{ type: string; sku: string; lokasi: string; qty: number }>>(
-            'log_produk',
-            'GET',
-            null,
-            `select=type,sku,lokasi,qty&invoice=eq.${encodeURIComponent(batch.invoicePutaway)}`
-          );
+      while (true) {
+        const nextPending = getPutawayOutboxBatches().find((b) => !processedIds.has(b.batchId));
+        if (!nextPending) break;
+        processedIds.add(nextPending.batchId);
 
-          const existingCounts = new Map<string, number>();
-          (existingRows || []).forEach((row) => {
-            const k = `${String(row.type || '').toUpperCase()}|${String(row.sku || '').toUpperCase()}|${String(row.lokasi || '').toUpperCase()}|${Number(row.qty) || 0}`;
-            existingCounts.set(k, (existingCounts.get(k) || 0) + 1);
-          });
+        const batch: PutawayOutboxBatch = { ...nextPending, status: 'SYNCING' };
+        commitBatchUpdateToLiveQueue(getPutawayOutboxBatches, savePutawayOutboxBatches, batch, isComplete);
 
-          const remainingLogs: LogProdukItem[] = [];
-          for (const log of batch.logs) {
-            const k = `${String(log.type || '').toUpperCase()}|${String(log.sku || '').toUpperCase()}|${String(log.lokasi || '').toUpperCase()}|${Number(log.qty) || 0}`;
-            const count = existingCounts.get(k) || 0;
-            if (count > 0) {
-              existingCounts.set(k, count - 1);
-            } else {
-              remainingLogs.push(log);
-            }
-          }
-
-          if (remainingLogs.length > 0) {
-            const CHUNK_SIZE = 150;
-            for (let c = 0; c < remainingLogs.length; c += CHUNK_SIZE) {
-              await supabaseFetch('log_produk', 'POST', remainingLogs.slice(c, c + CHUNK_SIZE));
-            }
-          }
-
-          batch.logsSynced = true;
-          savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
-        } else {
-          batch.logsSynced = true;
-        }
-
-        // Step 2: Update PutawayTask status to SELESAI in putaway_tasks or wms_system_docs
-        if (!batch.taskSynced) {
-          const doneTask: PutawayTask = {
-            ...batch.taskSnapshot,
-            status: 'SELESAI',
-            completed_by: batch.completedBy,
-            completed_at: batch.taskSnapshot.completed_at || batch.createdAtIso,
-            updated_at: new Date().toISOString(),
-            catatan: batch.catatan || batch.taskSnapshot.catatan || '',
-          };
-
-          let updatedDedicated = false;
-          try {
-            const patchRes = await supabaseFetch<any[]>(
-              'putaway_tasks',
-              'PATCH',
-              {
-                status: 'SELESAI',
-                completed_by: doneTask.completed_by,
-                completed_at: doneTask.completed_at,
-                updated_at: doneTask.updated_at,
-                catatan: doneTask.catatan || '',
-                items: doneTask.items,
-                active_operators: doneTask.active_operators,
-              },
-              `id=eq.${encodeURIComponent(doneTask.id)}`,
-              true
-            );
-            if (!Array.isArray(patchRes) || patchRes.length === 0) {
-              await supabaseFetch('putaway_tasks', 'POST', [doneTask]);
-            }
-            updatedDedicated = true;
-          } catch (tblErr: any) {
-            if (!isMissingPutawayTableError(tblErr)) {
-              throw tblErr;
-            }
-          }
-
-          if (!updatedDedicated) {
-            const docs = await supabaseFetch<SystemDoc[]>(
-              'wms_system_docs',
+        try {
+          // Step 1: Idempotent sync to log_produk (OUT + IN)
+          if (!batch.logsSynced && batch.logs.length > 0) {
+            const existingRows = await supabaseFetch<Array<{ type: string; sku: string; lokasi: string; qty: number }>>(
+              'log_produk',
               'GET',
               null,
-              `section_id=eq.${encodeURIComponent(PUTAWAY_DOCS_SECTION_OUTBOX)}&limit=1`
+              `select=type,sku,lokasi,qty&invoice=eq.${encodeURIComponent(batch.invoicePutaway)}`
             );
-            let existingList: PutawayTask[] = [];
-            if (Array.isArray(docs) && docs[0]?.content) {
-              try {
-                const parsed = JSON.parse(docs[0].content);
-                if (Array.isArray(parsed)) existingList = parsed;
-              } catch {}
+
+            const existingCounts = new Map<string, number>();
+            (existingRows || []).forEach((row) => {
+              const k = `${String(row.type || '').toUpperCase()}|${String(row.sku || '').toUpperCase()}|${String(row.lokasi || '').toUpperCase()}|${Number(row.qty) || 0}`;
+              existingCounts.set(k, (existingCounts.get(k) || 0) + 1);
+            });
+
+            const remainingLogs: LogProdukItem[] = [];
+            for (const log of batch.logs) {
+              const k = `${String(log.type || '').toUpperCase()}|${String(log.sku || '').toUpperCase()}|${String(log.lokasi || '').toUpperCase()}|${Number(log.qty) || 0}`;
+              const count = existingCounts.get(k) || 0;
+              if (count > 0) {
+                existingCounts.set(k, count - 1);
+              } else {
+                remainingLogs.push(log);
+              }
             }
-            const idx = existingList.findIndex((t) => t.id === doneTask.id);
-            if (idx >= 0) existingList[idx] = doneTask;
-            else existingList.unshift(doneTask);
 
-            const activeOnes = existingList.filter((t) => t.status === 'AKTIF');
-            const historyOnes = existingList
-              .filter((t) => t.status !== 'AKTIF')
-              .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
-              .slice(0, 80);
+            if (remainingLogs.length > 0) {
+              const CHUNK_SIZE = 150;
+              for (let c = 0; c < remainingLogs.length; c += CHUNK_SIZE) {
+                await supabaseFetch('log_produk', 'POST', remainingLogs.slice(c, c + CHUNK_SIZE));
+              }
+            }
 
-            await supabaseFetch(
-              'wms_system_docs',
-              'POST',
-              [
-                {
-                  section_id: PUTAWAY_DOCS_SECTION_OUTBOX,
-                  content: JSON.stringify([...activeOnes, ...historyOnes]),
-                  updated_by: batch.completedBy,
-                },
-              ],
-              'on_conflict=section_id',
-              true
-            );
+            batch.logsSynced = true;
+            commitBatchUpdateToLiveQueue(getPutawayOutboxBatches, savePutawayOutboxBatches, batch, isComplete);
+          } else {
+            batch.logsSynced = true;
           }
 
-          try {
-            const cachedRaw = localStorage.getItem(PUTAWAY_LOCAL_CACHE_KEY_OUTBOX);
-            const cachedList: PutawayTask[] = cachedRaw ? JSON.parse(cachedRaw) : [];
-            const nextCached = Array.isArray(cachedList)
-              ? cachedList.map((t) => (t.id === doneTask.id ? doneTask : t))
-              : [doneTask];
-            if (!nextCached.some((t) => t.id === doneTask.id)) nextCached.unshift(doneTask);
-            localStorage.setItem(PUTAWAY_LOCAL_CACHE_KEY_OUTBOX, JSON.stringify(nextCached));
-          } catch {}
+          // Step 2: Update PutawayTask status to SELESAI in putaway_tasks or wms_system_docs
+          if (!batch.taskSynced) {
+            const doneTask: PutawayTask = {
+              ...batch.taskSnapshot,
+              status: 'SELESAI',
+              completed_by: batch.completedBy,
+              completed_at: batch.taskSnapshot.completed_at || batch.createdAtIso,
+              updated_at: new Date().toISOString(),
+              catatan: batch.catatan || batch.taskSnapshot.catatan || '',
+            };
 
-          batch.taskSynced = true;
-          savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
+            let updatedDedicated = false;
+            try {
+              const patchRes = await supabaseFetch<any[]>(
+                'putaway_tasks',
+                'PATCH',
+                {
+                  status: 'SELESAI',
+                  completed_by: doneTask.completed_by,
+                  completed_at: doneTask.completed_at,
+                  updated_at: doneTask.updated_at,
+                  catatan: doneTask.catatan || '',
+                  items: doneTask.items,
+                  active_operators: doneTask.active_operators,
+                },
+                `id=eq.${encodeURIComponent(doneTask.id)}`,
+                true
+              );
+              if (!Array.isArray(patchRes) || patchRes.length === 0) {
+                await supabaseFetch('putaway_tasks', 'POST', [doneTask]);
+              }
+              updatedDedicated = true;
+            } catch (tblErr: any) {
+              if (!isMissingPutawayTableError(tblErr)) {
+                throw tblErr;
+              }
+            }
+
+            if (!updatedDedicated) {
+              const docs = await supabaseFetch<SystemDoc[]>(
+                'wms_system_docs',
+                'GET',
+                null,
+                `section_id=eq.${encodeURIComponent(PUTAWAY_DOCS_SECTION_OUTBOX)}&limit=1`
+              );
+              let existingList: PutawayTask[] = [];
+              if (Array.isArray(docs) && docs[0]?.content) {
+                try {
+                  const parsed = JSON.parse(docs[0].content);
+                  if (Array.isArray(parsed)) existingList = parsed;
+                } catch {}
+              }
+              const idx = existingList.findIndex((t) => t.id === doneTask.id);
+              if (idx >= 0) existingList[idx] = doneTask;
+              else existingList.unshift(doneTask);
+
+              const activeOnes = existingList.filter((t) => t.status === 'AKTIF');
+              const historyOnes = existingList
+                .filter((t) => t.status !== 'AKTIF')
+                .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+                .slice(0, 80);
+
+              await supabaseFetch(
+                'wms_system_docs',
+                'POST',
+                [
+                  {
+                    section_id: PUTAWAY_DOCS_SECTION_OUTBOX,
+                    content: JSON.stringify([...activeOnes, ...historyOnes]),
+                    updated_by: batch.completedBy,
+                  },
+                ],
+                'on_conflict=section_id',
+                true
+              );
+            }
+
+            try {
+              const cachedRaw = localStorage.getItem(PUTAWAY_LOCAL_CACHE_KEY_OUTBOX);
+              const cachedList: PutawayTask[] = cachedRaw ? JSON.parse(cachedRaw) : [];
+              const nextCached = Array.isArray(cachedList)
+                ? cachedList.map((t) => (t.id === doneTask.id ? doneTask : t))
+                : [doneTask];
+              if (!nextCached.some((t) => t.id === doneTask.id)) nextCached.unshift(doneTask);
+              localStorage.setItem(PUTAWAY_LOCAL_CACHE_KEY_OUTBOX, JSON.stringify(nextCached));
+            } catch {}
+
+            batch.taskSynced = true;
+            commitBatchUpdateToLiveQueue(getPutawayOutboxBatches, savePutawayOutboxBatches, batch, isComplete);
+          }
+
+          batch.movedSkus.forEach((s) => allMovedSkus.add(s));
+          batch.status = 'PENDING';
+          batch.lastError = undefined;
+          syncedBatches++;
+        } catch (err: any) {
+          batch.attempts = (batch.attempts || 0) + 1;
+          batch.status = 'FAILED';
+          batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi Tugas Putaway';
+          errors.push(batch.lastError!);
         }
 
-        batch.movedSkus.forEach((s) => allMovedSkus.add(s));
-        batch.status = 'PENDING';
-        batch.lastError = undefined;
-        syncedBatches++;
-      } catch (err: any) {
-        batch.attempts = (batch.attempts || 0) + 1;
-        batch.status = 'FAILED';
-        batch.lastError = err?.message || 'Gangguan jaringan saat sinkronisasi Tugas Putaway';
-        errors.push(batch.lastError!);
+        commitBatchUpdateToLiveQueue(getPutawayOutboxBatches, savePutawayOutboxBatches, batch, isComplete);
       }
 
-      savePutawayOutboxBatches(workingList.filter((b) => !isComplete(b)));
+      if (syncedBatches > 0) {
+        invalidateStokFisikCache();
+        if (allMovedSkus.size > 0) {
+          await fetchStockForSkus(Array.from(allMovedSkus)).catch(() => {});
+        }
+        bumpCloudCacheEpoch('STOCK_RESET').catch(() => {});
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
+          window.dispatchEvent(new CustomEvent('wms_stock_updated'));
+          window.dispatchEvent(new CustomEvent('wms_mutasi_updated'));
+          window.dispatchEvent(new CustomEvent('wms_putaway_tasks_updated'));
+        }
+      }
+    } finally {
+      isPutawayOutboxSyncing = false;
+      activePutawaySyncPromise = null;
     }
 
-    if (syncedBatches > 0) {
-      invalidateStokFisikCache();
-      if (allMovedSkus.size > 0) {
-        await fetchStockForSkus(Array.from(allMovedSkus)).catch(() => {});
-      }
-      bumpCloudCacheEpoch('STOCK_RESET').catch(() => {});
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('wms_inventory_updated'));
-        window.dispatchEvent(new CustomEvent('wms_stock_updated'));
-        window.dispatchEvent(new CustomEvent('wms_mutasi_updated'));
-        window.dispatchEvent(new CustomEvent('wms_putaway_tasks_updated'));
-      }
-    }
-  } finally {
-    isPutawayOutboxSyncing = false;
-  }
-
-  const remaining = getPutawayOutboxBatches();
-  return {
-    syncedBatches,
-    remainingBatches: remaining.length,
-    errors,
+    const remaining = getPutawayOutboxBatches();
+    return {
+      syncedBatches,
+      remainingBatches: remaining.length,
+      errors,
+    };
   };
+
+  activePutawaySyncPromise = runPutawaySync();
+  return activePutawaySyncPromise;
 }
 
 export function saveActivePutawaySession(session: ActivePutawaySessionData): void {

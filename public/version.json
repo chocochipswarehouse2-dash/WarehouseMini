@@ -1,13 +1,13 @@
 {
-  "version": "v2.38.0",
-  "versionCode": 580,
+  "version": "v2.38.1",
+  "versionCode": 581,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v580-1344",
-  "releaseTitle": "WMS v2.38.0 — Tambah Lokasi E Warehouse (E001–E050)",
+  "buildHash": "wms-261127-v581-1614",
+  "releaseTitle": "WMS v2.38.1 — Perbaikan Kritis Outbox Scan & Anti-QuotaExceeded",
   "releaseNotes": [
-    "Menambahkan Lokasi E (E001–E050, kapasitas default 75 pcs, kategori Umum, dapat diubah di Setup Kapasitas) ke Area Warehouse Priority 1",
-    "Sinkronisasi pengenalan kode rak E di Scanner, Picking, Putaway, Kapasitas Rak, Kosongkan Rak, Cetak Label, Anomali/SO, & Bot WA GAS",
-    "Auto-migrasi konfigurasi kapasitas rak tersimpan tanpa menimpa pengaturan kustom"
+    "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
+    "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
+    "Notifikasi Data Scan Tersimpan kini wajib terverifikasi masuk ke Supabase terlebih dahulu (anti false-positive) & dukungan ganti lokasi tag #IN X002 / #X002"
   ],
   "minSupportedVersion": "v2.0.0"
 }

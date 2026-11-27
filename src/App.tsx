@@ -67,6 +67,7 @@ import { HitungUlangPopupModal } from './components/HitungUlangPopupModal';
 import { MinimizedWorkspacesDock } from './components/common/MinimizedWorkspacesDock';
 import {
   enqueueScannerOutboxBatch,
+  getScannerOutboxBatches,
   syncAllScannerOutboxBatches,
   getPendingScannerOutboxCount,
   getPendingRecountOutboxCount,
@@ -4014,7 +4015,7 @@ export default function App() {
         const restIn = text.replace(/^#?(IN|MASUK)[:\s]*/i, '').trim();
         if (restIn && (restIn.startsWith('WA') || restIn.length > 5)) {
           explicitInvoice = restIn;
-        } else if (restIn && !currentLocationRef.current && !/^[A-Z0-9_]{5,}$/i.test(restIn)) {
+        } else if (restIn && !/^[A-Z0-9_]{5,}$/i.test(restIn)) {
           const normIn = normalizeLokasi(restIn);
           setCurrentLocation(normIn);
           currentLocationRef.current = normIn;
@@ -4024,7 +4025,7 @@ export default function App() {
         const restOut = text.replace(/^#?(OUT|KELUAR)[:\s]*/i, '').trim();
         if (restOut && (restOut.startsWith('WA') || restOut.length > 5)) {
           explicitInvoice = restOut;
-        } else if (restOut && !currentLocationRef.current && !/^[A-Z0-9_]{5,}$/i.test(restOut)) {
+        } else if (restOut && !/^[A-Z0-9_]{5,}$/i.test(restOut)) {
           const normOut = normalizeLokasi(restOut);
           setCurrentLocation(normOut);
           currentLocationRef.current = normOut;
@@ -4041,11 +4042,12 @@ export default function App() {
       }
       playCategoryBeep();
       vibrateDevice(60);
-      showToast(`Kategori aktif: #${cat} (${cat === 'SO' ? 'Opname' : cat === 'IN' ? 'Masuk' : 'Keluar'})${explicitInvoice ? ` Invoice: ${explicitInvoice}` : ''}`, 'info');
+      const activeLocSuffix = currentLocationRef.current ? ` • Lokasi: #${currentLocationRef.current}` : '';
+      showToast(`Kategori aktif: #${cat} (${cat === 'SO' ? 'Opname' : cat === 'IN' ? 'Masuk' : 'Keluar'})${explicitInvoice ? ` Invoice: ${explicitInvoice}` : ''}${activeLocSuffix}`, 'info');
       return;
     }
 
-    // 2. Detect Location tag (#LOK xxx, LOK xxx, #LOK:xxx) -> Just light up location indicator, do NOT add to scan list
+    // 2. Detect Location tag (#LOK xxx, LOK xxx, #LOK:xxx, or direct valid rack tag like #X002, #A001, #SHOPEE)
     if (text.startsWith('#LOK') || text.startsWith('LOK ') || text.startsWith('LOK:')) {
       const rawLoc = text.replace(/^#?LOK:?\s*/i, '').trim();
       const loc = normalizeLokasi(rawLoc);
@@ -4055,6 +4057,17 @@ export default function App() {
         playCategoryBeep();
         vibrateDevice(60);
         showToast(`Lokasi aktif: #${loc}`, 'info');
+        return;
+      }
+    }
+    if (text.startsWith('#')) {
+      const candidateLoc = normalizeLokasi(text.replace(/^#+/, '').trim());
+      if (candidateLoc && getAreaFromLokasi(candidateLoc) !== 'Anomali') {
+        setCurrentLocation(candidateLoc);
+        currentLocationRef.current = candidateLoc;
+        playCategoryBeep();
+        vibrateDevice(60);
+        showToast(`Lokasi aktif: #${candidateLoc}`, 'info');
         return;
       }
     }
@@ -4309,7 +4322,7 @@ export default function App() {
         }
       }
 
-      enqueueScannerOutboxBatch({
+      const enqueuedBatch = enqueueScannerOutboxBatch({
         invoice: invoiceBase,
         createdAtIso,
         operator: operatorName,
@@ -4320,9 +4333,12 @@ export default function App() {
 
       if (typeof navigator === 'undefined' || navigator.onLine) {
         const syncRes = await syncAllScannerOutboxBatches(productDatabase);
-        if (syncRes.remainingBatches > 0) {
+        const isBatchSynced = syncRes.syncedBatchIds.includes(enqueuedBatch.batchId);
+        if (!isBatchSynced && (syncRes.remainingBatches > 0 || syncRes.errors.length > 0)) {
           showToast(
-            'Data import telah diamankan di Outbox Offline & akan otomatis lanjut dikirim saat sinyal stabil.',
+            syncRes.errors[0]
+              ? `⚠️ Data import tertunda (${syncRes.errors[0]}). Diamankan di Outbox Offline & akan dikirim otomatis.`
+              : 'Data import telah diamankan di Outbox Offline & akan otomatis lanjut dikirim saat sinyal stabil.',
             'warning'
           );
         }
@@ -4431,8 +4447,8 @@ export default function App() {
         return;
       }
 
-      // 1. Kunci ke Idempotent Outbox Queue lokal terlebih dahulu (Zero Data Loss & Zero Double Input)
-      enqueueScannerOutboxBatch({
+      // 1. Kunci ke Idempotent Outbox Queue lokal (In-Memory + localStorage + IndexedDB)
+      const enqueuedBatch = enqueueScannerOutboxBatch({
         invoice: batchInvoice,
         createdAtIso,
         operator: operatorName,
@@ -4441,22 +4457,29 @@ export default function App() {
         soFisik,
       });
 
-      // 2. Kosongkan daftar scan aktif segera setelah masuk Outbox agar tidak pernah ter-submit ganda
       const totalSavedRows = logsToInsert.length;
-      setScannedData([]);
-      setKeterangan('');
-      setCurrentCategory('');
-      currentCategoryRef.current = '';
-      setCurrentInvoice('');
-      setCurrentLocation('');
-      setHasScannedSku(false);
+      const clearActiveScanForm = () => {
+        setScannedData([]);
+        setKeterangan('');
+        setCurrentCategory('');
+        currentCategoryRef.current = '';
+        setCurrentInvoice('');
+        setCurrentLocation('');
+        setHasScannedSku(false);
+      };
 
-      playSaveSuccessChime();
-      vibrateDevice([100, 50, 100]);
-
-      // 3. Jika sedang online, langsung kirim Outbox ke Supabase (Step 1: log_produk -> Step 2: stock_opname_queue)
+      // 2. Jika sedang offline, pastikan batch benar-benar ada di Outbox sebelum mengosongkan daftar scan
       const isCurrentlyOnline = typeof navigator === 'undefined' ? true : navigator.onLine;
       if (!isCurrentlyOnline) {
+        const isQueued = getScannerOutboxBatches().some((b) => b.batchId === enqueuedBatch.batchId);
+        if (!isQueued) {
+          playErrorBeep();
+          showToast('Gagal menyimpan draft scan ke Outbox lokal. Daftar scan tetap dipertahankan.', 'error');
+          return;
+        }
+        clearActiveScanForm();
+        playSaveSuccessChime();
+        vibrateDevice([100, 50, 100]);
         showToast(
           `📦 Mode Offline: ${totalSavedRows} item scan telah diamankan di Outbox Offline & otomatis dikirim saat sinyal kembali (Anti Double Input).`,
           'warning'
@@ -4464,8 +4487,16 @@ export default function App() {
         return;
       }
 
+      // 3. Jika sedang online, WAJIB verifikasi bahwa batch ini benar-benar berhasil masuk ke Supabase
+      //    sebelum menampilkan notifikasi "✅ Data Scan Tersimpan" (anti false-positive!)
       const syncRes = await syncAllScannerOutboxBatches(productDatabase);
-      if (syncRes.remainingBatches === 0) {
+      const isBatchSynced = syncRes.syncedBatchIds.includes(enqueuedBatch.batchId);
+      const isStillQueued = getScannerOutboxBatches().some((b) => b.batchId === enqueuedBatch.batchId);
+
+      if (isBatchSynced) {
+        clearActiveScanForm();
+        playSaveSuccessChime();
+        vibrateDevice([100, 50, 100]);
         try {
           confetti({
             particleCount: 50,
@@ -4479,10 +4510,21 @@ export default function App() {
         showPushNotification('✅ Data Scan Tersimpan', {
           body: `Berhasil mencatat ${totalSavedRows} item scan ke Database.`,
         });
-      } else {
+      } else if (isStillQueued) {
+        clearActiveScanForm();
+        playErrorBeep();
+        vibrateDevice([120, 60, 120]);
+        const reasonText = syncRes.errors[0] || 'gangguan jaringan atau antrean masih diproses';
         showToast(
-          `⚠️ Jaringan terputus saat mengirim. Data telah diamankan di Outbox Offline (Step yang sudah masuk tidak diulang) & otomatis lanjut saat sinyal stabil.`,
+          `⚠️ Data belum masuk ke Database (${reasonText}). ${totalSavedRows} item diamankan di Outbox Offline & akan dikirim otomatis.`,
           'warning'
+        );
+      } else {
+        playErrorBeep();
+        vibrateDevice([150, 60, 150]);
+        showToast(
+          'Gagal memverifikasi penyimpanan ke Database. Daftar scan tetap dipertahankan, silakan klik Simpan lagi.',
+          'error'
         );
       }
     } catch (err: unknown) {
