@@ -1,9 +1,9 @@
 {
-  "version": "v2.38.2",
-  "versionCode": 582,
+  "version": "v2.38.3",
+  "versionCode": 583,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v582-1700",
-  "releaseTitle": "WMS v2.38.2 — Pembaruan Sistem & Optimasi Operasional",
+  "buildHash": "wms-261127-v583-1718",
+  "releaseTitle": "WMS v2.38.3 — Pembaruan Sistem & Optimasi Operasional",
   "releaseNotes": [
     "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
     "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",

@@ -4,6 +4,14 @@
 
 ---
 
+## v2.38.3 — 27 November 2026
+**Modul**: Inventory & Scanner Barcode Header (`src/components/InventoryView.tsx`)
+- **Fix Tab `Scanner Barcode` Terpotong & `Log Produk` Tertutup Toolbar di Desktop**:
+  - Memisahkan baris bar 5 tab navigasi utama (`Kapasitas`, `3D Visual`, `Data Inventory`, `Scanner Barcode`, `Log Produk`) dari sub-toolbar aksi Scanner (`Panel Rapi | Tabel | Ringkas`, `Impor Excel`, `Popup Luas`) pada viewport standar (`< 1720px`) serta memindahkan ringkasan statistik SKU kanan ke `2xl+`, sehingga tab **`Scanner Barcode`** tampil utuh tanpa terpotong (`Scanner`) dan tab **`Log Produk`** tidak terdorong keluar kontainer.
+  - Menambahkan label responsif bertingkat untuk 3 tab awal pada ukuran `sm–xl` dan pembatas sub-bar rapi dengan wrapping untuk layar zoom-in (`110%–150%`) & mobile (`< 640px`, tetap 1 baris swipe horizontal).
+
+---
+
 ## v2.38.2 — 27 November 2026
 **Modul**: Pesanan Saya / Manual Shipment & Cetak Label A6 (`src/services/gasManualShipment.ts`, `src/components/PesananSaya/ManualShipmentTab.tsx`, `.agents/skills/wms-supabase-egress-guardrails/SKILL.md`)
 - **Fix Bug Alamat Pesanan Hasil Edit Tidak Muncul di Print Label A6 & Tertimpa Data Lama**:

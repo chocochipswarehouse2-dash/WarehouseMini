@@ -15,11 +15,11 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.38.2",
-  "versionCode": 582,
+  "version": "v2.38.3",
+  "versionCode": 583,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v582-1700",
-  "releaseTitle": "WMS v2.38.2 — Pembaruan Sistem & Optimasi Operasional",
+  "buildHash": "wms-261127-v583-1718",
+  "releaseTitle": "WMS v2.38.3 — Pembaruan Sistem & Optimasi Operasional",
   "releaseNotes": [
     "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
     "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
@@ -29,6 +29,19 @@ export const CURRENT_APP_VERSION_INFO: VersionInfo = {
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.38.2",
+    "versionCode": 582,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v582-1700",
+    "releaseTitle": "WMS v2.38.2 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
+      "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
+      "Notifikasi Data Scan Tersimpan kini wajib terverifikasi masuk ke Supabase terlebih dahulu (anti false-positive) & dukungan ganti lokasi tag #IN X002 / #X002"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.38.1",
     "versionCode": 581,
@@ -113,20 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "buildDate": "27 November 2026",
     "buildHash": "wms-261127-v541-0955",
     "releaseTitle": "WMS v2.34.1 — Perbaikan Akurasi KPI Absensi (Shift 3b, Cutoff Hari Ini, & Status Roster)",
-    "releaseNotes": [
-      "Aturan siklus periode administrasi & kalkulasi gaji bulanan tanggal 26 bulan lalu s/d 25 bulan berjalan (contoh: 26 Okt - 25 Nov = November)",
-      "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",
-      "Jadwal Shift (RosterShiftView) tetap ketat tanggal 1 s/d akhir bulan kalender",
-      "Perbaikan off-by-one zona waktu WIB pada getDatesInRange"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.34.0",
-    "versionCode": 540,
-    "buildDate": "27 November 2026",
-    "buildHash": "wms-261127-v540-0222",
-    "releaseTitle": "WMS v2.34.0 — Kalkulasi Gaji Bulanan Siklus 26–25",
     "releaseNotes": [
       "Aturan siklus periode administrasi & kalkulasi gaji bulanan tanggal 26 bulan lalu s/d 25 bulan berjalan (contoh: 26 Okt - 25 Nov = November)",
       "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",
