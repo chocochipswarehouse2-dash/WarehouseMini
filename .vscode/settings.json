@@ -1,3 +1,6 @@
 {
-    "antigravityPulse.showResetTime": true
+    "antigravityPulse.showResetTime": true,
+    "livePreview.openPreviewTarget": "Embedded Preview",
+    "livePreview.serverKeepAliveAfterEmbeddedPreviewClose": true,
+    "livePreview.defaultPreviewPath": "/index.html"
 }
