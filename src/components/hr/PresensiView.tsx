@@ -835,6 +835,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const shiftStandarPulang = useMemo(() => {
     if (todayRoster?.jam_pulang) return todayRoster.jam_pulang.slice(0, 5);
     const sLower = (todayRoster?.shift || 'Shift 1').toLowerCase();
+    if (sLower.includes('3b') || sLower.includes('s3b')) return '20:00';
     if (sLower.includes('shift 2') || sLower === '2') return '18:00';
     if (sLower.includes('shift 3') || sLower === '3') return '21:00';
     return '17:00';

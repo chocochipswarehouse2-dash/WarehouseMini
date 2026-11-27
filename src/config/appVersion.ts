@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.36.0",
-  "versionCode": 560,
+  "version": "v2.36.1",
+  "versionCode": 561,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v560-1059",
-  "releaseTitle": "WMS v2.36.0 — Prorata Gaji Karyawan Baru, Join Date & Pemilih Periode Terpisah",
+  "buildHash": "wms-261127-v561-1226",
+  "releaseTitle": "WMS v2.36.1 — Akurasi KPI Absensi (Roster-First, Full Shift 9 Jam & Bobot Kehadiran 40%)",
   "releaseNotes": [
-    "Input Tanggal Bergabung (Join Date) & Tanggal Lahir ditambahkan di Master Karyawan (modal Tambah/Edit & Detail)",
-    "Tanggal sebelum join date otomatis berstatus Belum Bergabung (Pra-Join) tanpa Alpha/Bolos atau penalti KPI, dengan prorata Gaji Pokok & Tunjangan proporsional hari kerja aktif",
-    "Pemilih periode 26-25 di HR Rekap dipisah menjadi dropdown Nama Bulan (Januari-Desember) + panah bulan & field Tahun manual"
+    "Evaluasi keterlambatan KPI & Payroll kini memprioritaskan jam masuk Roster aktual (menghilangkan false late Shift 3a/3b yang tercatat Shift 1)",
+    "Deteksi pulang normal mendukung durasi kerja penuh >= 8 jam 50 menit untuk tukar shift",
+    "Bobot KPI diseimbangkan ke Kehadiran 40%, Berangkat 35%, Pulang 25% + tie-breaker kehadiran penuh & tampilkan % Kehadiran di podium KPI"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.36.0",
+    "versionCode": 560,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v560-1059",
+    "releaseTitle": "WMS v2.36.0 — Prorata Gaji Karyawan Baru, Join Date & Pemilih Periode Terpisah",
+    "releaseNotes": [
+      "Input Tanggal Bergabung (Join Date) & Tanggal Lahir ditambahkan di Master Karyawan (modal Tambah/Edit & Detail)",
+      "Tanggal sebelum join date otomatis berstatus Belum Bergabung (Pra-Join) tanpa Alpha/Bolos atau penalti KPI, dengan prorata Gaji Pokok & Tunjangan proporsional hari kerja aktif",
+      "Pemilih periode 26-25 di HR Rekap dipisah menjadi dropdown Nama Bulan (Januari-Desember) + panah bulan & field Tahun manual"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.35.0",
     "versionCode": 550,
@@ -113,17 +126,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "buildDate": "26 November 2026",
     "buildHash": "wms-261126-v521-0304",
     "releaseTitle": "WMS v2.32.1 — Pembaruan Sistem & Optimasi Operasional",
-    "releaseNotes": [
-      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.32.0",
-    "versionCode": 520,
-    "buildDate": "26 November 2026",
-    "buildHash": "wms-261126-v520-0118",
-    "releaseTitle": "WMS v2.32.0 — Pembaruan Sistem & Optimasi Operasional",
     "releaseNotes": [
       "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
     ],

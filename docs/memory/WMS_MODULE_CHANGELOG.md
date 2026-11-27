@@ -4,6 +4,18 @@
 
 ---
 
+## v2.36.1 — 27 November 2026
+**Modul**: HR & Admin — Akurasi Ranking KPI Absensi & Roster-First Lateness (`src/utils/kpiCalculator.ts`, `src/utils/hrPayrollUtils.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`)
+- **Evaluasi Keterlambatan Roster-First (`kpiCalculator.ts`, `hrPayrollUtils.ts`)**:
+  - Membandingkan `jam_masuk` aktual terhadap `jam_masuk` jadwal **Roster** aktif terlebih dahulu (toleransi 15 menit), sehingga karyawan Shift 3a/3b yang hadir tepat waktu tidak lagi terkena penalti *false late* akibat log `presensi.shift` / `catatan` lama yang masih tertulis `Shift 1` (contoh: `11:56` pada Roster `Shift 3a` atau `10:53` pada Roster `Shift 3b`).
+- **Durasi Kerja Penuh Tukar Shift (`kpiCalculator.ts`) & Shift 3b Checkout (`PresensiView.tsx`)**:
+  - Karyawan yang bekerja memenuhi durasi shift penuh (`>= 530` menit / 8 jam 50 menit, mis. `07:54–17:01` saat tukar shift) kini dinilai pulang normal tanpa penalti `Pulang Awal Tanpa Izin`.
+  - `PresensiView.tsx` (`shiftStandarPulang`) kini mengenali fallback `Shift 3b = 20:00`.
+- **Rebalance Bobot KPI & Tie-Breaker Kehadiran Penuh (`kpiCalculator.ts`, `HrRekapView.tsx`)**:
+  - Bobot KPI diseimbangkan menjadi **Rasio Kehadiran 40% + Kedisiplinan Jam Datang 35% + Jam Pulang 25%** (`-8` per Alpha, `-5` per Pulang Awal Tanpa Izin), disertai tie-breaker urutan leaderboard untuk `% Kehadiran` tertinggi dan `0` izin/sakit/alpha serta tampilan `% Kehadiran` pada kartu Top 3 Podium.
+
+---
+
 ## v2.36.0 — 27 November 2026
 **Modul**: HR & Admin — Prorata Gaji Karyawan Baru (`Pra-Join`), Input Tanggal Join, & Pemilih Periode Bulan/Tahun Terpisah (`src/components/hr/KaryawanView.tsx`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`, `src/utils/hrPayrollUtils.ts`, `src/utils/kpiCalculator.ts`, `src/utils/hrExportUtils.ts`, `src/services/hrPayslipService.ts`)
 - **Input Tanggal Bergabung (`tgl_bergabung`) & Tanggal Lahir di Master Karyawan (`KaryawanView.tsx`)**:

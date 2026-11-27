@@ -598,7 +598,14 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
       const kpi = kpiBatchMap[k.nik];
       if (kpi) list.push(kpi);
     }
-    list.sort((a, b) => b.nilaiKpiAbsensi - a.nilaiKpiAbsensi);
+    list.sort(
+      (a, b) =>
+        b.nilaiKpiAbsensi - a.nilaiKpiAbsensi ||
+        b.persenKehadiran - a.persenKehadiran ||
+        a.totalAlpha - b.totalAlpha ||
+        a.totalCutiIzin - b.totalCutiIzin ||
+        b.totalHadir - a.totalHadir
+    );
     return list;
   }, [filteredKaryawan, kpiBatchMap]);
 
@@ -1867,13 +1874,19 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
                   Grade {kpiSummaryList[1].grade} • {kpiSummaryList[1].labelStatus}
                 </span>
-                <div className="grid grid-cols-2 gap-2 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px]">
+                <div className="grid grid-cols-3 gap-1.5 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px]">
                   <div>
-                    <span className="text-slate-400 block">Berangkat (On-Time)</span>
+                    <span className="text-slate-400 block">Kehadiran</span>
+                    <strong className="text-indigo-600 dark:text-indigo-400 font-black">
+                      {kpiSummaryList[1].persenKehadiran}% ({kpiSummaryList[1].totalHadir}/{kpiSummaryList[1].totalHariKerja})
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Berangkat</span>
                     <strong className="text-emerald-500 font-black">{kpiSummaryList[1].skorBerangkat} pts</strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">Pulang Normal</span>
+                    <span className="text-slate-400 block">Pulang</span>
                     <strong className="text-primary-500 font-black">{kpiSummaryList[1].skorPulang} pts</strong>
                   </div>
                 </div>
@@ -1894,13 +1907,19 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                 <span className="px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
                   Grade {kpiSummaryList[0].grade} • {kpiSummaryList[0].labelStatus}
                 </span>
-                <div className="grid grid-cols-2 gap-2 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
+                <div className="grid grid-cols-3 gap-1.5 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-xs">
                   <div>
-                    <span className="text-slate-400 block text-[10px]">Berangkat (On-Time)</span>
-                    <strong className="text-emerald-500 font-black">{kpiSummaryList[0].skorBerangkat} pts ({kpiSummaryList[0].persenOnTime}%)</strong>
+                    <span className="text-slate-400 block text-[10px]">Kehadiran</span>
+                    <strong className="text-indigo-600 dark:text-indigo-400 font-black">
+                      {kpiSummaryList[0].persenKehadiran}% ({kpiSummaryList[0].totalHadir}/{kpiSummaryList[0].totalHariKerja})
+                    </strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block text-[10px]">Pulang Normal</span>
+                    <span className="text-slate-400 block text-[10px]">Berangkat</span>
+                    <strong className="text-emerald-500 font-black">{kpiSummaryList[0].skorBerangkat} pts</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Pulang</span>
                     <strong className="text-primary-500 font-black">{kpiSummaryList[0].skorPulang} pts</strong>
                   </div>
                 </div>
@@ -1921,13 +1940,19 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
                   Grade {kpiSummaryList[2].grade} • {kpiSummaryList[2].labelStatus}
                 </span>
-                <div className="grid grid-cols-2 gap-2 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px]">
+                <div className="grid grid-cols-3 gap-1.5 w-full mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 text-[10px]">
                   <div>
-                    <span className="text-slate-400 block">Berangkat (On-Time)</span>
+                    <span className="text-slate-400 block">Kehadiran</span>
+                    <strong className="text-indigo-600 dark:text-indigo-400 font-black">
+                      {kpiSummaryList[2].persenKehadiran}% ({kpiSummaryList[2].totalHadir}/{kpiSummaryList[2].totalHariKerja})
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block">Berangkat</span>
                     <strong className="text-emerald-500 font-black">{kpiSummaryList[2].skorBerangkat} pts</strong>
                   </div>
                   <div>
-                    <span className="text-slate-400 block">Pulang Normal</span>
+                    <span className="text-slate-400 block">Pulang</span>
                     <strong className="text-primary-500 font-black">{kpiSummaryList[2].skorPulang} pts</strong>
                   </div>
                 </div>
@@ -1944,7 +1969,7 @@ export const HrRekapView: React.FC<HrRekapViewProps> = ({ session, onShowToast }
                   <span>Leaderboard Kedisiplinan & Nilai Absensi Karyawan</span>
                 </h2>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Nilai dihitung dari kedisiplinan jam datang (45%), jam pulang (35%), rasio kehadiran (20%), minus poin keterlambatan/alpha/pulang awal tanpa izin.
+                  Nilai dihitung dari rasio kehadiran (40%), kedisiplinan jam datang (35%), jam pulang (25%), minus penalti alpha (-8/hari) &amp; pulang awal tanpa izin (-5/hari).
                 </p>
               </div>
               <span className="text-xs text-slate-400 font-bold">{kpiSummaryList.length} Karyawan</span>

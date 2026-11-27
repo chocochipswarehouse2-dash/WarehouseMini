@@ -414,9 +414,21 @@ function resolveScheduledStartMinutes(
   rosterRec?: RosterShiftRecord | null,
   presensiRec?: PresensiRecord | null
 ): number {
-  const rosterStart = parsePayrollTimeToMinutes(rosterRec?.jam_masuk);
+  const rShift = (rosterRec?.shift || '').trim().toLowerCase();
+  const hasActiveRoster = Boolean(
+    rosterRec &&
+      !rShift.includes('libur') &&
+      rShift !== 'off' &&
+      !rShift.includes('(off)') &&
+      !classifyLeaveSubtype(rShift)
+  );
+  const rosterStart = hasActiveRoster ? parsePayrollTimeToMinutes(rosterRec?.jam_masuk) : null;
   if (rosterStart !== null && rosterStart > 0) return rosterStart;
-  const shiftRaw = `${rosterRec?.shift || ''} ${presensiRec?.shift || ''}`.toLowerCase();
+  const shiftRaw = (
+    (hasActiveRoster ? rosterRec?.shift : '') ||
+    presensiRec?.shift ||
+    ''
+  ).toLowerCase();
   if (shiftRaw.includes('3b') || shiftRaw.includes('s3b')) return 11 * 60;
   if (shiftRaw.includes('3a') || shiftRaw.includes('s3a') || shiftRaw.includes('shift 3') || shiftRaw.trim() === '3' || shiftRaw.includes('s3')) {
     return 12 * 60;
@@ -429,17 +441,20 @@ function extractOrComputeLateMinutes(
   p: PresensiRecord,
   r?: RosterShiftRecord | null
 ): number {
+  const act = parsePayrollTimeToMinutes(p.jam_masuk);
+  if (act !== null) {
+    const sched = resolveScheduledStartMinutes(r, p);
+    const diff = act - sched;
+    if (diff <= 0) return 0;
+    if (diff > 15 || ((p.status || '').toLowerCase() === 'terlambat' && diff > 0)) {
+      return diff;
+    }
+    return 0;
+  }
   const note = p.catatan || '';
   const match = note.match(/Terlambat\s+(\d+)\s*mnt/i);
   if (match && match[1]) {
     return parseInt(match[1], 10) || 0;
-  }
-  if ((p.status || '').toLowerCase() === 'terlambat' && p.jam_masuk) {
-    const act = parsePayrollTimeToMinutes(p.jam_masuk);
-    const sched = resolveScheduledStartMinutes(r, p);
-    if (act !== null && act > sched) {
-      return act - sched;
-    }
   }
   return 0;
 }
@@ -738,7 +753,7 @@ export function calculateMonthlyPayroll({
       shiftJadwal: string
     ) => {
       const lateMins = extractOrComputeLateMinutes(p, r);
-      const isMarkedLate = (p.status || '').toLowerCase() === 'terlambat' || lateMins > 0;
+      const isMarkedLate = lateMins > 0;
       if (!isMarkedLate) return;
       totalTerlambat++;
       totalMenitTerlambat += lateMins;

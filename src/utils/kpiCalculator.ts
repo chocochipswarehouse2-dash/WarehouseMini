@@ -202,15 +202,46 @@ export function calculateKpiAbsensi({
   const bolosDates = new Set<string>();
   const leaveDates = new Set<string>();
 
+  // Helper: resolve jam masuk standar berdasarkan jadwal Roster aktual
+  const resolveStandardStartMinutes = (p: PresensiRecord): number => {
+    const rosterRec = rosterByDate.get(p.tanggal);
+    const hasActiveRoster = Boolean(
+      rosterRec && !isOffShift(rosterRec.shift) && !isLeaveShift(rosterRec.shift)
+    );
+    const rosterStartMins = hasActiveRoster ? parseTimeToMinutes(rosterRec?.jam_masuk) : null;
+    if (rosterStartMins !== null && rosterStartMins > 0) {
+      return rosterStartMins;
+    }
+
+    const shiftRaw = (
+      (hasActiveRoster ? rosterRec?.shift : '') ||
+      p.shift ||
+      ''
+    ).toLowerCase();
+    if (shiftRaw.includes('3b') || shiftRaw.includes('s3b')) return 11 * 60; // Shift 3b: 11:00 - 20:00
+    if (shiftRaw.includes('3a') || shiftRaw.includes('s3a') || shiftRaw.includes('shift 3') || shiftRaw.trim() === '3' || shiftRaw.includes('s3')) {
+      return 12 * 60; // Shift 3a: 12:00 - 21:00
+    }
+    if (shiftRaw.includes('shift 2') || shiftRaw.trim() === '2' || shiftRaw.includes('s2')) return 9 * 60; // Shift 2: 09:00 - 18:00
+    return 8 * 60; // Shift 1 default: 08:00 - 17:00
+  };
+
   // Helper: resolve jam pulang standar berdasarkan jadwal Roster aktual (termasuk Shift 3b = 20:00, Shift 3a = 21:00)
   const resolveStandardEndMinutes = (p: PresensiRecord): number => {
     const rosterRec = rosterByDate.get(p.tanggal);
-    const rosterEndMins = parseTimeToMinutes(rosterRec?.jam_pulang);
+    const hasActiveRoster = Boolean(
+      rosterRec && !isOffShift(rosterRec.shift) && !isLeaveShift(rosterRec.shift)
+    );
+    const rosterEndMins = hasActiveRoster ? parseTimeToMinutes(rosterRec?.jam_pulang) : null;
     if (rosterEndMins !== null && rosterEndMins > 0) {
       return rosterEndMins;
     }
 
-    const shiftRaw = `${rosterRec?.shift || ''} ${p.shift || ''}`.toLowerCase();
+    const shiftRaw = (
+      (hasActiveRoster ? rosterRec?.shift : '') ||
+      p.shift ||
+      ''
+    ).toLowerCase();
     if (shiftRaw.includes('3b') || shiftRaw.includes('s3b')) return 20 * 60; // Shift 3b: 11:00 - 20:00
     if (shiftRaw.includes('3a') || shiftRaw.includes('s3a') || shiftRaw.includes('shift 3') || shiftRaw.trim() === '3' || shiftRaw.includes('s3')) {
       return 21 * 60; // Shift 3a: 12:00 - 21:00
@@ -247,11 +278,23 @@ export function calculateKpiAbsensi({
 
     totalHadir++;
 
-    // 1. EVALUASI ABSEN BERANGKAT (CHECK-IN)
-    const lateMins = extractLateMinutes(p.catatan);
+    // 1. EVALUASI ABSEN BERANGKAT (CHECK-IN) — bandingkan jam_masuk aktual vs jam masuk Roster dulu
+    const actualStartMins = parseTimeToMinutes(p.jam_masuk);
+    const standardStartMins = resolveStandardStartMinutes(p);
+    let lateMins = 0;
+    if (actualStartMins !== null) {
+      const rawDiff = actualStartMins - standardStartMins;
+      if (rawDiff <= 0) {
+        lateMins = 0;
+      } else if (rawDiff > 15 || (p.status === 'Terlambat' && rawDiff > 0)) {
+        lateMins = rawDiff;
+      }
+    } else {
+      lateMins = extractLateMinutes(p.catatan);
+    }
     totalMenitTerlambat += lateMins;
 
-    if (p.status === 'Terlambat' || lateMins > 0) {
+    if (lateMins > 0) {
       totalTerlambat++;
       if (lateMins <= 15) {
         totalSkorBerangkatAccum += 85;
@@ -269,13 +312,17 @@ export function calculateKpiAbsensi({
     const hasApprovedEarlyOut = myIzinPulang.some((i) => i.tanggal === p.tanggal);
     const standardEndMins = resolveStandardEndMinutes(p);
     const actualEndMins = parseTimeToMinutes(p.jam_pulang);
+    const workedFullShift =
+      actualStartMins !== null &&
+      actualEndMins !== null &&
+      actualEndMins - actualStartMins >= 530;
 
     if (hasApprovedEarlyOut) {
       totalPulangAwalIzin++;
       totalSkorPulangAccum += 90; // Approved early checkout
     } else if (actualEndMins !== null) {
-      if (actualEndMins >= standardEndMins - 10) {
-        // Pulang tepat waktu atau lebih (lembur)
+      if (actualEndMins >= standardEndMins - 10 || workedFullShift) {
+        // Pulang tepat waktu, lembur, atau menyelesaikan durasi shift penuh (>= 8 jam 50 menit)
         totalPulangNormal++;
         totalSkorPulangAccum += 100;
       } else {
@@ -337,11 +384,11 @@ export function calculateKpiAbsensi({
   const skorBerangkat = totalHadir > 0 ? Math.round(totalSkorBerangkatAccum / totalHadir) : 100;
   const skorPulang = totalHadir > 0 ? Math.round(totalSkorPulangAccum / totalHadir) : 100;
 
-  // Overall Attendance KPI Score
+  // Overall Attendance KPI Score (40% Kehadiran, 35% Berangkat, 25% Pulang)
   let nilaiKpiAbsensi = Math.round(
-    skorBerangkat * 0.45 +
-    skorPulang * 0.35 +
-    persenKehadiran * 0.20 -
+    persenKehadiran * 0.40 +
+    skorBerangkat * 0.35 +
+    skorPulang * 0.25 -
     totalAlpha * 8 -
     totalPulangAwalTanpaIzin * 5
   );
