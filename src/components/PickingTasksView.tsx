@@ -105,6 +105,7 @@ import {
   claimOrJoinPickingSJSupabase,
   leavePickingSJSupabase,
   cancelOrResetPickingSJSupabase,
+  restorePickingSJFromBackupSupabase,
   reopenRemainingPickingSJSupabase,
   fetchLoggedOutQtyBySkuForSj,
   getPickingPriorBaselinesMap,
@@ -146,6 +147,61 @@ interface PickingTasksViewProps {
   onNotify: (msg: string, type?: 'success' | 'error' | 'info' | 'warning') => void;
   currentUser: string;
   productCatalog?: ProductItem[];
+}
+
+interface PickingResetUndoBackup {
+  no_sj: string;
+  tujuan: string;
+  tanggal?: string;
+  resetAt: string;
+  resetBy: string;
+  totalPickedPcs: number;
+  totalReqPcs: number;
+  kosongCount: number;
+  items: PickingListItem[];
+  unexpectedItems: PickingListItem[];
+}
+
+const PICKING_RESET_UNDO_STORAGE_KEY = 'wms_picking_reset_undo_backups_v1';
+const PICKING_RESET_UNDO_TTL_MS = 24 * 60 * 60 * 1000; // 24 jam
+
+function readPickingResetUndoBackups(): Record<string, PickingResetUndoBackup> {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return {};
+    const raw = localStorage.getItem(PICKING_RESET_UNDO_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    const now = Date.now();
+    const cleaned: Record<string, PickingResetUndoBackup> = {};
+    let mutated = false;
+    Object.entries(parsed).forEach(([key, val]: [string, any]) => {
+      const resetTime = val?.resetAt ? new Date(val.resetAt).getTime() : 0;
+      if (val && Array.isArray(val.items) && resetTime > 0 && now - resetTime <= PICKING_RESET_UNDO_TTL_MS) {
+        cleaned[key.toUpperCase().trim()] = val as PickingResetUndoBackup;
+      } else {
+        mutated = true;
+      }
+    });
+    if (mutated) {
+      localStorage.setItem(PICKING_RESET_UNDO_STORAGE_KEY, JSON.stringify(cleaned));
+    }
+    return cleaned;
+  } catch {
+    return {};
+  }
+}
+
+function writePickingResetUndoBackups(map: Record<string, PickingResetUndoBackup>): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    // Batasi maksimal 10 backup terbaru agar localStorage tetap ringkas
+    const entries = Object.entries(map)
+      .sort((a, b) => new Date(b[1].resetAt).getTime() - new Date(a[1].resetAt).getTime())
+      .slice(0, 10);
+    const trimmed = Object.fromEntries(entries);
+    localStorage.setItem(PICKING_RESET_UNDO_STORAGE_KEY, JSON.stringify(trimmed));
+  } catch {}
 }
 
 function readStoredPickingSession(): {
@@ -394,8 +450,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     otherPickers: string[];
     source: 'VIEW1' | 'VIEW2';
     intent: 'EXIT_FORM' | 'CANCEL_PICK' | 'RESET_ONLY';
+    hasPriorBaseline?: boolean;
   } | null>(null);
   const [isCancellingPicking, setIsCancellingPicking] = useState(false);
+  const [showResetConfirmStep, setShowResetConfirmStep] = useState(false);
+  const [resetConfirmInput, setResetConfirmInput] = useState('');
+  const [resetUndoBackups, setResetUndoBackups] = useState<Record<string, PickingResetUndoBackup>>(() =>
+    readPickingResetUndoBackups()
+  );
+  const [isRestoringUndoSj, setIsRestoringUndoSj] = useState<string | null>(null);
 
   // Realtime Multi-Picker Collaboration Refs
   const collabChannelRef = useRef<any>(null);
@@ -2900,7 +2963,15 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       const otherPickers = pickersList.filter(
         (p) => !isSameOperatorIdentity(p, currentUser)
       );
+      const cachedBaseline = getCachedPickingPriorBaselinesForSj(cleanNoSj);
+      const hasPriorBaseline = Boolean(
+        sjGroup.is_continuation ||
+          Object.values(cachedBaseline).some((v) => Number(v) > 0) ||
+          itemsToInspect.some((it) => (Number(it.prev_qty_picked) || 0) > 0)
+      );
 
+      setShowResetConfirmStep(intent === 'RESET_ONLY' && (pickedQty > 0 || kosongCount > 0 || unexpectedQty > 0));
+      setResetConfirmInput('');
       setCancelPickingModal({
         isOpen: true,
         group: sjGroup,
@@ -2912,16 +2983,40 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         otherPickers,
         source,
         intent,
+        hasPriorBaseline,
       });
     },
     [activeSJ, activeItems, unexpectedItems, currentUser]
   );
 
-  // Eksekusi Keluar Simpan Progres ATAU Batalkan Picking (Reset Total ke PENDING 0 Pcs)
+  // Eksekusi Keluar Simpan Progres ATAU Batalkan Picking (Reset Total ke PENDING 0 Pcs + Auto Backup Undo)
   const handleExecuteCancelPicking = async (mode: 'LEAVE_KEEP_PROGRESS' | 'RESET_TO_PENDING') => {
     if (!cancelPickingModal || isCancellingPicking) return;
-    const { group, otherPickers, pickedQty } = cancelPickingModal;
+    const { group, otherPickers, pickedQty, kosongCount, unexpectedQty, totalReq, hasPriorBaseline } = cancelPickingModal;
     const cleanNoSj = group.no_sj.toUpperCase().trim();
+    const hasProgressToLose = pickedQty > 0 || kosongCount > 0 || unexpectedQty > 0;
+
+    if (mode === 'RESET_TO_PENDING' && hasPriorBaseline) {
+      onNotify(
+        `🛡️ Reset 0 Pcs tidak diizinkan untuk SJ lanjutan/kekurangan ${cleanNoSj} agar qty yang sudah diproses sebelumnya tetap aman.`,
+        'warning'
+      );
+      return;
+    }
+
+    if (mode === 'RESET_TO_PENDING' && hasProgressToLose) {
+      if (!showResetConfirmStep) {
+        setShowResetConfirmStep(true);
+        setResetConfirmInput('');
+        return;
+      }
+      if (resetConfirmInput.trim().toUpperCase() !== 'RESET') {
+        playErrorBeep();
+        onNotify('Ketik kata RESET terlebih dahulu untuk mengonfirmasi reset ke 0 Pcs.', 'warning');
+        return;
+      }
+    }
+
     const isOnlineNow = typeof navigator === 'undefined' || navigator.onLine;
     setIsCancellingPicking(true);
     markSjLocallyMutated(cleanNoSj, 6000);
@@ -2929,11 +3024,36 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     // Snapshot latest items from View 2 before clearing state so they can be flushed accurately to Supabase
     const isCurrentlyOpenSj = activeSJ && activeSJ.no_sj.toUpperCase().trim() === cleanNoSj;
     const itemsSnapshot = isCurrentlyOpenSj ? [...activeItems] : [...(group.items || [])];
+    const unexpectedSnapshot = isCurrentlyOpenSj ? [...unexpectedItems] : [...(group.unexpected_items || [])];
     const snapshotByKey = new Map<string, PickingListItem>();
     itemsSnapshot.forEach((it) => {
       if (it.id) snapshotByKey.set(String(it.id), it);
       if (it.sku) snapshotByKey.set(it.sku.trim().toUpperCase(), it);
     });
+
+    // Simpan otomatis backup snapshot 24 jam sebelum Reset Total ke 0 Pcs agar bisa di-UNDO kapan saja
+    if (mode === 'RESET_TO_PENDING' && hasProgressToLose) {
+      const backupEntry: PickingResetUndoBackup = {
+        no_sj: cleanNoSj,
+        tujuan: group.tujuan || '',
+        tanggal: group.tanggal,
+        resetAt: new Date().toISOString(),
+        resetBy: currentUser || 'Operator',
+        totalPickedPcs: pickedQty,
+        totalReqPcs: totalReq,
+        kosongCount,
+        items: itemsSnapshot.map((it) => ({
+          ...it,
+          pick_splits: Array.isArray(it.pick_splits) ? it.pick_splits.map((s) => ({ ...s })) : undefined,
+        })),
+        unexpectedItems: unexpectedSnapshot.map((it) => ({ ...it })),
+      };
+      setResetUndoBackups((prev) => {
+        const next = { ...prev, [cleanNoSj]: backupEntry };
+        writePickingResetUndoBackups(next);
+        return next;
+      });
+    }
 
     try {
       // Close active workspace & active session pointer immediately
@@ -3011,6 +3131,8 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
       });
 
       setCancelPickingModal(null);
+      setShowResetConfirmStep(false);
+      setResetConfirmInput('');
 
       let syncedOnline = true;
       if (isOnlineNow) {
@@ -3048,7 +3170,9 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         );
       } else if (mode === 'RESET_TO_PENDING') {
         onNotify(
-          `↺ Picking SJ ${cleanNoSj} dibatalkan & di-reset kembali ke 0 Pcs (PENDING).`,
+          hasProgressToLose
+            ? `↺ Picking SJ ${cleanNoSj} di-reset ke 0 Pcs. Cadangan Undo (${pickedQty} Pcs) tersimpan otomatis selama 24 jam.`
+            : `↺ Picking SJ ${cleanNoSj} dibatalkan & dikembalikan ke PENDING.`,
           'info'
         );
       } else if (otherPickers.length > 0) {
@@ -3065,6 +3189,117 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
     } finally {
       setIsCancellingPicking(false);
     }
+  };
+
+  // Undo Reset 0 Pcs — Pulihkan progres picking dari snapshot backup otomatis
+  const handleUndoResetPickingSJ = async (noSj: string) => {
+    const cleanNoSj = String(noSj || '').toUpperCase().trim();
+    const backup = resetUndoBackups[cleanNoSj];
+    if (!backup || isRestoringUndoSj) return;
+
+    setIsRestoringUndoSj(cleanNoSj);
+    markSjLocallyMutated(cleanNoSj, 8000);
+
+    try {
+      const backupById = new Map<string, PickingListItem>();
+      const backupBySku = new Map<string, PickingListItem>();
+      backup.items.forEach((it) => {
+        if (it.id) backupById.set(String(it.id), it);
+        if (it.sku) backupBySku.set(String(it.sku).trim().toUpperCase(), it);
+      });
+
+      const isOnlineNow = typeof navigator === 'undefined' || navigator.onLine;
+      let restoredOnline = true;
+      if (isOnlineNow) {
+        const res = await restorePickingSJFromBackupSupabase(cleanNoSj, backup.items);
+        restoredOnline = res.ok;
+      }
+
+      // Pulihkan draft lokal lengkap (termasuk pick_splits multi-rak, lokasi_picked, dan unexpectedItems)
+      savePickingSjDraft({
+        no_sj: cleanNoSj,
+        tujuan: backup.tujuan,
+        tanggal: backup.tanggal,
+        activeItems: backup.items,
+        unexpectedItems: backup.unexpectedItems || [],
+        activeLocation: '',
+        rekapCatatan: '',
+        updatedAt: Date.now(),
+      });
+      setDraftsRevision((r) => r + 1);
+
+      // Update state lokal View 1 secara instan
+      setRawItems((prev) => {
+        const nextRaw = prev.map((item) => {
+          if ((item.no_sj || '').toUpperCase().trim() !== cleanNoSj || item.status === 'SELESAI') {
+            return item;
+          }
+          const snap =
+            (item.id ? backupById.get(String(item.id)) : undefined) ||
+            (item.sku ? backupBySku.get(String(item.sku).trim().toUpperCase()) : undefined);
+          if (!snap) return item;
+          const nextQty = Math.max(0, Number(snap.qty_picked) || 0);
+          const nextKosong = Boolean(snap.is_kosong || snap.status === 'KOSONG');
+          return {
+            ...item,
+            qty_picked: nextQty,
+            lokasi_picked: snap.lokasi_picked || item.lokasi_picked,
+            pick_splits: snap.pick_splits,
+            is_kosong: nextKosong,
+            last_picked_by: snap.last_picked_by,
+            picker_name: snap.picker_name || item.picker_name || '',
+            status: nextKosong ? ('KOSONG' as const) : ('PENDING' as const),
+          };
+        });
+        try {
+          const activeOnly = nextRaw.filter((it) => it.status !== 'SELESAI').slice(0, 100);
+          safeLocalStorageSet('wms_raw_picking_list_cache', JSON.stringify(activeOnly));
+        } catch {}
+        return nextRaw;
+      });
+
+      // Hapus backup yang sudah dipulihkan
+      setResetUndoBackups((prev) => {
+        const next = { ...prev };
+        delete next[cleanNoSj];
+        writePickingResetUndoBackups(next);
+        return next;
+      });
+
+      if (isOnlineNow && restoredOnline) {
+        broadcastPickingCollabEvent('sj_reopened', { no_sj: cleanNoSj });
+        fetchActiveSjRealtimeRowsSupabase(cleanNoSj)
+          .then((rows) => {
+            if (rows && rows.length > 0) applyRemoteSjRowsToState(cleanNoSj, rows, true);
+          })
+          .catch(() => {});
+      }
+
+      playSaveSuccessChime();
+      onNotify(
+        restoredOnline
+          ? `✅ Undo Reset berhasil! Progres SJ ${cleanNoSj} (${backup.totalPickedPcs}/${backup.totalReqPcs} Pcs) telah dipulihkan.`
+          : `⚠️ Progres SJ ${cleanNoSj} (${backup.totalPickedPcs} Pcs) dipulihkan secara lokal (akan tersinkron saat online).`,
+        restoredOnline ? 'success' : 'warning'
+      );
+    } catch (err) {
+      console.error('Failed to undo reset picking SJ:', err);
+      onNotify(`❌ Gagal memulihkan progres SJ ${cleanNoSj}.`, 'error');
+    } finally {
+      setIsRestoringUndoSj(null);
+    }
+  };
+
+  const handleDismissResetUndoBackup = (noSj: string) => {
+    const cleanNoSj = String(noSj || '').toUpperCase().trim();
+    if (!cleanNoSj) return;
+    setResetUndoBackups((prev) => {
+      if (!prev[cleanNoSj]) return prev;
+      const next = { ...prev };
+      delete next[cleanNoSj];
+      writePickingResetUndoBackups(next);
+      return next;
+    });
   };
 
   // Helper: Sync single item change in real time to Supabase (persisted to durable offline queue first)
@@ -7289,6 +7524,61 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
         </div>
       </div>
 
+      {/* Banner Pemulihan Undo Reset 0 Pcs (Otomatis tersedia 24 jam bila ada progres SJ baru di-reset) */}
+      {(() => {
+        const activeUndoList = Object.values(resetUndoBackups).filter((b) => {
+          const sjKey = b.no_sj.toUpperCase().trim();
+          const matchedGroup = sjGroups.find((g) => (g.no_sj || '').toUpperCase().trim() === sjKey);
+          if (!matchedGroup) return false;
+          if (matchedGroup.status === 'SELESAI') return false;
+          return matchedGroup.total_qty_picked === 0;
+        });
+        if (activeUndoList.length === 0) return null;
+        return (
+          <div className="space-y-2">
+            {activeUndoList.map((backup) => {
+              const isRestoring = isRestoringUndoSj === backup.no_sj;
+              return (
+                <div
+                  key={backup.no_sj}
+                  className="p-3 sm:p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 shadow-sm"
+                >
+                  <div className="flex items-start gap-2.5">
+                    <RotateCcw className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-950 dark:text-amber-100 leading-relaxed">
+                      <span className="font-extrabold">Cadangan Undo Reset Tersedia:</span> Progres{' '}
+                      <span className="font-mono font-black">{backup.no_sj}</span>{' '}
+                      (<b>{backup.totalPickedPcs}/{backup.totalReqPcs} Pcs</b>
+                      {backup.kosongCount > 0 ? `, ${backup.kosongCount} Kosong` : ''}) baru saja di-reset ke 0 Pcs.
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={Boolean(isRestoringUndoSj)}
+                      onClick={() => handleUndoResetPickingSJ(backup.no_sj)}
+                      className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-60"
+                    >
+                      {isRestoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                      <span>Undo Reset ({backup.totalPickedPcs} Pcs)</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={Boolean(isRestoringUndoSj)}
+                      onClick={() => handleDismissResetUndoBackup(backup.no_sj)}
+                      className="p-2 rounded-xl text-amber-700 dark:text-amber-300 hover:bg-amber-200/60 dark:hover:bg-amber-900/50 transition-colors cursor-pointer"
+                      title="Tutup pemberitahuan Undo ini"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {/* Surat Jalan Cards List */}
       <div className="space-y-3">
         {loading && sjGroups.length === 0 ? (
@@ -7545,19 +7835,26 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                         <span>{otherPickersWorking.length > 0 ? 'Batal Bantu' : 'Batal Ambil'}</span>
                       </button>
                     )}
-                    {!isDone && !isCurrentUserInPickers && !isCurrentlyMinimizedSj && activePickers.length === 0 && hasSavedProgress && (
+                    {/* Tombol Reset 0 Pcs dihapus dari sebelah Lanjutkan Picking agar tidak pernah kepencet tidak sengaja.
+                        Tampilkan tombol Undo Reset jika SJ ini baru saja di-reset dan masih 0 Pcs. */}
+                    {!isDone && group.total_qty_picked === 0 && resetUndoBackups[sjUpper] && (
                       <button
                         type="button"
+                        disabled={Boolean(isRestoringUndoSj)}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          handleOpenCancelPickingModal(group, 'VIEW1', 'RESET_ONLY');
+                          handleUndoResetPickingSJ(sjUpper);
                         }}
-                        className="px-2.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/70 transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
-                        title="Reset progres picking tersimpan kembali ke 0 Pcs (PENDING)"
+                        className="px-2.5 py-2 rounded-xl text-xs font-extrabold bg-amber-50 dark:bg-amber-950/50 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-60"
+                        title={`Pulihkan progres ${resetUndoBackups[sjUpper].totalPickedPcs}/${resetUndoBackups[sjUpper].totalReqPcs} Pcs sebelum di-reset`}
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        <span>Reset 0 Pcs</span>
+                        {isRestoringUndoSj === sjUpper ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        )}
+                        <span>Undo Reset ({resetUndoBackups[sjUpper].totalPickedPcs} Pcs)</span>
                       </button>
                     )}
                     <button
@@ -8444,7 +8741,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <button
                 type="button"
                 disabled={isCancellingPicking}
-                onClick={() => setCancelPickingModal(null)}
+                onClick={() => {
+                  setCancelPickingModal(null);
+                  setShowResetConfirmStep(false);
+                  setResetConfirmInput('');
+                }}
                 className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-xl cursor-pointer"
               >
                 <X className="w-5 h-5" />
@@ -8473,17 +8774,31 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     Nama Anda akan dilepas dan status SJ dikembalikan ke antrean awal (<b>PENDING · 0 Pcs</b>) sehingga status <i>Sedang Dikerjakan</i> hilang dan bisa diambil kapan saja.
                   </p>
                 </div>
-              ) : cancelPickingModal.intent === 'RESET_ONLY' ? (
-                <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-900 dark:text-rose-200 space-y-1">
-                  <div className="font-extrabold flex items-center gap-1.5">
-                    <RotateCcw className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0" />
+              ) : showResetConfirmStep ? (
+                <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-300 dark:border-rose-700 text-rose-950 dark:text-rose-100 space-y-2.5">
+                  <div className="font-black flex items-center gap-1.5 text-rose-700 dark:text-rose-300">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
                     <span>
-                      Reset Total Progres ({cancelPickingModal.pickedQty}/{cancelPickingModal.totalReq} Pcs)?
+                      Konfirmasi Pengaman: Reset {cancelPickingModal.pickedQty}/{cancelPickingModal.totalReq} Pcs ke 0 Pcs?
                     </span>
                   </div>
-                  <p className="text-[11px] leading-relaxed">
-                    Semua barang yang sudah terpicking pada SJ ini akan di-reset kembali ke <b>0 Pcs</b> dan status menjadi <b>PENDING</b>.
+                  <p className="text-[11px] leading-relaxed text-rose-900 dark:text-rose-200">
+                    Semua hasil scan sementara pada SJ ini akan dikembalikan ke <b>0 Pcs (PENDING)</b>.
+                    Sistem akan menyimpan <b>cadangan Undo otomatis selama 24 jam</b> bila perlu dipulihkan kembali.
                   </p>
+                  <div className="space-y-1">
+                    <label className="block text-[11px] font-extrabold text-rose-800 dark:text-rose-200">
+                      Ketik <span className="font-mono px-1.5 py-0.5 rounded bg-rose-200/80 dark:bg-rose-900 text-rose-900 dark:text-rose-100">RESET</span> untuk melanjutkan:
+                    </label>
+                    <input
+                      type="text"
+                      value={resetConfirmInput}
+                      onChange={(e) => setResetConfirmInput(e.target.value)}
+                      placeholder="Ketik RESET"
+                      autoFocus
+                      className="w-full px-3 py-2 rounded-xl border-2 border-rose-300 dark:border-rose-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono font-bold text-sm uppercase tracking-wider focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
                 </div>
               ) : (
                 <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-900 dark:text-amber-200 space-y-1.5">
@@ -8495,7 +8810,7 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     </span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    Pilih <b>Simpan Status Terakhir &amp; Keluar</b> untuk menyimpan {cancelPickingModal.pickedQty} pcs agar Anda atau petugas lain bisa melanjutkan sisanya (tanpa status <i>Sedang Dikerjakan</i>), atau pilih <b>Batalkan Picking</b> untuk mereset kembali ke <b>0 Pcs</b>.
+                    Pilih <b>Simpan Status Terakhir &amp; Keluar</b> untuk menyimpan {cancelPickingModal.pickedQty} pcs agar Anda atau petugas lain bisa melanjutkan sisanya (tanpa status <i>Sedang Dikerjakan</i>).
                   </p>
                 </div>
               )}
@@ -8511,16 +8826,6 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
                     <span>Simpan Hasil Scan &amp; Keluar (Batal Bantu)</span>
                   </button>
-                ) : cancelPickingModal.intent === 'RESET_ONLY' ? (
-                  <button
-                    type="button"
-                    disabled={isCancellingPicking}
-                    onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
-                    className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-50"
-                  >
-                    {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                    <span>Ya, Reset Total ke 0 Pcs (PENDING)</span>
-                  </button>
                 ) : cancelPickingModal.pickedQty === 0 &&
                   cancelPickingModal.kosongCount === 0 &&
                   cancelPickingModal.unexpectedQty === 0 ? (
@@ -8533,6 +8838,31 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                     {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
                     <span>Ya, Batalkan Picking &amp; Kembalikan ke PENDING</span>
                   </button>
+                ) : showResetConfirmStep ? (
+                  <div className="space-y-2">
+                    <button
+                      type="button"
+                      disabled={isCancellingPicking || resetConfirmInput.trim().toUpperCase() !== 'RESET'}
+                      onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
+                      className="w-full py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm active:scale-95 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
+                      <span>Konfirmasi Reset Total ke 0 Pcs ({cancelPickingModal.pickedQty} Pcs)</span>
+                    </button>
+                    {cancelPickingModal.intent !== 'RESET_ONLY' && (
+                      <button
+                        type="button"
+                        disabled={isCancellingPicking}
+                        onClick={() => {
+                          setShowResetConfirmStep(false);
+                          setResetConfirmInput('');
+                        }}
+                        className="w-full py-2 px-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold text-xs cursor-pointer"
+                      >
+                        Batal Reset (Kembali ke Simpan Progres)
+                      </button>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <button
@@ -8544,15 +8874,18 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
                       {isCancellingPicking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                       <span>Simpan Status Terakhir &amp; Keluar ({cancelPickingModal.pickedQty} Pcs)</span>
                     </button>
-                    {!activeStats.isContinuation && (
+                    {!activeStats.isContinuation && !cancelPickingModal.hasPriorBaseline && (
                       <button
                         type="button"
                         disabled={isCancellingPicking}
-                        onClick={() => handleExecuteCancelPicking('RESET_TO_PENDING')}
-                        className="w-full py-2.5 px-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
+                        onClick={() => {
+                          setShowResetConfirmStep(true);
+                          setResetConfirmInput('');
+                        }}
+                        className="w-full py-2 px-4 rounded-xl bg-white dark:bg-slate-800 hover:bg-rose-50 dark:hover:bg-rose-950/40 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/70 font-bold text-xs flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer disabled:opacity-50"
                       >
-                        <RotateCcw className="w-4 h-4" />
-                        <span>Batalkan Picking (Reset ke 0 Pcs / PENDING)</span>
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Opsi Lanjutan: Reset Progres ke 0 Pcs...</span>
                       </button>
                     )}
                   </>
@@ -8564,7 +8897,11 @@ const PickingTasksViewInner: React.FC<PickingTasksViewProps> = React.memo(({
               <button
                 type="button"
                 disabled={isCancellingPicking}
-                onClick={() => setCancelPickingModal(null)}
+                onClick={() => {
+                  setCancelPickingModal(null);
+                  setShowResetConfirmStep(false);
+                  setResetConfirmInput('');
+                }}
                 className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl cursor-pointer"
               >
                 {cancelPickingModal.source === 'VIEW2' ? 'Tetap di Form Picking' : 'Kembali'}

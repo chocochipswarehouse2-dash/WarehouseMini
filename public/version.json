@@ -1,12 +1,12 @@
 {
-  "version": "v2.33.0",
-  "versionCode": 530,
+  "version": "v2.33.1",
+  "versionCode": 531,
   "buildDate": "26 November 2026",
-  "buildHash": "wms-261126-v530-0623",
-  "releaseTitle": "WMS v2.33.0 — Share Kekurangan Pengecekan SJ ke Tugas Picking",
+  "buildHash": "wms-261126-v531-1206",
+  "releaseTitle": "WMS v2.33.1 — Proteksi Reset 0 Pcs & Undo Reset Picking",
   "releaseNotes": [
-    "Tombol Share ke Tugas Picking pada item selisih kurang di Pengecekan SJ Pengiriman",
-    "Rekonsiliasi SJ eksisting vs baru di picking_list, tampil hanya sisa kurang, dan anti-double #OUT via baseline persisten"
+    "Hapus tombol Reset 0 Pcs di sebelah Lanjutkan Picking pada kartu antrean agar tidak kepencet tidak sengaja",
+    "Wajib ketik RESET untuk konfirmasi reset progres + backup Undo Reset otomatis 24 jam ke Supabase & draft lokal"
   ],
   "minSupportedVersion": "v2.0.0"
 }

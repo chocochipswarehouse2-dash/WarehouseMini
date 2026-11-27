@@ -6293,6 +6293,150 @@ export async function cancelOrResetPickingSJSupabase(no_sj: string): Promise<boo
 }
 
 /**
+ * Pulihkan progres picking SJ dari snapshot backup (Undo Reset 0 Pcs).
+ * Menggunakan bounded parallel PATCH (CONCURRENCY = 8) dengan retry 1x agar cepat & aman.
+ */
+export async function restorePickingSJFromBackupSupabase(
+  no_sj: string,
+  backupItems: PickingListItem[]
+): Promise<{ ok: boolean; restoredCount: number; restoredPcs: number }> {
+  const cleanNoSj = String(no_sj || '').trim().toUpperCase();
+  if (!cleanNoSj || !Array.isArray(backupItems) || backupItems.length === 0) {
+    return { ok: false, restoredCount: 0, restoredPcs: 0 };
+  }
+
+  try {
+    const itemsToRestore = backupItems.filter((it) => {
+      if (!it || it.status === 'SELESAI') return false;
+      const qty = Math.max(0, Number(it.qty_picked) || 0);
+      const isKosong = Boolean(it.is_kosong || it.status === 'KOSONG');
+      return qty > 0 || isKosong;
+    });
+
+    if (itemsToRestore.length === 0) {
+      return { ok: true, restoredCount: 0, restoredPcs: 0 };
+    }
+
+    const activeRows = await fetchActiveSjRealtimeRowsSupabase(cleanNoSj);
+    const activeById = new Map<string, PickingListItem>();
+    const activeBySku = new Map<string, PickingListItem>();
+    activeRows.forEach((row) => {
+      if (row.status === 'SELESAI') return;
+      if (row.id && !String(row.id).startsWith('pick_')) {
+        activeById.set(String(row.id), row);
+      }
+      if (row.sku) {
+        activeBySku.set(String(row.sku).trim().toUpperCase(), row);
+      }
+    });
+
+    const patchQueue: Array<{
+      cond: string;
+      body: { qty_picked: number; status: PickingListItem['status']; picker_name: string };
+      idKey?: string;
+      skuKey: string;
+      isKosong: boolean;
+    }> = [];
+
+    itemsToRestore.forEach((it) => {
+      const skuKey = String(it.sku || '').trim().toUpperCase();
+      const matchedRow =
+        (it.id && !String(it.id).startsWith('pick_') ? activeById.get(String(it.id)) : undefined) ||
+        (skuKey ? activeBySku.get(skuKey) : undefined);
+
+      const targetId = matchedRow?.id && !String(matchedRow.id).startsWith('pick_')
+        ? String(matchedRow.id)
+        : it.id && !String(it.id).startsWith('pick_')
+        ? String(it.id)
+        : undefined;
+
+      const qty = Math.max(0, Number(it.qty_picked) || 0);
+      const isKosong = Boolean(it.is_kosong || it.status === 'KOSONG');
+      const restoredStatus: PickingListItem['status'] = isKosong ? 'KOSONG' : 'PENDING';
+      const restoredPicker = resolvePickingItemActualPicker(it, it.picker_name || '');
+
+      const cond = targetId
+        ? `id=eq.${encodeURIComponent(targetId)}`
+        : `no_sj=ilike.${encodeURIComponent(cleanNoSj)}&sku=eq.${encodeURIComponent(skuKey)}&or=(status.is.null,status.neq.SELESAI)`;
+
+      patchQueue.push({
+        cond,
+        body: {
+          qty_picked: qty,
+          status: restoredStatus,
+          picker_name: restoredPicker,
+        },
+        idKey: targetId,
+        skuKey,
+        isKosong,
+      });
+    });
+
+    const PATCH_CONCURRENCY = 8;
+    let restoredCount = 0;
+    let restoredPcs = 0;
+    const restoredMapById = new Map<string, { qty_picked: number; status: PickingListItem['status']; picker_name: string; is_kosong: boolean }>();
+    const restoredMapBySku = new Map<string, { qty_picked: number; status: PickingListItem['status']; picker_name: string; is_kosong: boolean }>();
+
+    for (let i = 0; i < patchQueue.length; i += PATCH_CONCURRENCY) {
+      const chunk = patchQueue.slice(i, i + PATCH_CONCURRENCY);
+      await Promise.all(
+        chunk.map(async (entry) => {
+          try {
+            await supabaseFetch('picking_list', 'PATCH', entry.body, entry.cond);
+          } catch {
+            // 1x retry for transient network hiccup
+            await supabaseFetch('picking_list', 'PATCH', entry.body, entry.cond);
+          }
+          restoredCount += 1;
+          restoredPcs += entry.body.qty_picked;
+          const record = {
+            qty_picked: entry.body.qty_picked,
+            status: entry.body.status,
+            picker_name: entry.body.picker_name,
+            is_kosong: entry.isKosong,
+          };
+          if (entry.idKey) restoredMapById.set(entry.idKey, record);
+          if (entry.skuKey) restoredMapBySku.set(entry.skuKey, record);
+        })
+      );
+    }
+
+    const restoreCachedList = (storageKey: string) => {
+      try {
+        const rawStr = localStorage.getItem(storageKey);
+        if (!rawStr) return;
+        const cached: PickingListItem[] = JSON.parse(rawStr);
+        if (!Array.isArray(cached)) return;
+        const nextCached = cached.map((c) => {
+          if ((c.no_sj || '').toUpperCase().trim() !== cleanNoSj || c.status === 'SELESAI') return c;
+          const rec =
+            (c.id ? restoredMapById.get(String(c.id)) : undefined) ||
+            (c.sku ? restoredMapBySku.get(String(c.sku).trim().toUpperCase()) : undefined);
+          if (!rec) return c;
+          return {
+            ...c,
+            qty_picked: rec.qty_picked,
+            status: rec.status,
+            picker_name: rec.picker_name,
+            is_kosong: rec.is_kosong,
+          };
+        });
+        localStorage.setItem(storageKey, JSON.stringify(nextCached));
+      } catch {}
+    };
+
+    restoreCachedList('wms_picking_cache');
+    restoreCachedList('wms_raw_picking_list_cache');
+    invalidatePickingListCache();
+    return { ok: true, restoredCount, restoredPcs };
+  } catch (err) {
+    console.warn('Failed to restore picking SJ backup in Supabase:', err);
+    return { ok: false, restoredCount: 0, restoredPcs: 0 };
+  }
+}
+
+/**
  * Fetch total #OUT qty already recorded in `log_produk` per SKU for a given Picking SJ.
  * Used as the authoritative baseline to prevent double #OUT deductions on continuation picking.
  */

@@ -15,19 +15,31 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.33.0",
-  "versionCode": 530,
+  "version": "v2.33.1",
+  "versionCode": 531,
   "buildDate": "26 November 2026",
-  "buildHash": "wms-261126-v530-0623",
-  "releaseTitle": "WMS v2.33.0 — Share Kekurangan Pengecekan SJ ke Tugas Picking",
+  "buildHash": "wms-261126-v531-1206",
+  "releaseTitle": "WMS v2.33.1 — Proteksi Reset 0 Pcs & Undo Reset Picking",
   "releaseNotes": [
-    "Tombol Share ke Tugas Picking pada item selisih kurang di Pengecekan SJ Pengiriman",
-    "Rekonsiliasi SJ eksisting vs baru di picking_list, tampil hanya sisa kurang, dan anti-double #OUT via baseline persisten"
+    "Hapus tombol Reset 0 Pcs di sebelah Lanjutkan Picking pada kartu antrean agar tidak kepencet tidak sengaja",
+    "Wajib ketik RESET untuk konfirmasi reset progres + backup Undo Reset otomatis 24 jam ke Supabase & draft lokal"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.33.0",
+    "versionCode": 530,
+    "buildDate": "26 November 2026",
+    "buildHash": "wms-261126-v530-0623",
+    "releaseTitle": "WMS v2.33.0 — Share Kekurangan Pengecekan SJ ke Tugas Picking",
+    "releaseNotes": [
+      "Tombol Share ke Tugas Picking pada item selisih kurang di Pengecekan SJ Pengiriman",
+      "Rekonsiliasi SJ eksisting vs baru di picking_list, tampil hanya sisa kurang, dan anti-double #OUT via baseline persisten"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.32.1",
     "versionCode": 521,
@@ -104,19 +116,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Watermark delta sync pengecekan_sj & lazy-load QC Mutasi",
       "Watermark gate wms_settings & recount_audit_results + probe ringan 60s PickingTasksView",
       "Guard watermark penerimaan_produksi, manual_shipment, stok fisik, & skill egress guardrails"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.29.0",
-    "versionCode": 490,
-    "buildDate": "24 November 2026",
-    "buildHash": "wms-261124-v490-0955",
-    "releaseTitle": "WMS v2.29.0 — Renovasi Total Rekap Tagihan JNE (GSheet JNEMember 2-Way & AI Vision)",
-    "releaseNotes": [
-      "Sinkronisasi live 2 arah dengan GSheet JNEMember (Kolom D Deskripsi Pengiriman bisa diisi dari WMS maupun GSheet)",
-      "Import multi-sumber: Excel, CSV, Lampiran Gambar/Screenshot (Ctrl+V via Gemini Vision AI), PDF, & Input Manual dengan Tabel Pratinjau",
-      "Fitur Edit Lengkap seluruh kolom & Hapus Baris GSheet khusus Admin dan Warehouse dalam tampilan 2-Mode (Tabel & Kartu)"
     ],
     "minSupportedVersion": "v2.0.0"
   }

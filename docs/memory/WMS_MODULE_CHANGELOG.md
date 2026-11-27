@@ -4,6 +4,15 @@
 
 ---
 
+## v2.33.1 — 26 November 2026
+**Modul**: Antrean Tugas Picking (`src/components/PickingTasksView.tsx`, `src/services/supabase.ts`, `.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md`)
+- **Proteksi Tombol `Reset 0 Pcs` Anti-Kepencet & Cadangan `Undo Reset` 24 Jam**:
+  - Menghapus tombol **`Reset 0 Pcs`** yang sebelumnya menonjol tepat di samping tombol **`LANJUTKAN PICKING`** pada kartu antrean View 1 agar tidak pernah tertekan tidak sengaja pada SJ dengan progres tersimpan (seperti `139/173 Pcs`).
+  - Memperketat opsi reset di modal keluar/batal View 2 (**`Opsi Lanjutan: Reset Progres ke 0 Pcs...`**) dengan **verifikasi ketik kata kunci `RESET`** sebelum tombol konfirmasi aktif, serta menonaktifkan reset total pada SJ lanjutan/kekurangan (`hasPriorBaseline`) agar qty yang sudah diproses sebelumnya tetap aman.
+  - Menambahkan **backup snapshot otomatis selama 24 jam** (`wms_picking_reset_undo_backups_v1`) sebelum setiap reset progres dieksekusi, lengkap dengan **Banner Pemulihan** di atas antrean View 1 dan tombol **`Undo Reset (N Pcs)`** pada kartu SJ terkait yang memulihkan seluruh progres picking (termasuk multi-rak `pick_splits`, `lokasi_picked`, & item `KOSONG`) kembali ke Supabase (`restorePickingSJFromBackupSupabase`) dan draft lokal dalam 1 klik.
+
+---
+
 ## v2.33.0 — 26 November 2026
 **Modul**: Pengecekan Surat Jalan (`src/components/PesananSaya/DistribusiStoreTab.tsx`) + Antrean Tugas Picking (`src/components/PickingTasksView.tsx`, `src/services/supabase.ts`, `src/services/scannerOutboxService.ts`, `.agents/skills/wms-picking-completion-sync-guardrails/SKILL.md`)
 - **Share Kekurangan Pengecekan Surat Jalan (Pengiriman) ke Tugas Picking**:
