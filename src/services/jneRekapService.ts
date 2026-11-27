@@ -11,6 +11,7 @@ import {
   normalizeDate,
   normalizeNominal,
 } from './jneRekapParser';
+import { getLocalDbMeta, setLocalDbMeta } from './localDb';
 
 export const JNE_SPREADSHEET_ID = '1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k';
 export const JNE_SHEET_NAME = 'JNEmember';
@@ -32,8 +33,20 @@ export interface JneTabConfig {
   gid: string;
   gsheetUrl: string;
   cacheKey: string;
+  idbKey: string;
   defaultAgen: string;
   exportPrefix: string;
+}
+
+export interface JneIndexedDbSnapshot {
+  records: JneDetectedRecord[];
+  totalRecords: number;
+  lastRow: number;
+  headerRow: number;
+  blockSize: number;
+  signature: string;
+  blockSigs: string[];
+  syncedAt: number;
 }
 
 export const JNE_TAB_CONFIGS: Record<JneSheetTab, JneTabConfig> = {
@@ -44,6 +57,7 @@ export const JNE_TAB_CONFIGS: Record<JneSheetTab, JneTabConfig> = {
     gid: JNE_SHEET_GID,
     gsheetUrl: JNE_GSHEET_URL,
     cacheKey: 'chocochips_jne_member_records_v2',
+    idbKey: 'jne_rekap_idb_member_v1',
     defaultAgen: DEFAULT_AGEN_NAME,
     exportPrefix: 'JNEMember_Rekap',
   },
@@ -54,12 +68,18 @@ export const JNE_TAB_CONFIGS: Record<JneSheetTab, JneTabConfig> = {
     gid: JNE_CORP_SHEET_GID,
     gsheetUrl: JNE_CORP_GSHEET_URL,
     cacheKey: 'chocochips_jne_corporate_records_v1',
+    idbKey: 'jne_rekap_idb_corporate_v1',
     defaultAgen: DEFAULT_AGEN_CORPORATE,
     exportPrefix: 'JNECorporated_Rekap',
   },
 };
 
 const STORAGE_KEY_JNE_GAS_URL = 'chocochips_jne_gas_url_v1';
+
+const memorySnapshots: Record<JneSheetTab, JneIndexedDbSnapshot | null> = {
+  member: null,
+  corporate: null,
+};
 
 export function getJneTabConfig(sheetTab: JneSheetTab = 'member'): JneTabConfig {
   return JNE_TAB_CONFIGS[sheetTab] || JNE_TAB_CONFIGS.member;
@@ -85,7 +105,75 @@ export function saveStoredJneGasUrl(url: string): void {
   } catch {}
 }
 
+/**
+ * Muat snapshot JNE dari memori / IndexedDB (sekaligus migrasi aman dari legacy localStorage bila ada)
+ */
+export async function loadJneSnapshotFromIndexedDb(
+  sheetTab: JneSheetTab = 'member'
+): Promise<JneIndexedDbSnapshot | null> {
+  if (memorySnapshots[sheetTab]) {
+    return memorySnapshots[sheetTab];
+  }
+  const cfg = getJneTabConfig(sheetTab);
+  try {
+    const stored = await getLocalDbMeta<JneIndexedDbSnapshot>(cfg.idbKey);
+    if (stored && Array.isArray(stored.records)) {
+      memorySnapshots[sheetTab] = stored;
+      try {
+        localStorage.removeItem(cfg.cacheKey);
+      } catch {}
+      return stored;
+    }
+  } catch {}
+
+  // One-time migrasi dari legacy localStorage -> IndexedDB agar kuota localStorage lega
+  try {
+    const raw = localStorage.getItem(cfg.cacheKey);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const migrated: JneIndexedDbSnapshot = {
+          records: parsed,
+          totalRecords: parsed.length,
+          lastRow: parsed.reduce((mx, r) => Math.max(mx, Number(r?.row_number) || 0), 0),
+          headerRow: 1,
+          blockSize: 200,
+          signature: '',
+          blockSigs: [],
+          syncedAt: 0,
+        };
+        await saveJneSnapshotToIndexedDb(sheetTab, migrated);
+        try {
+          localStorage.removeItem(cfg.cacheKey);
+        } catch {}
+        return migrated;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+export async function saveJneSnapshotToIndexedDb(
+  sheetTab: JneSheetTab,
+  snapshot: JneIndexedDbSnapshot
+): Promise<void> {
+  const cfg = getJneTabConfig(sheetTab);
+  memorySnapshots[sheetTab] = snapshot;
+  try {
+    localStorage.removeItem(cfg.cacheKey);
+  } catch {}
+  try {
+    await setLocalDbMeta<JneIndexedDbSnapshot>(cfg.idbKey, snapshot);
+  } catch (err) {
+    console.warn(`[JNE ${sheetTab}] Gagal menyimpan snapshot ke IndexedDB:`, err);
+  }
+}
+
 export function getLocalCachedJneRecords(sheetTab: JneSheetTab = 'member'): JneDetectedRecord[] {
+  if (memorySnapshots[sheetTab]?.records) {
+    return memorySnapshots[sheetTab]!.records;
+  }
   const cfg = getJneTabConfig(sheetTab);
   try {
     const raw = localStorage.getItem(cfg.cacheKey);
@@ -99,12 +187,21 @@ export function getLocalCachedJneRecords(sheetTab: JneSheetTab = 'member'): JneD
 
 export function saveLocalCachedJneRecords(
   records: JneDetectedRecord[],
-  sheetTab: JneSheetTab = 'member'
+  sheetTab: JneSheetTab = 'member',
+  preserveSignature: boolean = false
 ): void {
-  const cfg = getJneTabConfig(sheetTab);
-  try {
-    localStorage.setItem(cfg.cacheKey, JSON.stringify(records));
-  } catch {}
+  const prev = memorySnapshots[sheetTab];
+  const nextSnapshot: JneIndexedDbSnapshot = {
+    records,
+    totalRecords: records.length,
+    lastRow: records.reduce((mx, r) => Math.max(mx, Number(r?.row_number) || 0), prev?.lastRow || 0),
+    headerRow: prev?.headerRow || 1,
+    blockSize: prev?.blockSize || 200,
+    signature: preserveSignature ? (prev?.signature || '') : '',
+    blockSigs: preserveSignature ? (prev?.blockSigs || []) : [],
+    syncedAt: prev?.syncedAt || Date.now(),
+  };
+  void saveJneSnapshotToIndexedDb(sheetTab, nextSnapshot);
 }
 
 function mapRawToJneRecord(r: any, idx: number, sheetTab: JneSheetTab = 'member'): JneDetectedRecord {
@@ -213,24 +310,42 @@ async function fetchDirectFromGsheetGviz(sheetTab: JneSheetTab = 'member'): Prom
 }
 
 /**
- * 1. Tarik seluruh data live dari Sheet "JNEmember" atau "JNECorporate"
+ * 1. Tarik data dari Google Sheets memakai IndexedDB + 200-Row Block Delta Sync
  */
 export async function fetchJneRecordsFromGas(
   sheetTab: JneSheetTab = 'member',
-  gasUrl?: string
+  optionsOrGasUrl?: string | { gasUrl?: string; forceFull?: boolean }
 ): Promise<{
   success: boolean;
   records: JneDetectedRecord[];
   total: number;
   source?: 'gas' | 'gviz' | 'cache';
+  syncMode?: 'unchanged' | 'delta' | 'full';
+  deltaCount?: number;
   message?: string;
   error?: string;
 }> {
   const cfg = getJneTabConfig(sheetTab);
-  const url = (gasUrl || getStoredJneGasUrl()).trim();
+  const opts = typeof optionsOrGasUrl === 'string' ? { gasUrl: optionsOrGasUrl } : (optionsOrGasUrl || {});
+  const url = (opts.gasUrl || getStoredJneGasUrl()).trim();
+  const forceFull = opts.forceFull === true;
+
+  const existingSnapshot = await loadJneSnapshotFromIndexedDb(sheetTab);
 
   try {
-    const res = await fetch(`${url}?action=read&sheet=${sheetTab}&t=${Date.now()}`, {
+    const queryParts = [`action=read`, `sheet=${sheetTab}`, `t=${Date.now()}`];
+    if (forceFull) {
+      queryParts.push('force=1');
+    } else if (existingSnapshot && existingSnapshot.records.length > 0 && existingSnapshot.signature) {
+      queryParts.push(`client_sig=${encodeURIComponent(existingSnapshot.signature)}`);
+      queryParts.push(`client_count=${existingSnapshot.records.length}`);
+      queryParts.push(`since_row=${existingSnapshot.lastRow || 0}`);
+      if (Array.isArray(existingSnapshot.blockSigs) && existingSnapshot.blockSigs.length > 0 && existingSnapshot.blockSigs.length <= 150) {
+        queryParts.push(`bs=${encodeURIComponent(existingSnapshot.blockSigs.join(','))}`);
+      }
+    }
+
+    const res = await fetch(`${url}?${queryParts.join('&')}`, {
       method: 'GET',
       headers: { Accept: 'application/json' },
     });
@@ -244,41 +359,139 @@ export async function fetchJneRecordsFromGas(
       throw new Error(data.error || `Gagal membaca data ${cfg.label} dari Google Sheets.`);
     }
 
+    const responseMode: 'unchanged' | 'delta' | 'full' =
+      data.mode === 'unchanged' ? 'unchanged' : data.mode === 'delta' ? 'delta' : 'full';
+
+    // Mode 1: Unchanged (~180 byte, 0 baris ditransfer)
+    if (responseMode === 'unchanged' && existingSnapshot) {
+      const refreshed: JneIndexedDbSnapshot = {
+        ...existingSnapshot,
+        syncedAt: Date.now(),
+      };
+      await saveJneSnapshotToIndexedDb(sheetTab, refreshed);
+      return {
+        success: true,
+        records: refreshed.records,
+        total: refreshed.records.length,
+        source: 'gas',
+        syncMode: 'unchanged',
+        deltaCount: 0,
+        message: `Data ${cfg.label} sudah paling baru (${refreshed.records.length.toLocaleString('id-ID')} resi).`,
+      };
+    }
+
+    // Mode 2: Block-Level Delta (hanya blok 200 baris yang berubah / baru)
+    if (responseMode === 'delta' && existingSnapshot) {
+      const changedBlocks: Array<{ block_index: number; start_row: number; end_row: number }> =
+        Array.isArray(data.changed_blocks) ? data.changed_blocks : [];
+      const deltaRecords = (data.records || []).map((r: any, idx: number) =>
+        mapRawToJneRecord(r, idx, sheetTab)
+      );
+      const maxValidRow = typeof data.last_row === 'number' ? data.last_row : Infinity;
+
+      const keptOld = existingSnapshot.records.filter((rec) => {
+        const rn = Number(rec.row_number) || 0;
+        if (rn > maxValidRow) return false;
+        for (const blk of changedBlocks) {
+          if (rn >= blk.start_row && rn <= blk.end_row) {
+            return false;
+          }
+        }
+        return true;
+      });
+
+      const merged = keptOld.concat(deltaRecords).sort((a, b) => (a.row_number || 0) - (b.row_number || 0));
+
+      // Self-healing guard: jika jumlah baris meleset dari server, lakukan full sync otomatis 1x
+      if (typeof data.total_records === 'number' && merged.length !== data.total_records) {
+        return fetchJneRecordsFromGas(sheetTab, { gasUrl: url, forceFull: true });
+      }
+
+      const nextSnapshot: JneIndexedDbSnapshot = {
+        records: merged,
+        totalRecords: merged.length,
+        lastRow: typeof data.last_row === 'number' ? data.last_row : existingSnapshot.lastRow,
+        headerRow: typeof data.header_row === 'number' ? data.header_row : existingSnapshot.headerRow,
+        blockSize: typeof data.block_size === 'number' ? data.block_size : 200,
+        signature: String(data.signature || ''),
+        blockSigs: Array.isArray(data.block_sigs) ? data.block_sigs : [],
+        syncedAt: Date.now(),
+      };
+      await saveJneSnapshotToIndexedDb(sheetTab, nextSnapshot);
+
+      return {
+        success: true,
+        records: merged,
+        total: merged.length,
+        source: 'gas',
+        syncMode: 'delta',
+        deltaCount: deltaRecords.length,
+        message: `${cfg.label} diperbarui (${deltaRecords.length.toLocaleString('id-ID')} baris berubah, total ${merged.length.toLocaleString('id-ID')} resi).`,
+      };
+    }
+
+    // Mode 3: Full Snapshot
     const fetchedRecords = (data.records || []).map((r: any, idx: number) =>
       mapRawToJneRecord(r, idx, sheetTab)
     );
-    saveLocalCachedJneRecords(fetchedRecords, sheetTab);
+    const fullSnapshot: JneIndexedDbSnapshot = {
+      records: fetchedRecords,
+      totalRecords: fetchedRecords.length,
+      lastRow:
+        typeof data.last_row === 'number'
+          ? data.last_row
+          : fetchedRecords.reduce((mx: number, r: JneDetectedRecord) => Math.max(mx, r.row_number || 0), 0),
+      headerRow: typeof data.header_row === 'number' ? data.header_row : 1,
+      blockSize: typeof data.block_size === 'number' ? data.block_size : 200,
+      signature: String(data.signature || ''),
+      blockSigs: Array.isArray(data.block_sigs) ? data.block_sigs : [],
+      syncedAt: Date.now(),
+    };
+    await saveJneSnapshotToIndexedDb(sheetTab, fullSnapshot);
 
     return {
       success: true,
       records: fetchedRecords,
       total: fetchedRecords.length,
       source: 'gas',
+      syncMode: 'full',
+      deltaCount: fetchedRecords.length,
       message: `${fetchedRecords.length.toLocaleString('id-ID')} resi ${cfg.label} dimuat.`,
     };
   } catch (gasErr: any) {
     try {
       const gvizRecords = await fetchDirectFromGsheetGviz(sheetTab);
       if (gvizRecords.length > 0) {
-        saveLocalCachedJneRecords(gvizRecords, sheetTab);
+        const gvizSnap: JneIndexedDbSnapshot = {
+          records: gvizRecords,
+          totalRecords: gvizRecords.length,
+          lastRow: gvizRecords.reduce((mx, r) => Math.max(mx, r.row_number || 0), 0),
+          headerRow: 1,
+          blockSize: 200,
+          signature: '',
+          blockSigs: [],
+          syncedAt: Date.now(),
+        };
+        await saveJneSnapshotToIndexedDb(sheetTab, gvizSnap);
         return {
           success: true,
           records: gvizRecords,
           total: gvizRecords.length,
           source: 'gviz',
+          syncMode: 'full',
           message: `${gvizRecords.length.toLocaleString('id-ID')} resi ${cfg.label} dimuat dari Google Sheets.`,
         };
       }
     } catch {}
 
-    console.warn(`[JNE ${sheetTab}] Gagal muat live, pakai cache lokal:`, gasErr);
-    const cached = getLocalCachedJneRecords(sheetTab);
+    console.warn(`[JNE ${sheetTab}] Gagal muat live, pakai cache IndexedDB:`, gasErr);
+    const fallbackRecords = existingSnapshot?.records || getLocalCachedJneRecords(sheetTab);
     return {
       success: false,
-      records: cached,
-      total: cached.length,
+      records: fallbackRecords,
+      total: fallbackRecords.length,
       source: 'cache',
-      error: `Gagal terhubung ke Google Sheets (${gasErr?.message || String(gasErr)}). Menampilkan ${cached.length} data tersimpan.`,
+      error: `Gagal terhubung ke Google Sheets (${gasErr?.message || String(gasErr)}). Menampilkan ${fallbackRecords.length} data tersimpan.`,
     };
   }
 }
@@ -354,6 +567,12 @@ export async function upsertJneRecordsToGas(
       throw new Error(data.error || 'Google Sheets menolak penyimpanan.');
     }
 
+    // Kosongkan signature sementara agar delta sync berikutnya menarik blok baru/terubah
+    const snap = await loadJneSnapshotFromIndexedDb(sheetTab);
+    if (snap) {
+      await saveJneSnapshotToIndexedDb(sheetTab, { ...snap, signature: '' });
+    }
+
     return {
       success: true,
       inserted: data.inserted || 0,
@@ -412,13 +631,17 @@ export async function updateDeskripsiToGas(
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'Gagal menyimpan deskripsi ke Google Sheets.');
 
-    const current = getLocalCachedJneRecords(sheetTab);
-    saveLocalCachedJneRecords(
-      current.map((item) =>
+    const snap = await loadJneSnapshotFromIndexedDb(sheetTab);
+    if (snap) {
+      const nextRecords = snap.records.map((item) =>
         cleanResi(item.no_resi) === cleanR ? { ...item, deskripsi } : item
-      ),
-      sheetTab
-    );
+      );
+      await saveJneSnapshotToIndexedDb(sheetTab, {
+        ...snap,
+        records: nextRecords,
+        signature: '',
+      });
+    }
 
     return { success: true, message: data.message };
   } catch (err: any) {
@@ -461,14 +684,18 @@ export async function bulkUpdateDeskripsiToGas(
     if (!data.success) throw new Error(data.error || 'Gagal menyimpan deskripsi massal.');
 
     const updateMap = new Map(updates.map((u) => [cleanResi(u.no_resi), u.deskripsi]));
-    const current = getLocalCachedJneRecords(sheetTab);
-    saveLocalCachedJneRecords(
-      current.map((item) => {
+    const snap = await loadJneSnapshotFromIndexedDb(sheetTab);
+    if (snap) {
+      const nextRecords = snap.records.map((item) => {
         const k = cleanResi(item.no_resi);
         return updateMap.has(k) ? { ...item, deskripsi: updateMap.get(k)! } : item;
-      }),
-      sheetTab
-    );
+      });
+      await saveJneSnapshotToIndexedDb(sheetTab, {
+        ...snap,
+        records: nextRecords,
+        signature: '',
+      });
+    }
 
     return {
       success: true,
@@ -529,6 +756,11 @@ export async function updateSingleJneRecordToGas(
     const data = await res.json();
     if (!data.success) throw new Error(data.error || 'Gagal memperbarui data di Google Sheets.');
 
+    const snap = await loadJneSnapshotFromIndexedDb(sheetTab);
+    if (snap) {
+      await saveJneSnapshotToIndexedDb(sheetTab, { ...snap, signature: '' });
+    }
+
     return { success: true, message: data.message };
   } catch (err: any) {
     return {
@@ -572,11 +804,17 @@ export async function deleteJneRecordsFromGas(
     if (!data.success) throw new Error(data.error || 'Gagal menghapus data di Google Sheets.');
 
     const delSet = new Set(cleaned);
-    const current = getLocalCachedJneRecords(sheetTab);
-    saveLocalCachedJneRecords(
-      current.filter((r) => !delSet.has(cleanResi(r.no_resi))),
-      sheetTab
-    );
+    const snap = await loadJneSnapshotFromIndexedDb(sheetTab);
+    if (snap) {
+      const nextRecords = snap.records.filter((r) => !delSet.has(cleanResi(r.no_resi)));
+      await saveJneSnapshotToIndexedDb(sheetTab, {
+        ...snap,
+        records: nextRecords,
+        totalRecords: nextRecords.length,
+        signature: '',
+        blockSigs: [],
+      });
+    }
 
     return {
       success: true,

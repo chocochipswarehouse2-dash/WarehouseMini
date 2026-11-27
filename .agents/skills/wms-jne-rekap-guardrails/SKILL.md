@@ -54,6 +54,9 @@ Wajib dibaca dan dipatuhi oleh **SEMUA agen coding** setiap kali mengubah modul 
 5. **Sinkronisasi 2 Arah Aman Deskripsi Pengiriman**:
    - Edit inline maupun batch hanya menulis ke `cfg.descCol` (`D` untuk member, `C` untuk corporate) dengan `LockService`, dan import tidak pernah mengosongkan deskripsi manual yang sudah ada secara default.
 6. **Dilarang Auto-Match Berdasarkan Nama Penerima**.
+7. **IndexedDB Cache + 200-Row Block Delta Sync (`WMS_LOCAL_DB` `meta` store)**:
+   - Cache resi JNE (`jne_rekap_idb_member_v1`, `jne_rekap_idb_corporate_v1`) wajib disimpan di IndexedDB (`loadJneSnapshotFromIndexedDb` / `saveJneSnapshotToIndexedDb`) — DILARANG menyimpan ribuan baris ke `localStorage` agar tidak kena `QuotaExceededError`.
+   - `doGet` di `gas/jne_tagihan_backend.js` wajib mendukung parameter delta (`client_sig`, `client_count`, `since_row`, `bs` = hash FNV-1a per blok 200 baris) dan mengembalikan `mode: "unchanged"` (~250B), `mode: "delta"` (`changed_blocks` + baris blok berubah saja), atau `mode: "full"` (dengan *self-healing* otomatis jika `merged.length !== total_records`). Mutasi lokal wajib mengosongkan `signature` sementara agar sinkronisasi berikutnya menarik blok terbaru.
 
 ---
 

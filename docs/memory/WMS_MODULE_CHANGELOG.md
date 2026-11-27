@@ -4,6 +4,17 @@
 
 ---
 
+## v2.39.1 — 27 November 2026
+**Modul**: Rekap Tagihan JNE — IndexedDB + 200-Row Block Delta Sync (`gas/jne_tagihan_backend.js`, `src/services/jneRekapService.ts`, `src/components/JneRekapView.tsx`, `src/storage-override.ts`)
+- **Penyimpanan IndexedDB Permanen (`WMS_LOCAL_DB` `meta` store)**:
+  - Memindahkan cache `JNEmember` dan `JNECorporated` dari `localStorage` (limit 5 MB) ke **IndexedDB** (`jne_rekap_idb_member_v1` & `jne_rekap_idb_corporate_v1`) dengan migrasi otomatis satu kali dari key `localStorage` lama, sehingga layar langsung terisi instan (`< 20 ms`) saat dibuka atau pindah tab tanpa memakan kuota `localStorage`.
+- **Protokol Delta Update Per Blok 200 Baris**:
+  - `doGet` di `gas/jne_tagihan_backend.js` kini menghitung hash FNV-1a per blok 200 baris (`block_sigs`) dan hash menyeluruh (`signature`).
+  - Saat data tidak berubah, server membalas `mode: "unchanged"` (hanya metadata ringan tanpa mengirim ribuan baris); saat hanya sebagian baris/tagihan berubah atau resi baru masuk, server membalas `mode: "delta"` berisi **hanya blok 200 baris yang berubah**, lalu klien menggabungkannya ke IndexedDB (*self-healing fallback* otomatis ke `full` jika jumlah total tidak cocok).
+  - Menambahkan aksi **"Muat Ulang Penuh"** pada menu `⋯` di header `JneRekapView.tsx`.
+
+---
+
 ## v2.39.0 — 27 November 2026
 **Modul**: Rekap Tagihan JNE Dual-Tab (`JNEmember` & `JNECorporated`) + Skill Anti-Slop Copy (`.agents/skills/wms-antislop-copy/SKILL.md`, `src/components/JneRekapView.tsx`, `src/services/jneRekapService.ts`, `src/services/jneRekapParser.ts`, `gas/jne_tagihan_backend.js`)
 - **Penambahan Tab `JNECorporated` (Sheet `JNECorporate`, `gid = 843586287`)**:

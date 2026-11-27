@@ -20,6 +20,18 @@
  */
 
 var SPREADSHEET_ID = "1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k";
+var JNE_DELTA_BLOCK_SIZE = 200;
+
+function fnv1aHex(str) {
+  var h = 0x811c9dc5;
+  var s = String(str || "");
+  for (var i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h += (h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24);
+    h = h >>> 0;
+  }
+  return ("00000000" + h.toString(16)).slice(-8);
+}
 
 var SHEET_CONFIGS = {
   member: {
@@ -292,28 +304,65 @@ function buildResiRowMap(sheet, cfg, dataStartRow, lastDataRow) {
  */
 function doGet(e) {
   try {
-    var sheetType = resolveSheetType(e && e.parameter ? e.parameter.sheet : "member");
+    var params = (e && e.parameter) ? e.parameter : {};
+    var sheetType = resolveSheetType(params.sheet || "member");
     var ctx = getTargetSheet(sheetType);
     var sheet = ctx.sheet;
     var cfg = ctx.cfg;
+
+    var forceFull = String(params.force || "") === "1";
+    var clientSig = String(params.client_sig || "").trim();
+    var clientCount = parseInt(params.client_count || "0", 10) || 0;
+    var sinceRow = parseInt(params.since_row || "0", 10) || 0;
+    var bsRaw = String(params.bs || "").trim();
+    var clientBlockSigs = bsRaw ? bsRaw.split(",") : [];
 
     var headerRow = detectHeaderRow(sheet, cfg);
     var dataStartRow = headerRow + 1;
     var lastDataRow = findLastDataRowByResiCol(sheet, dataStartRow, cfg.resiCol);
 
     if (lastDataRow < dataStartRow) {
+      var emptySig = fnv1aHex("|0|" + (dataStartRow - 1));
+      if (!forceFull && clientSig === emptySig && clientCount === 0) {
+        return jsonResponse({
+          success: true,
+          mode: "unchanged",
+          sheet_type: cfg.type,
+          sheet_name: sheet.getName(),
+          gid: sheet.getSheetId(),
+          header_row: headerRow,
+          block_size: JNE_DELTA_BLOCK_SIZE,
+          last_row: dataStartRow - 1,
+          total_records: 0,
+          signature: emptySig,
+          block_sigs: []
+        });
+      }
       return jsonResponse({
         success: true,
+        mode: "full",
         sheet_type: cfg.type,
         sheet_name: sheet.getName(),
         gid: sheet.getSheetId(),
         header_row: headerRow,
+        block_size: JNE_DELTA_BLOCK_SIZE,
+        last_row: dataStartRow - 1,
         total_records: 0,
+        signature: emptySig,
+        block_sigs: [],
         records: []
       });
     }
 
     var numRows = lastDataRow - dataStartRow + 1;
+    var numBlocks = Math.ceil(numRows / JNE_DELTA_BLOCK_SIZE);
+    var blockRecords = [];
+    var blockFpParts = [];
+    for (var bi = 0; bi < numBlocks; bi++) {
+      blockRecords.push([]);
+      blockFpParts.push([]);
+    }
+
     var rawRange = sheet.getRange(dataStartRow, 1, numRows, cfg.totalCols);
     var rawValues = rawRange.getValues();
     var displayValues = rawRange.getDisplayValues();
@@ -323,12 +372,15 @@ function doGet(e) {
       var raw = rawValues[i];
       var disp = displayValues[i];
       var rowNumber = dataStartRow + i;
+      var blockIdx = Math.floor(i / JNE_DELTA_BLOCK_SIZE);
+      var rec = null;
+      var fp = "";
 
       if (cfg.type === "member") {
         var cnote = cleanCnote(disp[2] || raw[2]);
         if (isHeaderPlaceholderResi(cnote)) continue;
 
-        records.push({
+        rec = {
           row_number: rowNumber,
           no: String(disp[1] || raw[1] || "").trim(),
           no_resi: cnote,
@@ -340,12 +392,17 @@ function doGet(e) {
           nominal: parseAmountNumber(raw[8], disp[8]),
           tanggal: normalizeSheetDateToIso(raw[9], disp[9]),
           agen: String(disp[10] || raw[10] || "JNE Member").trim() || "JNE Member"
-        });
+        };
+        fp = [
+          rowNumber, rec.no, cnote, rec.deskripsi, rec.layanan,
+          rec.nama_tujuan, rec.alamat_tujuan, rec.nama_pengirim,
+          rec.nominal, rec.tanggal, rec.agen
+        ].join("|");
       } else {
         var resiCorp = cleanCnote(disp[1] || raw[1]);
         if (isHeaderPlaceholderResi(resiCorp)) continue;
 
-        records.push({
+        rec = {
           row_number: rowNumber,
           no: "",
           no_resi: resiCorp,
@@ -360,17 +417,93 @@ function doGet(e) {
           asuransi: parseAmountNumber(raw[9], disp[9]),
           status_pembayaran: String(disp[10] || raw[10] || "Belum Ada Tagihan").trim() || "Belum Ada Tagihan",
           agen: String(disp[11] || raw[11] || "JNECorporated").trim() || "JNECorporated"
+        };
+        fp = [
+          rowNumber, resiCorp, rec.deskripsi, rec.tanggal,
+          rec.nama_tujuan, rec.alamat_penerima, rec.alamat_tujuan,
+          rec.layanan, rec.nominal, rec.asuransi,
+          rec.status_pembayaran, rec.agen
+        ].join("|");
+      }
+
+      records.push(rec);
+      blockRecords[blockIdx].push(rec);
+      blockFpParts[blockIdx].push(fp);
+    }
+
+    var blockSigs = [];
+    for (var b = 0; b < numBlocks; b++) {
+      blockSigs.push(fnv1aHex(blockFpParts[b].join("\n")));
+    }
+    var fullSig = fnv1aHex(blockSigs.join(",") + "|" + records.length + "|" + lastDataRow);
+
+    if (!forceFull && clientSig && clientSig === fullSig && clientCount === records.length && sinceRow === lastDataRow) {
+      return jsonResponse({
+        success: true,
+        mode: "unchanged",
+        sheet_type: cfg.type,
+        sheet_name: sheet.getName(),
+        gid: sheet.getSheetId(),
+        header_row: headerRow,
+        block_size: JNE_DELTA_BLOCK_SIZE,
+        last_row: lastDataRow,
+        total_records: records.length,
+        signature: fullSig,
+        block_sigs: blockSigs
+      });
+    }
+
+    if (!forceFull && clientBlockSigs.length > 0 && lastDataRow >= sinceRow && blockSigs.length >= clientBlockSigs.length) {
+      var changedBlocks = [];
+      var deltaRecords = [];
+      for (var cIdx = 0; cIdx < blockSigs.length; cIdx++) {
+        if (cIdx >= clientBlockSigs.length || clientBlockSigs[cIdx] !== blockSigs[cIdx]) {
+          var startRowBlk = dataStartRow + cIdx * JNE_DELTA_BLOCK_SIZE;
+          var endRowBlk = Math.min(lastDataRow, startRowBlk + JNE_DELTA_BLOCK_SIZE - 1);
+          changedBlocks.push({
+            block_index: cIdx,
+            start_row: startRowBlk,
+            end_row: endRowBlk
+          });
+          var blkList = blockRecords[cIdx];
+          for (var m = 0; m < blkList.length; m++) {
+            deltaRecords.push(blkList[m]);
+          }
+        }
+      }
+
+      var maxDeltaBlocks = Math.max(2, Math.floor(blockSigs.length * 0.4));
+      if (changedBlocks.length > 0 && changedBlocks.length <= maxDeltaBlocks) {
+        return jsonResponse({
+          success: true,
+          mode: "delta",
+          sheet_type: cfg.type,
+          sheet_name: sheet.getName(),
+          gid: sheet.getSheetId(),
+          header_row: headerRow,
+          block_size: JNE_DELTA_BLOCK_SIZE,
+          last_row: lastDataRow,
+          total_records: records.length,
+          signature: fullSig,
+          block_sigs: blockSigs,
+          changed_blocks: changedBlocks,
+          records: deltaRecords
         });
       }
     }
 
     return jsonResponse({
       success: true,
+      mode: "full",
       sheet_type: cfg.type,
       sheet_name: sheet.getName(),
       gid: sheet.getSheetId(),
       header_row: headerRow,
+      block_size: JNE_DELTA_BLOCK_SIZE,
+      last_row: lastDataRow,
       total_records: records.length,
+      signature: fullSig,
+      block_sigs: blockSigs,
       records: records
     });
   } catch (err) {

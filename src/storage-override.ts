@@ -64,6 +64,8 @@ function clearKnownLargeCaches(protectedKey?: string): void {
     'wms_katalog_search_cache',
     'wms_staging_scan_cache',
     'wms_jne_rekap_member_cache',
+    'chocochips_jne_member_records_v2',
+    'chocochips_jne_corporate_records_v1',
     'wms_pengiriman_store_reports',
     'wms_pengiriman_store_trips',
     'wms_penerimaan_mutasi_store',

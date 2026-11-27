@@ -51,6 +51,7 @@ import {
 import {
   DEFAULT_JNE_GAS_URL,
   getJneTabConfig,
+  loadJneSnapshotFromIndexedDb,
   fetchJneRecordsFromGas,
   upsertJneRecordsToGas,
   updateDeskripsiToGas,
@@ -272,14 +273,14 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     });
   };
 
-  // Fetch data live dari Google Sheets (JNEmember / JNECorporate)
+  // Fetch data live dari Google Sheets (IndexedDB + delta sync, atau full saat diminta)
   const handleRefreshFromGsheet = useCallback(
-    async (silent: boolean = false) => {
+    async (silent: boolean = false, forceFull: boolean = false) => {
       const targetTab = activeSheetTab;
       const cfg = getJneTabConfig(targetTab);
       setIsLoading(true);
       try {
-        const res = await fetchJneRecordsFromGas(targetTab);
+        const res = await fetchJneRecordsFromGas(targetTab, { forceFull });
         if (res.records) {
           setRecords(res.records);
           setTabCounts((prev) => ({ ...prev, [targetTab]: res.records.length }));
@@ -306,22 +307,51 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     [activeSheetTab, onShowToast]
   );
 
+  // Hydrate instan dari IndexedDB saat mount / pindah tab, lalu cek pembaruan ringan di background
   useEffect(() => {
-    handleRefreshFromGsheet(true);
-  }, [handleRefreshFromGsheet]);
+    let cancelled = false;
+    const targetTab = activeSheetTab;
 
-  // Pre-warm count of inactive tab on mount so badge isn't 0 if unvisited
+    (async () => {
+      const snap = await loadJneSnapshotFromIndexedDb(targetTab);
+      if (!cancelled && snap && Array.isArray(snap.records) && snap.records.length > 0) {
+        setRecords(snap.records);
+        setTabCounts((prev) => ({ ...prev, [targetTab]: snap.records.length }));
+        if (snap.syncedAt) {
+          setLastSyncTime(
+            new Date(snap.syncedAt).toLocaleTimeString('id-ID', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          );
+        }
+      }
+      if (!cancelled) {
+        await handleRefreshFromGsheet(true, false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSheetTab, handleRefreshFromGsheet]);
+
+  // Pre-hydrate jumlah resi tab satunya dari IndexedDB (jika kosong, tarik di background)
   useEffect(() => {
     const inactiveTab: JneSheetTab = activeSheetTab === 'member' ? 'corporate' : 'member';
-    if (getLocalCachedJneRecords(inactiveTab).length === 0) {
-      fetchJneRecordsFromGas(inactiveTab)
-        .then((res) => {
+    loadJneSnapshotFromIndexedDb(inactiveTab)
+      .then((snap) => {
+        if (snap && snap.records.length > 0) {
+          setTabCounts((prev) => ({ ...prev, [inactiveTab]: snap.records.length }));
+          return null;
+        }
+        return fetchJneRecordsFromGas(inactiveTab).then((res) => {
           if (res.records && res.records.length > 0) {
             setTabCounts((prev) => ({ ...prev, [inactiveTab]: res.records.length }));
           }
-        })
-        .catch(() => {});
-    }
+        });
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1276,6 +1306,18 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                   >
                     <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
                     <span>Export CSV (.csv)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsUtilityMenuOpen(false);
+                      handleRefreshFromGsheet(false, true);
+                    }}
+                    disabled={isLoading}
+                    className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 disabled:opacity-40 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Muat Ulang Penuh</span>
                   </button>
                   <a
                     href={activeConfig.gsheetUrl}

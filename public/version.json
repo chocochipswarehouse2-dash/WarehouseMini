@@ -1,9 +1,9 @@
 {
-  "version": "v2.39.0",
-  "versionCode": 590,
+  "version": "v2.39.1",
+  "versionCode": 591,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v590-2047",
-  "releaseTitle": "WMS v2.39.0 — Pembaruan Sistem & Optimasi Operasional",
+  "buildHash": "wms-261127-v591-2101",
+  "releaseTitle": "WMS v2.39.1 — Pembaruan Sistem & Optimasi Operasional",
   "releaseNotes": [
     "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
     "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
