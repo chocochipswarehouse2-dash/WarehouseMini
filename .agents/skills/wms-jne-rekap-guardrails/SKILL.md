@@ -1,55 +1,63 @@
 ---
 name: wms-jne-rekap-guardrails
-description: Guardrails, Google Sheets JNEMember column schema (A..K), 2-way Column D sync invariants, role-based Edit/Delete rules (Admin & Warehouse), and multi-source parsing standards (Excel, CSV, Gemini Vision Screenshot/Image, PDF, Paste) for Rekap Tagihan JNE. Activate whenever modifying JneRekapView.tsx, jneRekapService.ts, jneRekapParser.ts, or gas/jne_tagihan_backend.js.
+description: Guardrails, Google Sheets JNEmember (A..K) & JNECorporate (A..L) column schemas, 2-way description sync & VLOOKUP Col K protection invariants, role-based Edit/Delete rules (Admin & Warehouse), and multi-source parsing standards for Rekap Tagihan JNE. Activate whenever modifying JneRekapView.tsx, jneRekapService.ts, jneRekapParser.ts, or gas/jne_tagihan_backend.js.
 ---
 
-# WMS Rekap Tagihan JNE (`JNEMember`) — Guardrails & Invariants
+# WMS Rekap Tagihan JNE (`JNEmember` & `JNECorporated`) — Guardrails & Invariants
 
-Wajib dibaca dan dipatuhi oleh **SEMUA agen coding** setiap kali mengubah modul **Rekap Tagihan JNE** (`src/components/JneRekapView.tsx`, `src/services/jneRekapService.ts`, `src/services/jneRekapParser.ts`, `gas/jne_tagihan_backend.js`, `src/services/permissions.ts`).
+Wajib dibaca dan dipatuhi oleh **SEMUA agen coding** setiap kali mengubah modul **Rekap Tagihan JNE** (`src/components/JneRekapView.tsx`, `src/services/jneRekapService.ts`, `src/services/jneRekapParser.ts`, `gas/jne_tagihan_backend.js`, `src/services/permissions.ts`) serta **wajib mematuhi `.agents/skills/wms-antislop-copy/SKILL.md`** dalam seluruh label/teks UI.
 
 ---
 
-## 1. Sumber Kebenaran Google Sheets (`JNEMember`)
-- **Spreadsheet ID**: `1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k`
-- **Target Sheet**: `JNEMember` (`gid = 1026608111`)
+## 1. Sumber Kebenaran Google Sheets (`1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k`)
 - **GAS Script ID**: `1Z1cIj3vnYR_CxK_SLuFqeOvlxnT5dUf7brhgW2X1Njj-Qr0qC7F9QmgZ`
-- **Struktur Kolom Baku (Baris 1 = Header, Baris 2+ = Data)**:
-  1. **Kolom A (1)**: `""` *(Margin kosong — jangan digeser)*
-  2. **Kolom B (2)**: `No`
-  3. **Kolom C (3)**: `Cnote No` *(Nomor Resi JNE, mis. `013790032629726`)*
-  4. **Kolom D (4)**: `Deskripsi pengiriman` *(Sinkronisasi 2 Arah Frontend WMS <-> GSheet)*
-  5. **Kolom E (5)**: `Services` *(Kode asli JNE: `CTC23`, `REG23`, `CTCYES23`, `YES23`, `JTR23`, dll.)*
-  6. **Kolom F (6)**: `Receiver Name` *(Nama Penerima)*
-  7. **Kolom G (7)**: `Destination` *(Kecamatan/Kota Tujuan)*
-  8. **Kolom H (8)**: `Shipper Name` *(Default: `CCH-CHOCOCHIPS`, atau `CCH-ERICA STEPHANIE`)*
-  9. **Kolom I (9)**: `Amount` *(Numerik murni Rupiah dengan format sel `"Rp   "#,##0`)*
-  10. **Kolom J (10)**: `Tanggal Pengiriman` *(Objek `Date` pukul 12:00 siang dengan format sel `dd/mm/yyyy`)*
-  11. **Kolom K (11)**: `Agen` *(Default: `JNE Member`)*
+- Parameter routing: `sheet=member` (default) atau `sheet=corporate` di `doGet` & `doPost`.
+
+### A. Tab `JNEmember` (`sheet=member`, `gid = 1026608111`, A..K)
+1. **Kolom A (1)**: `""` *(Margin kosong)*
+2. **Kolom B (2)**: `No`
+3. **Kolom C (3)**: `Cnote No` *(Format teks `@`, mis. `013790032629726`)*
+4. **Kolom D (4)**: `Deskripsi pengiriman` *(Sinkron 2 Arah WMS <-> GSheet)*
+5. **Kolom E (5)**: `Services` *(Kode asli JNE: `CTC23`, `REG23`, `CTCYES23`, `YES23`, `JTR23`, dll.)*
+6. **Kolom F (6)**: `Receiver Name`
+7. **Kolom G (7)**: `Destination`
+8. **Kolom H (8)**: `Shipper Name` *(Default: `CCH-CHOCOCHIPS`)*
+9. **Kolom I (9)**: `Amount` *(Numerik Rupiah `"Rp   "#,##0`)*
+10. **Kolom J (10)**: `Tanggal Pengiriman` *(`Date` format `dd/mm/yyyy`)*
+11. **Kolom K (11)**: `Agen` *(Default: `JNE Member`)*
+
+### B. Tab `JNECorporated` (`sheet=corporate`, Nama Sheet Asli: `JNECorporate`, `gid = 843586287`, A..L)
+1. **Kolom A (1)**: `""` *(Margin kosong)*
+2. **Kolom B (2)**: `No Resi` *(Format teks `@`, mis. `0148192500000060`, `CGKEC79399447826`)*
+3. **Kolom C (3)**: `Deskripsi pengiriman` *(Sinkron 2 Arah WMS <-> GSheet)*
+4. **Kolom D (4)**: `Tanggal Kiriman` *(`Date` format `dd/mm/yyyy`)*
+5. **Kolom E (5)**: `Nama Penerima`
+6. **Kolom F (6)**: `Alamat Penerima` *(Alamat jalan lengkap)*
+7. **Kolom G (7)**: `Kota Tujuan Penerima`
+8. **Kolom H (8)**: `Service` *(`REG23`, `CTC23`, `YES23`, `CTCYES23`, `YES`, `YES*`)*
+9. **Kolom I (9)**: `Ongkir` *(Numerik Rupiah)*
+10. **Kolom J (10)**: `Nominal Asuransi` *(Numerik, default `0`)*
+11. **Kolom K (11)**: `Status Pembayaran` (**READ-ONLY VLOOKUP FORMULA**: `=IFERROR(VLOOKUP(B{row},'Tagihan JNECorporate'!L:N,3,0),"Belum Ada Tagihan")`)
+12. **Kolom L (12)**: `Agen` *(Default: `JNECorporated`)*
 
 ---
 
 ## 2. Invarian Kritis Penulisan & Sinkronisasi 2 Arah
-1. **Proteksi Leading Zero `Cnote No` (`0137900...`)**:
-   - Di GAS (`gas/jne_tagihan_backend.js`), **WAJIB** memanggil `.setNumberFormat("@")` pada Kolom C **SEBELUM** `.setValues(...)` agar angka `0` di depan nomor resi tidak pernah terpotong oleh auto-coercion angka Google Sheets.
-   - Saat membaca GSheet (`doGet`) maupun Excel (`XLSX`), gunakan `getDisplayValues()` / `raw: false` untuk Kolom C agar leading `0` terjaga 100%.
-2. **Jangan Memangkas Kode `Services`**:
-   - Pertahankan kode layanan asli JNE Member seperti `CTC23`, `REG23`, `CTCYES23`, `YES23` apa adanya — **DILARANG** mengubah `CTC23` menjadi `REG`.
-3. **Sinkronisasi 2 Arah Aman Kolom D (`Deskripsi pengiriman`)**:
-   - Edit inline maupun batch Kolom D di WMS hanya menulis ke sel `D{row}` (`action: "updateDeskripsi"` / `"bulkUpdateDeskripsi"`) dengan `LockService`, tanpa menimpa rumus/kolom lain di GSheet.
-   - Saat import resi yang `Cnote No`-nya sudah ada di GSheet, secara default (`overwriteDeskripsi = false`) **DILARANG menimpa/mengosongkan** Kolom D di GSheet yang sudah diisi manual oleh user di GSheet.
-   - **DILARANG** melakukan full-sheet overwrite dari state seluruh tabel frontend ke GSheet; hanya kirim baris baru/staging yang ditambahkan atau baris spesifik yang diedit.
-4. **Dilarang Auto-Match Berdasarkan Nama Penerima**:
-   - Nama penerima (`Receiver Name`) sering kembar/mirip antar pesanan berbeda. Jangan pernah menebak deskripsi pengiriman dari nama penerima.
+1. **Deteksi Baris Terakhir Berbasis Kolom Resi (`findLastDataRowByResiCol`)**:
+   - Pada `JNECorporate`, formula `VLOOKUP` di Kolom K terisi sampai baris 2961+ meski baris 2697 ke bawah masih kosong resinya. **DILARANG** memakai `sheet.getLastRow() + 1` untuk append — wajib memindai Kolom Resi (`resiCol`) dari bawah ke atas agar baris baru langsung masuk setelah resi terakhir yang terisi, dan `doGet` wajib melewati baris tanpa `No Resi`.
+2. **Proteksi Rumus VLOOKUP Kolom K `JNECorporate`**:
+   - **DILARANG** menimpa Kolom K (`Status Pembayaran`) dengan teks biasa saat `upsertRecords` atau `updateRecord`. GAS wajib menulis rentang `B..J` dan `L` secara terpisah, serta hanya mengisi formula `VLOOKUP` pada baris baru jika sel Kolom K-nya belum berformula.
+3. **Proteksi Leading Zero `Cnote No` / `No Resi`**:
+   - Di GAS (`gas/jne_tagihan_backend.js`), **WAJIB** memanggil `.setNumberFormat("@")` pada Kolom Resi (`C` untuk member, `B` untuk corporate) **SEBELUM** `.setValues(...)` agar resi angka panjang tidak terpotong nol depan (`0137900...`, `014819...`) maupun berubah menjadi notasi ilmiah (`1.9126E+14`).
+4. **Jangan Memangkas Kode `Services`**:
+   - Pertahankan kode layanan asli (`CTC23`, `REG23`, `CTCYES23`, `YES23`, `YES`, `YES*`) apa adanya.
+5. **Sinkronisasi 2 Arah Aman Deskripsi Pengiriman**:
+   - Edit inline maupun batch hanya menulis ke `cfg.descCol` (`D` untuk member, `C` untuk corporate) dengan `LockService`, dan import tidak pernah mengosongkan deskripsi manual yang sudah ada secara default.
+6. **Dilarang Auto-Match Berdasarkan Nama Penerima**.
 
 ---
 
-## 3. Hak Akses Role (`canManageJneRekap`)
-- **Isi / Edit Kolom D & Tambah / Import Data**: Semua user yang memiliki hak akses halaman `canAccessJneRekap(session)`.
-- **Edit Lengkap Seluruh Kolom (`updateRecord`) & Hapus Baris GSheet (`deleteRecords`)**: **WAJIB** dijaga dengan `canManageJneRekap(session)` (khusus role/akun **Admin** & **Warehouse**, menolak akun Store/Outlet).
-- Penghapusan baris di GAS **WAJIB** diurutkan *descending* (dari nomor baris terbesar ke terkecil / bawah ke atas) dengan penggabungan blok `sheet.deleteRows(startRow, count)` agar indeks baris atas tidak bergeser.
-
----
-
-## 4. Standar Multi-Source Parser & UI
-- Semua file import (**Excel `.xlsx/.xls`**, **CSV `.csv`**, **Gambar/Screenshot `.png/.jpg/.webp` via `/api/ai` Gemini Vision + `Ctrl+V` Paste**, **PDF `.pdf`**, dan **Tempel Teks**) **WAJIB** masuk ke **Tabel Staging Pratinjau** terlebih dahulu agar user dapat mengecek status `BARU` vs `ADA` dan mengoreksi sel sebelum disimpan ke `JNEMember`.
-- Antarmuka wajib mematuhi standar 2-Mode (`Tabel` & `Kartu`), zero horizontal scroll pada mode Tabel Mobile (`md:hidden`), maksimal 1 tombol solid primary di header toolbar, dan paginasi client-side (`50`/`100`/`250`/`Semua`) agar tetap instan pada ribuan baris resi.
+## 3. Hak Akses Role (`canManageJneRekap`) & Standar UI Anti-Slop
+- **Isi/Ubah Deskripsi & Tambah/Import Data**: Semua user dengan akses `canAccessJneRekap(session)`.
+- **Edit Lengkap (`updateRecord`) & Hapus Baris (`deleteRecords`)**: Wajib dijaga `canManageJneRekap(session)` (Admin & Warehouse).
+- **Copywriting UI**: Dilarang memunculkan huruf kolom mentah (`Kolom D Kosong`) atau istilah teknis AI (`memparsing`); gunakan istilah natural (`Perlu Isi Deskripsi`, `Deskripsi Lengkap`, `Total Resi`) sesuai `.agents/skills/wms-antislop-copy/SKILL.md`.

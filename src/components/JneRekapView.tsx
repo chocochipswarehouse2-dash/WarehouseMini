@@ -35,6 +35,7 @@ import { AppActionSheet, AppActionGroup } from './common/AppActionSheet';
 import {
   JneDetectedRecord,
   JneDeskripsiCategory,
+  JneSheetTab,
   DEFAULT_AGEN_NAME,
   DEFAULT_JNE_SERVICE,
   DEFAULT_SHIPPER_NAME,
@@ -48,9 +49,8 @@ import {
   parsePastedJneText,
 } from '../services/jneRekapParser';
 import {
-  JNE_GSHEET_URL,
-  JNE_SHEET_NAME,
   DEFAULT_JNE_GAS_URL,
+  getJneTabConfig,
   fetchJneRecordsFromGas,
   upsertJneRecordsToGas,
   updateDeskripsiToGas,
@@ -85,14 +85,27 @@ const DESKRIPSI_QUICK_PRESETS = [
   'Sample QC & Fitting',
 ];
 
-const SERVICE_QUICK_CHIPS = ['CTC23', 'REG23', 'CTCYES23', 'YES23', 'JTR23', 'OKE23'];
+const SERVICE_QUICK_CHIPS = ['CTC23', 'REG23', 'CTCYES23', 'YES23', 'YES', 'JTR23'];
 const SHIPPER_PRESETS = ['CCH-CHOCOCHIPS', 'CCH-ERICA STEPHANIE'];
 
 const VIEW_MODE_STORAGE_KEY = 'wms_jne_rekap_view_mode';
+const ACTIVE_SHEET_STORAGE_KEY = 'wms_jne_rekap_active_tab';
 
 export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast }) => {
   const canManage = useMemo(() => canManageJneRekap(session), [session]);
   const operatorName = session?.username || 'WMS User';
+
+  // Active Sheet Tab ('member' = JNEmember | 'corporate' = JNECorporated)
+  const [activeSheetTab, setActiveSheetTab] = useState<JneSheetTab>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem(ACTIVE_SHEET_STORAGE_KEY);
+      if (saved === 'member' || saved === 'corporate') return saved;
+    }
+    return 'member';
+  });
+
+  const activeConfig = useMemo(() => getJneTabConfig(activeSheetTab), [activeSheetTab]);
+  const isCorporate = activeSheetTab === 'corporate';
 
   // View Mode (2-Mode Standard: Tabel & Kartu)
   const [viewMode, setViewMode] = useState<'table' | 'card'>(() => {
@@ -112,12 +125,18 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
   };
 
   // Core Data State
-  const [records, setRecords] = useState<JneDetectedRecord[]>(() => getLocalCachedJneRecords());
+  const [records, setRecords] = useState<JneDetectedRecord[]>(() =>
+    getLocalCachedJneRecords(activeSheetTab)
+  );
+  const [tabCounts, setTabCounts] = useState<{ member: number; corporate: number }>(() => ({
+    member: getLocalCachedJneRecords('member').length,
+    corporate: getLocalCachedJneRecords('corporate').length,
+  }));
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
   const [syncSource, setSyncSource] = useState<'gas' | 'gviz' | 'cache' | null>(null);
 
-  // Per-row saving status for inline Kolom D sync
+  // Per-row saving status for inline Deskripsi sync
   const [savingResiSet, setSavingResiSet] = useState<Set<string>>(new Set());
   const [savedFlashResiSet, setSavedFlashResiSet] = useState<Set<string>>(new Set());
 
@@ -127,16 +146,19 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
   const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(false);
   const [serviceFilter, setServiceFilter] = useState<string>('ALL');
   const [shipperFilter, setShipperFilter] = useState<string>('ALL');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>('ALL');
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'newest' | 'oldest' | 'amount_desc' | 'amount_asc' | 'resi_asc'>('newest');
+  const [sortBy, setSortBy] = useState<
+    'newest' | 'oldest' | 'amount_desc' | 'amount_asc' | 'resi_asc'
+  >('newest');
   const [pageSize, setPageSize] = useState<number>(50);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Selection (keyed by clean Cnote No)
+  // Selection (keyed by clean Resi / Cnote)
   const [selectedResiSet, setSelectedResiSet] = useState<Set<string>>(new Set());
 
-  // Inline Editing Kolom D (Deskripsi pengiriman)
+  // Inline Editing Deskripsi pengiriman
   const [editingResi, setEditingResi] = useState<string | null>(null);
   const [editDeskripsiValue, setEditDeskripsiValue] = useState<string>('');
   const inlineInputRef = useRef<HTMLInputElement | null>(null);
@@ -167,11 +189,13 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     deskripsi: '',
     layanan: DEFAULT_JNE_SERVICE,
     nama_tujuan: '',
+    alamat_penerima: '',
     alamat_tujuan: '',
     nama_pengirim: DEFAULT_SHIPPER_NAME,
     nominal: '',
+    asuransi: '',
     tanggal: normalizeDate(new Date()),
-    agen: DEFAULT_AGEN_NAME,
+    agen: activeConfig.defaultAgen,
   });
   const [isSavingManual, setIsSavingManual] = useState<boolean>(false);
 
@@ -184,9 +208,12 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     deskripsi: string;
     layanan: string;
     nama_tujuan: string;
+    alamat_penerima: string;
     alamat_tujuan: string;
     nama_pengirim: string;
     nominal: string;
+    asuransi: string;
+    status_pembayaran?: string;
     tanggal: string;
     agen: string;
   } | null>(null);
@@ -205,14 +232,57 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
   const [gasUrlInput, setGasUrlInput] = useState<string>(() => getStoredJneGasUrl());
 
-  // Fetch data live dari GSheet JNEMember
+  // Switch between JNEmember and JNECorporated tabs cleanly
+  const handleSwitchSheetTab = (nextTab: JneSheetTab) => {
+    if (nextTab === activeSheetTab) return;
+    const nextCfg = getJneTabConfig(nextTab);
+    try {
+      sessionStorage.setItem(ACTIVE_SHEET_STORAGE_KEY, nextTab);
+    } catch {}
+
+    setActiveSheetTab(nextTab);
+    setRecords(getLocalCachedJneRecords(nextTab));
+    setSelectedResiSet(new Set());
+    setEditingResi(null);
+    setActionSheetRecord(null);
+    setStagingRecords([]);
+    setStagingSourceInfo('');
+    setCategoryTab('ALL');
+    setSearchQuery('');
+    setServiceFilter('ALL');
+    setShipperFilter('ALL');
+    setPaymentStatusFilter('ALL');
+    setStartDate('');
+    setEndDate('');
+    setCurrentPage(1);
+    setSyncSource(null);
+    setLastSyncTime(null);
+    setManualForm({
+      no_resi: '',
+      deskripsi: '',
+      layanan: DEFAULT_JNE_SERVICE,
+      nama_tujuan: '',
+      alamat_penerima: '',
+      alamat_tujuan: '',
+      nama_pengirim: nextTab === 'corporate' ? '' : DEFAULT_SHIPPER_NAME,
+      nominal: '',
+      asuransi: '',
+      tanggal: normalizeDate(new Date()),
+      agen: nextCfg.defaultAgen,
+    });
+  };
+
+  // Fetch data live dari Google Sheets (JNEmember / JNECorporate)
   const handleRefreshFromGsheet = useCallback(
     async (silent: boolean = false) => {
+      const targetTab = activeSheetTab;
+      const cfg = getJneTabConfig(targetTab);
       setIsLoading(true);
       try {
-        const res = await fetchJneRecordsFromGas();
+        const res = await fetchJneRecordsFromGas(targetTab);
         if (res.records) {
           setRecords(res.records);
+          setTabCounts((prev) => ({ ...prev, [targetTab]: res.records.length }));
         }
         setSyncSource(res.source || null);
         if (res.success) {
@@ -227,18 +297,33 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         }
       } catch (err: any) {
         if (!silent) {
-          onShowToast(`Gagal memuat GSheet JNEMember: ${err?.message || String(err)}`, 'error');
+          onShowToast(`Gagal memuat data ${cfg.label}: ${err?.message || String(err)}`, 'error');
         }
       } finally {
         setIsLoading(false);
       }
     },
-    [onShowToast]
+    [activeSheetTab, onShowToast]
   );
 
   useEffect(() => {
     handleRefreshFromGsheet(true);
   }, [handleRefreshFromGsheet]);
+
+  // Pre-warm count of inactive tab on mount so badge isn't 0 if unvisited
+  useEffect(() => {
+    const inactiveTab: JneSheetTab = activeSheetTab === 'member' ? 'corporate' : 'member';
+    if (getLocalCachedJneRecords(inactiveTab).length === 0) {
+      fetchJneRecordsFromGas(inactiveTab)
+        .then((res) => {
+          if (res.records && res.records.length > 0) {
+            setTabCounts((prev) => ({ ...prev, [inactiveTab]: res.records.length }));
+          }
+        })
+        .catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Focus inline input automatically
   useEffect(() => {
@@ -260,7 +345,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     return () => document.removeEventListener('mousedown', onDocClick);
   }, [isUtilityMenuOpen]);
 
-  // Process uploaded or pasted files into staging table
+  // Process uploaded or pasted files into preview table
   const handleProcessFiles = useCallback(
     async (files: File[]) => {
       if (!files.length) return;
@@ -276,12 +361,16 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       try {
         for (let i = 0; i < files.length; i++) {
           const file = files[i];
-          setParsingStatusLabel(`Memproses ${file.name} (${i + 1}/${files.length})...`);
-          const res = await parseJneImportFile(file, (pct) => {
-            const base = Math.round((i / files.length) * 100);
-            const slice = Math.round((pct / files.length));
-            setParsingProgress(Math.min(99, base + slice));
-          });
+          setParsingStatusLabel(`Membaca ${file.name} (${i + 1}/${files.length})...`);
+          const res = await parseJneImportFile(
+            file,
+            (pct) => {
+              const base = Math.round((i / files.length) * 100);
+              const slice = Math.round(pct / files.length);
+              setParsingProgress(Math.min(99, base + slice));
+            },
+            activeSheetTab
+          );
 
           if (res.success && res.records.length > 0) {
             collected = collected.concat(res.records);
@@ -292,7 +381,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             else if (res.engine === 'ocr-fallback') lastEngineLabel = 'OCR';
           } else if (files.length === 1) {
             onShowToast(
-              res.error || `Tidak ada nomor resi JNE yang terdeteksi dari ${file.name}.`,
+              res.error || `Tidak ada nomor resi JNE yang terbaca dari ${file.name}.`,
               'warning'
             );
           }
@@ -308,19 +397,19 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
           const labelSummary = `${sourceLabels.join(', ')}${lastEngineLabel ? ` • via ${lastEngineLabel}` : ''}`;
           setStagingSourceInfo(labelSummary);
           onShowToast(
-            `Berhasil mengekstrak ${collected.length} baris resi JNE ke tabel pratinjau!`,
+            `${collected.length} baris resi siap ditinjau sebelum disimpan.`,
             'success'
           );
         }
       } catch (err: any) {
-        onShowToast(`Gagal memparsing lampiran: ${err?.message || String(err)}`, 'error');
+        onShowToast(`Gagal membaca lampiran: ${err?.message || String(err)}`, 'error');
       } finally {
         setIsParsing(false);
         setParsingProgress(0);
         setParsingStatusLabel('');
       }
     },
-    [onShowToast]
+    [activeSheetTab, onShowToast]
   );
 
   // Global Paste Screenshot (`Ctrl+V`) support
@@ -356,7 +445,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     return () => window.removeEventListener('paste', onWindowPaste);
   }, [handleProcessFiles]);
 
-  // O(1) Map of existing Cnote No in GSheet JNEMember
+  // O(1) Map of existing resi in active tab
   const existingRecordByResiMap = useMemo(() => {
     const map = new Map<string, JneDetectedRecord>();
     for (const r of records) {
@@ -366,17 +455,20 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     return map;
   }, [records]);
 
-  // Distinct Services & Shippers for dynamic filter dropdowns
-  const { distinctServices, distinctShippers } = useMemo(() => {
+  // Distinct Services, Shippers & Payment Statuses for dropdown filters
+  const { distinctServices, distinctShippers, distinctPaymentStatuses } = useMemo(() => {
     const sSet = new Set<string>();
     const shSet = new Set<string>();
+    const psSet = new Set<string>();
     for (const r of records) {
       if (r.layanan) sSet.add(r.layanan.toUpperCase());
       if (r.nama_pengirim) shSet.add(r.nama_pengirim);
+      if (r.status_pembayaran) psSet.add(r.status_pembayaran);
     }
     return {
       distinctServices: Array.from(sSet).sort(),
       distinctShippers: Array.from(shSet).sort(),
+      distinctPaymentStatuses: Array.from(psSet).sort(),
     };
   }, [records]);
 
@@ -418,12 +510,28 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       }
 
       if (serviceFilter !== 'ALL' && r.layanan.toUpperCase() !== serviceFilter) return false;
-      if (shipperFilter !== 'ALL' && r.nama_pengirim !== shipperFilter) return false;
+      if (!isCorporate && shipperFilter !== 'ALL' && r.nama_pengirim !== shipperFilter) return false;
+      if (isCorporate && paymentStatusFilter !== 'ALL') {
+        const pay = (r.status_pembayaran || 'Belum Ada Tagihan').trim();
+        if (paymentStatusFilter === 'UNBILLED' && pay.toLowerCase() !== 'belum ada tagihan') {
+          return false;
+        }
+        if (paymentStatusFilter === 'BILLED' && pay.toLowerCase() === 'belum ada tagihan') {
+          return false;
+        }
+        if (
+          paymentStatusFilter !== 'UNBILLED' &&
+          paymentStatusFilter !== 'BILLED' &&
+          pay !== paymentStatusFilter
+        ) {
+          return false;
+        }
+      }
       if (startDate && r.tanggal && r.tanggal < startDate) return false;
       if (endDate && r.tanggal && r.tanggal > endDate) return false;
 
       if (q) {
-        const hay = `${r.no_resi} ${r.deskripsi} ${r.nama_tujuan} ${r.alamat_tujuan} ${r.layanan} ${r.nama_pengirim} ${r.agen}`.toLowerCase();
+        const hay = `${r.no_resi} ${r.deskripsi} ${r.nama_tujuan} ${r.alamat_penerima || ''} ${r.alamat_tujuan} ${r.layanan} ${r.nama_pengirim} ${r.status_pembayaran || ''} ${r.agen}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
 
@@ -447,12 +555,33 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     });
 
     return filtered;
-  }, [records, categoryTab, serviceFilter, shipperFilter, startDate, endDate, searchQuery, sortBy]);
+  }, [
+    records,
+    categoryTab,
+    serviceFilter,
+    shipperFilter,
+    paymentStatusFilter,
+    isCorporate,
+    startDate,
+    endDate,
+    searchQuery,
+    sortBy,
+  ]);
 
   // Reset pagination when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [categoryTab, serviceFilter, shipperFilter, startDate, endDate, searchQuery, sortBy, pageSize]);
+  }, [
+    categoryTab,
+    serviceFilter,
+    shipperFilter,
+    paymentStatusFilter,
+    startDate,
+    endDate,
+    searchQuery,
+    sortBy,
+    pageSize,
+  ]);
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(filteredRecords.length / pageSize)),
@@ -467,25 +596,29 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
   // Summary Metrics for Filtered Set
   const metrics = useMemo(() => {
     let totalAmount = 0;
+    let totalAsuransi = 0;
     let emptyCount = 0;
     let filledCount = 0;
     for (const r of filteredRecords) {
       totalAmount += r.nominal || 0;
+      totalAsuransi += r.asuransi || 0;
       if (r.deskripsi.trim()) filledCount++;
       else emptyCount++;
     }
-    const avgAmount = filteredRecords.length > 0 ? Math.round(totalAmount / filteredRecords.length) : 0;
-    return { totalAmount, emptyCount, filledCount, avgAmount };
+    const avgAmount =
+      filteredRecords.length > 0 ? Math.round(totalAmount / filteredRecords.length) : 0;
+    return { totalAmount, totalAsuransi, emptyCount, filledCount, avgAmount };
   }, [filteredRecords]);
 
   const activeAdvancedFilterCount = useMemo(() => {
     let cnt = 0;
     if (serviceFilter !== 'ALL') cnt++;
-    if (shipperFilter !== 'ALL') cnt++;
+    if (!isCorporate && shipperFilter !== 'ALL') cnt++;
+    if (isCorporate && paymentStatusFilter !== 'ALL') cnt++;
     if (startDate) cnt++;
     if (endDate) cnt++;
     return cnt;
-  }, [serviceFilter, shipperFilter, startDate, endDate]);
+  }, [serviceFilter, shipperFilter, paymentStatusFilter, isCorporate, startDate, endDate]);
 
   const selectedSummary = useMemo(() => {
     let totalNominal = 0;
@@ -505,6 +638,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     setSearchQuery('');
     setServiceFilter('ALL');
     setShipperFilter('ALL');
+    setPaymentStatusFilter('ALL');
     setStartDate('');
     setEndDate('');
   };
@@ -528,19 +662,18 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     setEndDate(endIso);
   };
 
-  // Start Inline Edit Kolom D
+  // Start Inline Edit Deskripsi
   const startInlineEditDeskripsi = (rec: JneDetectedRecord) => {
     setEditingResi(cleanResi(rec.no_resi));
     setEditDeskripsiValue(rec.deskripsi || '');
   };
 
-  // Save Inline Kolom D to GSheet JNEMember (+ optional auto-advance to next row)
+  // Save Inline Deskripsi to Google Sheets (+ optional auto-advance to next row)
   const commitInlineDeskripsi = async (targetResi: string, advanceNext: boolean = false) => {
     const cleanTarget = cleanResi(targetResi);
     const trimmedDesc = editDeskripsiValue.trim();
     const existing = existingRecordByResiMap.get(cleanTarget);
 
-    // Determine next visible row if Enter was pressed
     let nextRowToEdit: JneDetectedRecord | null = null;
     if (advanceNext) {
       const currIdx = paginatedRecords.findIndex((r) => cleanResi(r.no_resi) === cleanTarget);
@@ -560,18 +693,17 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       return;
     }
 
-    // Optimistic UI update
     setRecords((prev) => {
       const next = prev.map((r) =>
         cleanResi(r.no_resi) === cleanTarget ? { ...r, deskripsi: trimmedDesc } : r
       );
-      saveLocalCachedJneRecords(next);
+      saveLocalCachedJneRecords(next, activeSheetTab);
       return next;
     });
 
     setSavingResiSet((prev) => new Set(prev).add(cleanTarget));
     try {
-      const res = await updateDeskripsiToGas(cleanTarget, trimmedDesc, operatorName);
+      const res = await updateDeskripsiToGas(cleanTarget, trimmedDesc, operatorName, activeSheetTab);
       if (res.success) {
         setSavedFlashResiSet((prev) => new Set(prev).add(cleanTarget));
         setTimeout(() => {
@@ -583,7 +715,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         }, 2200);
       } else {
         onShowToast(
-          `Gagal simpan Kolom D Cnote ${cleanTarget} ke GSheet: ${res.error || 'Unknown error'}`,
+          `Gagal menyimpan deskripsi resi ${cleanTarget}: ${res.error || 'Terjadi kesalahan'}`,
           'error'
         );
       }
@@ -623,7 +755,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     });
   };
 
-  // Batch update Kolom D
+  // Batch update Deskripsi
   const handleSaveBatchDeskripsi = async () => {
     if (selectedSummary.count === 0) return;
     const descVal = batchDescValue.trim();
@@ -634,62 +766,67 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         no_resi: r.no_resi,
         deskripsi: descVal,
       }));
-      const res = await bulkUpdateDeskripsiToGas(updates, operatorName);
+      const res = await bulkUpdateDeskripsiToGas(updates, operatorName, activeSheetTab);
       if (res.success) {
         const selKeys = new Set(updates.map((u) => cleanResi(u.no_resi)));
         setRecords((prev) => {
           const next = prev.map((r) =>
             selKeys.has(cleanResi(r.no_resi)) ? { ...r, deskripsi: descVal } : r
           );
-          saveLocalCachedJneRecords(next);
+          saveLocalCachedJneRecords(next, activeSheetTab);
           return next;
         });
         setIsBatchDescModalOpen(false);
         setBatchDescValue('');
         setSelectedResiSet(new Set());
         onShowToast(
-          res.message || `${updates.length} baris Kolom D berhasil disimpan ke GSheet JNEMember.`,
+          res.message || `Deskripsi untuk ${updates.length} resi tersimpan.`,
           'success'
         );
       } else {
-        onShowToast(res.error || 'Gagal menyimpan deskripsi massal ke GSheet.', 'error');
+        onShowToast(res.error || 'Gagal menyimpan deskripsi massal.', 'error');
       }
     } finally {
       setIsSavingBatchDesc(false);
     }
   };
 
-  // Submit Manual Single Record directly to GSheet JNEMember
+  // Submit Manual Single Record directly to active Google Sheet
   const handleSaveManualRecord = async (keepOpenForNext: boolean) => {
     const cleanedResi = cleanResi(manualForm.no_resi);
     if (!cleanedResi || cleanedResi.length < 6) {
-      onShowToast('Nomor Cnote / Resi JNE wajib diisi dengan benar.', 'warning');
+      onShowToast('Nomor resi JNE wajib diisi dengan benar.', 'warning');
       return;
     }
 
     setIsSavingManual(true);
     try {
       const newRec: JneDetectedRecord = {
-        id: `JNE-${cleanedResi}-${Date.now()}`,
+        id: `JNE-${activeSheetTab}-${cleanedResi}-${Date.now()}`,
         no_resi: cleanedResi,
         deskripsi: manualForm.deskripsi.trim(),
         layanan: normalizeJneService(manualForm.layanan),
         nama_tujuan: manualForm.nama_tujuan.trim() || '-',
+        ...(isCorporate ? { alamat_penerima: manualForm.alamat_penerima.trim() } : {}),
         alamat_tujuan: manualForm.alamat_tujuan.trim() || '-',
-        nama_pengirim: manualForm.nama_pengirim.trim() || DEFAULT_SHIPPER_NAME,
+        nama_pengirim: isCorporate
+          ? ''
+          : manualForm.nama_pengirim.trim() || DEFAULT_SHIPPER_NAME,
         nominal: normalizeNominal(manualForm.nominal),
+        ...(isCorporate ? { asuransi: normalizeNominal(manualForm.asuransi) } : {}),
         tanggal: normalizeDate(manualForm.tanggal) || normalizeDate(new Date()),
-        agen: manualForm.agen.trim() || DEFAULT_AGEN_NAME,
+        agen: manualForm.agen.trim() || activeConfig.defaultAgen,
       };
 
       const res = await upsertJneRecordsToGas([newRec], {
+        sheetTab: activeSheetTab,
         operator: operatorName,
         overwriteExisting: true,
         overwriteDeskripsi: Boolean(newRec.deskripsi),
       });
 
       if (res.success) {
-        onShowToast(res.message || `Cnote ${cleanedResi} tersimpan ke GSheet JNEMember!`, 'success');
+        onShowToast(res.message || `Resi ${cleanedResi} tersimpan ke ${activeConfig.label}.`, 'success');
         await handleRefreshFromGsheet(true);
 
         setManualForm((prev) => ({
@@ -697,26 +834,28 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
           no_resi: '',
           deskripsi: '',
           nama_tujuan: '',
+          alamat_penerima: '',
           alamat_tujuan: '',
           nominal: '',
+          asuransi: '',
         }));
 
         if (!keepOpenForNext) {
           setIsAddModalOpen(false);
         }
       } else {
-        onShowToast(res.error || 'Gagal menyimpan data manual ke GSheet.', 'error');
+        onShowToast(res.error || 'Gagal menyimpan data.', 'error');
       }
     } finally {
       setIsSavingManual(false);
     }
   };
 
-  // Parse pasted text into Staging Table
+  // Parse pasted text into Preview Table
   const handleParsePastedTextToStaging = () => {
-    const res = parsePastedJneText(pasteRawText, 'Tempel Baris');
+    const res = parsePastedJneText(pasteRawText, 'Tempel Baris', activeSheetTab);
     if (!res.success || res.records.length === 0) {
-      onShowToast(res.error || 'Tidak ditemukan data Cnote dari teks tersebut.', 'warning');
+      onShowToast(res.error || 'Tidak ada nomor resi JNE yang terbaca dari teks ini.', 'warning');
       return;
     }
     setStagingRecords((prev) => {
@@ -728,10 +867,10 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     setStagingSourceInfo('Tempel Teks / Spreadsheet');
     setPasteRawText('');
     setAddModalTab('import');
-    onShowToast(`${res.records.length} baris berhasil diurai ke tabel pratinjau.`, 'success');
+    onShowToast(`${res.records.length} baris siap ditinjau.`, 'success');
   };
 
-  // Update field inside Staging Preview Table
+  // Update field inside Preview Table
   const updateStagingField = (
     idx: number,
     field: keyof JneDetectedRecord,
@@ -741,23 +880,25 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       prev.map((item, i) => {
         if (i !== idx) return item;
         if (field === 'nominal') return { ...item, nominal: normalizeNominal(value) };
+        if (field === 'asuransi') return { ...item, asuransi: normalizeNominal(value) };
         if (field === 'no_resi') return { ...item, no_resi: cleanResi(value) };
         return { ...item, [field]: String(value) };
       })
     );
   };
 
-  // Submit Staging Records to GSheet JNEMember
+  // Submit Preview Records to active Google Sheet
   const handleCommitStagingToGsheet = async () => {
     const validRows = stagingRecords.filter((r) => cleanResi(r.no_resi).length >= 6);
     if (validRows.length === 0) {
-      onShowToast('Tidak ada baris Cnote yang valid untuk disimpan.', 'warning');
+      onShowToast('Tidak ada baris resi yang valid untuk disimpan.', 'warning');
       return;
     }
 
     setIsSubmittingStaging(true);
     try {
       const res = await upsertJneRecordsToGas(validRows, {
+        sheetTab: activeSheetTab,
         operator: operatorName,
         skipDuplicates: duplicateMode === 'skip_existing',
         overwriteExisting: duplicateMode === 'overwrite_all',
@@ -766,7 +907,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
       if (res.success) {
         onShowToast(
-          res.message || `${validRows.length} data berhasil dikirim ke GSheet JNEMember!`,
+          res.message || `${validRows.length} data tersimpan ke ${activeConfig.label}.`,
           'success'
         );
         setStagingRecords([]);
@@ -774,7 +915,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         setIsAddModalOpen(false);
         await handleRefreshFromGsheet(true);
       } else {
-        onShowToast(res.error || 'Gagal menyimpan hasil import ke GSheet JNEMember.', 'error');
+        onShowToast(res.error || `Gagal menyimpan data ke ${activeConfig.label}.`, 'error');
       }
     } finally {
       setIsSubmittingStaging(false);
@@ -784,7 +925,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
   // Open Full Edit Modal (Admin & Warehouse)
   const openFullEditModal = (rec: JneDetectedRecord) => {
     if (!canManage) {
-      onShowToast('Akses edit penuh khusus akun Admin & Warehouse.', 'warning');
+      onShowToast('Edit lengkap khusus akun Admin & Warehouse.', 'warning');
       return;
     }
     setEditingFullRecord({
@@ -795,11 +936,14 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       deskripsi: rec.deskripsi || '',
       layanan: rec.layanan || DEFAULT_JNE_SERVICE,
       nama_tujuan: rec.nama_tujuan === '-' ? '' : rec.nama_tujuan,
+      alamat_penerima: rec.alamat_penerima === '-' ? '' : (rec.alamat_penerima || ''),
       alamat_tujuan: rec.alamat_tujuan === '-' ? '' : rec.alamat_tujuan,
-      nama_pengirim: rec.nama_pengirim || DEFAULT_SHIPPER_NAME,
+      nama_pengirim: rec.nama_pengirim || (isCorporate ? '' : DEFAULT_SHIPPER_NAME),
       nominal: String(rec.nominal || 0),
+      asuransi: String(rec.asuransi || 0),
+      status_pembayaran: rec.status_pembayaran,
       tanggal: rec.tanggal || normalizeDate(new Date()),
-      agen: rec.agen || DEFAULT_AGEN_NAME,
+      agen: rec.agen || activeConfig.defaultAgen,
     });
   };
 
@@ -808,7 +952,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     if (!editingFullRecord || !canManage) return;
     const newCnote = cleanResi(editingFullRecord.no_resi);
     if (!newCnote) {
-      onShowToast('Cnote No tidak boleh kosong.', 'warning');
+      onShowToast('Nomor resi tidak boleh kosong.', 'warning');
       return;
     }
 
@@ -822,36 +966,45 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
           deskripsi: editingFullRecord.deskripsi.trim(),
           layanan: normalizeJneService(editingFullRecord.layanan),
           nama_tujuan: editingFullRecord.nama_tujuan.trim() || '-',
+          ...(isCorporate ? { alamat_penerima: editingFullRecord.alamat_penerima.trim() } : {}),
           alamat_tujuan: editingFullRecord.alamat_tujuan.trim() || '-',
-          nama_pengirim: editingFullRecord.nama_pengirim.trim() || DEFAULT_SHIPPER_NAME,
+          nama_pengirim: isCorporate
+            ? ''
+            : editingFullRecord.nama_pengirim.trim() || DEFAULT_SHIPPER_NAME,
           nominal: normalizeNominal(editingFullRecord.nominal),
+          ...(isCorporate ? { asuransi: normalizeNominal(editingFullRecord.asuransi) } : {}),
           tanggal: normalizeDate(editingFullRecord.tanggal),
-          agen: editingFullRecord.agen.trim() || DEFAULT_AGEN_NAME,
+          agen: editingFullRecord.agen.trim() || activeConfig.defaultAgen,
         },
-        operatorName
+        operatorName,
+        activeSheetTab
       );
 
       if (res.success) {
-        onShowToast(res.message || `Cnote ${newCnote} berhasil diperbarui di GSheet.`, 'success');
+        onShowToast(res.message || `Data resi ${newCnote} diperbarui.`, 'success');
         setEditingFullRecord(null);
         await handleRefreshFromGsheet(true);
       } else {
-        onShowToast(res.error || 'Gagal menyimpan perubahan ke GSheet.', 'error');
+        onShowToast(res.error || 'Gagal menyimpan perubahan.', 'error');
       }
     } finally {
       setIsSavingFullEdit(false);
     }
   };
 
-  // Confirm Delete from GSheet (Admin & Warehouse)
+  // Confirm Delete from Google Sheets (Admin & Warehouse)
   const handleConfirmDeleteFromGsheet = async () => {
     if (!deleteTargetResis || deleteTargetResis.length === 0 || !canManage) return;
     setIsDeleting(true);
     try {
-      const res = await deleteJneRecordsFromGas(deleteTargetResis, operatorName);
+      const res = await deleteJneRecordsFromGas(deleteTargetResis, operatorName, activeSheetTab);
       if (res.success) {
         const delSet = new Set(deleteTargetResis.map(cleanResi));
-        setRecords((prev) => prev.filter((r) => !delSet.has(cleanResi(r.no_resi))));
+        setRecords((prev) => {
+          const next = prev.filter((r) => !delSet.has(cleanResi(r.no_resi)));
+          setTabCounts((c) => ({ ...c, [activeSheetTab]: next.length }));
+          return next;
+        });
         setSelectedResiSet((prev) => {
           const next = new Set(prev);
           delSet.forEach((k) => next.delete(k));
@@ -859,18 +1012,18 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         });
         setDeleteTargetResis(null);
         onShowToast(
-          res.message || `${deleteTargetResis.length} baris berhasil dihapus dari GSheet JNEMember.`,
+          res.message || `${deleteTargetResis.length} data resi dihapus dari ${activeConfig.label}.`,
           'success'
         );
       } else {
-        onShowToast(res.error || 'Gagal menghapus baris di GSheet JNEMember.', 'error');
+        onShowToast(res.error || `Gagal menghapus data dari ${activeConfig.label}.`, 'error');
       }
     } finally {
       setIsDeleting(false);
     }
   };
 
-  const copyToClipboard = (text: string, label: string = 'Cnote No') => {
+  const copyToClipboard = (text: string, label: string = 'No. Resi') => {
     navigator.clipboard.writeText(text);
     onShowToast(`${label} ${text} disalin.`, 'info');
   };
@@ -899,7 +1052,23 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
     );
   };
 
-  // Staging Stats
+  const renderPaymentBadge = (statusStr?: string) => {
+    const val = (statusStr || 'Belum Ada Tagihan').trim();
+    const isUnbilled = val.toLowerCase() === 'belum ada tagihan';
+    return (
+      <span
+        className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold border ${
+          isUnbilled
+            ? 'bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:border-amber-800'
+            : 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:border-emerald-800'
+        }`}
+      >
+        {val}
+      </span>
+    );
+  };
+
+  // Preview Stats
   const stagingStats = useMemo(() => {
     let newCount = 0;
     let dupCount = 0;
@@ -919,24 +1088,24 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
     const mainItems: AppActionGroup['items'] = [
       {
-        id: 'edit_col_d',
-        label: rec.deskripsi ? 'Ubah Deskripsi Pengiriman (Kolom D)' : 'Isi Deskripsi Pengiriman (Kolom D)',
-        description: 'Tulis langsung ke Kolom D pada GSheet JNEMember',
+        id: 'edit_desc',
+        label: rec.deskripsi ? 'Ubah Deskripsi Pengiriman' : 'Isi Deskripsi Pengiriman',
+        description: `Simpan langsung ke Google Sheets ${activeConfig.label}`,
         icon: <Tag className="w-4 h-4" />,
         tone: 'primary',
         onClick: () => startInlineEditDeskripsi(rec),
       },
       {
         id: 'copy_cnote',
-        label: 'Salin Nomor Resi (Cnote No)',
+        label: 'Salin Nomor Resi',
         description: rec.no_resi,
         icon: <Copy className="w-4 h-4" />,
-        onClick: () => copyToClipboard(rec.no_resi, 'Cnote No'),
+        onClick: () => copyToClipboard(rec.no_resi, 'No. Resi'),
       },
       {
         id: 'track_jne',
-        label: 'Cek Pelacakan JNE',
-        description: 'Buka halaman tracking JNE untuk nomor resi ini',
+        label: 'Lacak Paket JNE',
+        description: 'Buka halaman cek resi JNE',
         icon: <ExternalLink className="w-4 h-4" />,
         onClick: () =>
           window.open(
@@ -947,10 +1116,10 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       },
       {
         id: 'open_gsheet',
-        label: 'Buka Sheet JNEMember',
-        description: rec.row_number ? `Baris #${rec.row_number} di Google Sheets` : 'Lihat langsung di Google Sheets',
+        label: `Buka Sheet ${activeConfig.label}`,
+        description: rec.row_number ? `Baris #${rec.row_number} di Google Sheets` : 'Buka tab sheet aktif',
         icon: <FileSpreadsheet className="w-4 h-4" />,
-        onClick: () => window.open(JNE_GSHEET_URL, '_blank', 'noopener,noreferrer'),
+        onClick: () => window.open(activeConfig.gsheetUrl, '_blank', 'noopener,noreferrer'),
       },
     ];
 
@@ -958,15 +1127,15 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       ? [
           {
             id: 'edit_full',
-            label: 'Edit Lengkap Semua Kolom',
-            description: 'Ubah Cnote, Penerima, Tujuan, Layanan, Nominal, atau Tanggal',
+            label: 'Edit Lengkap',
+            description: 'Ubah resi, penerima, tujuan, layanan, ongkir, atau tanggal',
             icon: <Edit2 className="w-4 h-4" />,
             onClick: () => openFullEditModal(rec),
           },
           {
             id: 'delete_row',
-            label: 'Hapus Baris dari GSheet',
-            description: 'Hapus permanen baris resi ini dari sheet JNEMember',
+            label: 'Hapus Resi',
+            description: `Hapus permanen dari sheet ${activeConfig.sheetName}`,
             icon: <Trash2 className="w-4 h-4" />,
             tone: 'danger',
             onClick: () => setDeleteTargetResis([rec.no_resi]),
@@ -975,15 +1144,15 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
       : [];
 
     return [
-      { title: 'Operasi Resi & Kolom D', items: mainItems },
+      { title: 'Aksi Resi & Deskripsi', items: mainItems },
       ...(adminItems.length > 0 ? [{ title: 'Pengelolaan Admin & Warehouse', items: adminItems }] : []),
     ];
-  }, [actionSheetRecord, canManage]);
+  }, [actionSheetRecord, activeConfig, canManage]);
 
   const categoryTabDefs: Array<{ id: CategoryTab; label: string; count: number }> = [
     { id: 'ALL', label: 'Semua', count: categoryCounts.ALL },
-    { id: 'EMPTY', label: 'Kolom D Kosong', count: categoryCounts.EMPTY },
-    { id: 'FILLED', label: 'Kolom D Terisi', count: categoryCounts.FILLED },
+    { id: 'EMPTY', label: 'Perlu Isi Deskripsi', count: categoryCounts.EMPTY },
+    { id: 'FILLED', label: 'Deskripsi Lengkap', count: categoryCounts.FILLED },
     { id: 'MANUAL_SHIPMENT', label: 'Manual Shipment', count: categoryCounts.MANUAL_SHIPMENT },
     { id: 'WEBSITE', label: 'Website / Order', count: categoryCounts.WEBSITE },
     { id: 'RETUR', label: 'Retur', count: categoryCounts.RETUR },
@@ -993,8 +1162,8 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
   return (
     <div className="w-full max-w-full p-0 sm:px-4 lg:px-6 sm:py-4 pb-24 lg:pb-6 space-y-3 sm:space-y-4">
-      {/* 1. HEADER TOOLBAR (Standar Anti-Pelangi: Maks 1 Tombol Solid Primary) */}
-      <div className="bg-white dark:bg-slate-900 border-b sm:border border-slate-200 dark:border-slate-800 sm:rounded-2xl px-3 py-3 sm:p-4 shadow-2xs">
+      {/* 1. HEADER TOOLBAR (2 Tab Tagihan: JNEmember | JNECorporated + Maks 1 Tombol Primary) */}
+      <div className="bg-white dark:bg-slate-900 border-b sm:border border-slate-200 dark:border-slate-800 sm:rounded-2xl px-3 py-3 sm:p-4 shadow-2xs space-y-3">
         <div className="flex flex-wrap items-start sm:items-center justify-between gap-3">
           <div className="min-w-[240px] flex-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -1003,24 +1172,28 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 Rekap Tagihan JNE
               </h1>
               <a
-                href={JNE_GSHEET_URL}
+                href={activeConfig.gsheetUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                title="Buka Google Sheets JNEMember"
+                title={`Buka Google Sheets ${activeConfig.sheetName}`}
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-700 hover:opacity-85 transition-opacity"
               >
                 <FileSpreadsheet className="w-3 h-3 shrink-0" />
-                <span>Sheet: {JNE_SHEET_NAME}</span>
+                <span>Sheet: {activeConfig.sheetName}</span>
                 <ExternalLink className="w-2.5 h-2.5 shrink-0" />
               </a>
               <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 tabular-nums">
                 {records.length.toLocaleString('id-ID')} resi
                 {lastSyncTime ? ` · Sync ${lastSyncTime}` : ''}
-                {syncSource === 'gviz' ? ' (Read-Only Fallback)' : ''}
+                {syncSource === 'gviz' ? ' (Mode Baca Langsung)' : ''}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-snug">
-              Sinkron 2 arah dengan GSheet <b>JNEMember</b> — klik <b>Kolom D (Deskripsi Pengiriman)</b> untuk isi manual, atau tekan <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] border border-slate-200 dark:border-slate-700">Ctrl+V</kbd> untuk langsung memparsing screenshot tagihan/resi.
+              Sinkron otomatis dengan Google Sheets <b>{activeConfig.label}</b> — klik deskripsi untuk mengisi langsung, atau tekan{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 font-mono text-[10px] border border-slate-200 dark:border-slate-700">
+                Ctrl+V
+              </kbd>{' '}
+              untuk tempel screenshot tagihan/resi.
             </p>
           </div>
 
@@ -1042,10 +1215,12 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               type="button"
               onClick={() => handleRefreshFromGsheet(false)}
               disabled={isLoading}
-              title="Muat ulang data terbaru dari GSheet JNEMember"
+              title={`Muat ulang data terbaru dari ${activeConfig.label}`}
               className="inline-flex items-center gap-1.5 px-2.5 py-2 sm:py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-2xs transition-colors cursor-pointer disabled:opacity-50 min-h-[38px] sm:min-h-0"
             >
-              <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isLoading ? 'animate-spin text-indigo-600' : ''}`} />
+              <RefreshCw
+                className={`w-3.5 h-3.5 shrink-0 ${isLoading ? 'animate-spin text-indigo-600' : ''}`}
+              />
               <span className="hidden sm:inline">{isLoading ? 'Memuat...' : 'Sinkron'}</span>
             </button>
 
@@ -1054,7 +1229,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               <button
                 type="button"
                 onClick={() => setIsUtilityMenuOpen((v) => !v)}
-                title="Menu Ekspor & Utilitas"
+                title="Menu Ekspor & Pengaturan"
                 className="inline-flex items-center justify-center w-9 h-9 sm:w-8 sm:h-8 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60 shadow-2xs cursor-pointer"
               >
                 <MoreHorizontal className="w-4 h-4" />
@@ -1066,8 +1241,15 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     type="button"
                     onClick={() => {
                       setIsUtilityMenuOpen(false);
-                      exportJneRecordsToExcel(filteredRecords, 'JNEMember_Rekap');
-                      onShowToast(`Mengunduh ${filteredRecords.length} baris ke Excel (.xlsx)`, 'success');
+                      exportJneRecordsToExcel(
+                        filteredRecords,
+                        activeConfig.exportPrefix,
+                        activeSheetTab
+                      );
+                      onShowToast(
+                        `Mengunduh ${filteredRecords.length} baris ke Excel (.xlsx)`,
+                        'success'
+                      );
                     }}
                     disabled={filteredRecords.length === 0}
                     className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 disabled:opacity-40 cursor-pointer"
@@ -1079,8 +1261,15 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     type="button"
                     onClick={() => {
                       setIsUtilityMenuOpen(false);
-                      exportJneRecordsToCsv(filteredRecords, 'JNEMember_Rekap');
-                      onShowToast(`Mengunduh ${filteredRecords.length} baris ke CSV (.csv)`, 'success');
+                      exportJneRecordsToCsv(
+                        filteredRecords,
+                        activeConfig.exportPrefix,
+                        activeSheetTab
+                      );
+                      onShowToast(
+                        `Mengunduh ${filteredRecords.length} baris ke CSV (.csv)`,
+                        'success'
+                      );
                     }}
                     disabled={filteredRecords.length === 0}
                     className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5 disabled:opacity-40 cursor-pointer"
@@ -1089,14 +1278,14 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     <span>Export CSV (.csv)</span>
                   </button>
                   <a
-                    href={JNE_GSHEET_URL}
+                    href={activeConfig.gsheetUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={() => setIsUtilityMenuOpen(false)}
                     className="w-full px-3 py-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-2.5"
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Buka GSheet JNEMember</span>
+                    <span>Buka Google Sheets {activeConfig.label}</span>
                   </a>
                   {canManage && (
                     <>
@@ -1148,19 +1337,61 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             </div>
           </div>
         </div>
+
+        {/* 2 Primary JNE Account Tabs (`JNEmember` | `JNECorporated`) */}
+        <div className="pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2 overflow-x-auto no-scrollbar">
+          {(['member', 'corporate'] as JneSheetTab[]).map((tabId) => {
+            const cfg = getJneTabConfig(tabId);
+            const active = activeSheetTab === tabId;
+            const countVal = active ? records.length : tabCounts[tabId];
+            return (
+              <button
+                key={tabId}
+                type="button"
+                onClick={() => handleSwitchSheetTab(tabId)}
+                className={`shrink-0 whitespace-nowrap inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-extrabold border transition-all cursor-pointer ${
+                  active
+                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-amber-500 dark:text-black dark:border-amber-500 shadow-xs'
+                    : 'bg-slate-50 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>{cfg.label}</span>
+                {countVal > 0 && (
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono tabular-nums ${
+                      active
+                        ? 'bg-white/20 text-white dark:bg-black/20 dark:text-black'
+                        : 'bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    {countVal.toLocaleString('id-ID')}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+          <span className="hidden md:inline text-[11px] text-slate-400 dark:text-slate-500 pl-1">
+            {isCorporate
+              ? 'Sheet JNECorporate · disertai alamat lengkap, asuransi & status tagihan'
+              : 'Sheet JNEmember · resi harian reguler Member JNE'}
+          </span>
+        </div>
       </div>
 
       {/* 2. KPI SUMMARY CARDS (4 Kartu Interaktif) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 px-1.5 sm:px-0">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 sm:p-3.5 shadow-2xs">
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Total Tagihan (Filter)
+            Total Tagihan
           </div>
           <div className="text-sm sm:text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white mt-1">
             Rp {metrics.totalAmount.toLocaleString('id-ID')}
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
             Rata-rata Rp {metrics.avgAmount.toLocaleString('id-ID')} / resi
+            {isCorporate && metrics.totalAsuransi > 0
+              ? ` · Asuransi Rp ${metrics.totalAsuransi.toLocaleString('id-ID')}`
+              : ''}
           </div>
         </div>
 
@@ -1174,13 +1405,13 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
           }`}
         >
           <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Jumlah Cnote Tampil
+            Total Resi
           </div>
           <div className="text-sm sm:text-lg font-extrabold font-mono tabular-nums text-slate-900 dark:text-white mt-1">
             {filteredRecords.length.toLocaleString('id-ID')}
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-            Dari {records.length.toLocaleString('id-ID')} total baris GSheet
+            Dari {records.length.toLocaleString('id-ID')} resi tersimpan
           </div>
         </button>
 
@@ -1195,7 +1426,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         >
           <div className="flex items-center justify-between gap-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
-              Kolom D Terisi
+              Deskripsi Lengkap
             </span>
             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
           </div>
@@ -1203,7 +1434,8 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             {categoryCounts.FILLED.toLocaleString('id-ID')}
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 tabular-nums">
-            {records.length > 0 ? Math.round((categoryCounts.FILLED / records.length) * 100) : 0}% sudah ada deskripsi
+            {records.length > 0 ? Math.round((categoryCounts.FILLED / records.length) * 100) : 0}%
+            sudah terisi
           </div>
         </button>
 
@@ -1220,7 +1452,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         >
           <div className="flex items-center justify-between gap-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">
-              Kolom D Kosong
+              Perlu Isi Deskripsi
             </span>
             <AlertCircle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
           </div>
@@ -1228,14 +1460,13 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             {categoryCounts.EMPTY.toLocaleString('id-ID')}
           </div>
           <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
-            {categoryCounts.EMPTY > 0 ? 'Klik untuk lengkapi Kolom D' : 'Semua resi sudah lengkap'}
+            {categoryCounts.EMPTY > 0 ? 'Klik untuk melengkapi' : 'Semua deskripsi lengkap'}
           </div>
         </button>
       </div>
 
       {/* 3. SWIPE CATEGORY TABS + SEARCH & COLLAPSIBLE FILTER */}
       <div className="bg-white dark:bg-slate-900 border-y sm:border border-slate-200 dark:border-slate-800 sm:rounded-2xl p-2.5 sm:p-3.5 space-y-2.5 shadow-2xs">
-        {/* Horizontal Swipe Tabs (Zero Wrap di Mobile) */}
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar scroll-smooth pb-0.5">
           {categoryTabDefs.map((tab) => {
             const active = categoryTab === tab.id;
@@ -1273,7 +1504,11 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari Cnote No, Deskripsi Kolom D, Nama Penerima, Tujuan..."
+              placeholder={
+                isCorporate
+                  ? 'Cari No. Resi, Deskripsi, Nama / Alamat Penerima, Kota, Tagihan...'
+                  : 'Cari No. Resi, Deskripsi Pengiriman, Nama Penerima, Tujuan...'
+              }
               className="w-full pl-8 pr-8 py-1.5 rounded-lg text-xs font-medium bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-500"
             />
             {searchQuery && (
@@ -1294,11 +1529,11 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               onChange={(e) => setSortBy(e.target.value as any)}
               className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
             >
-              <option value="newest">Terbaru (Tanggal & Baris)</option>
+              <option value="newest">Terbaru</option>
               <option value="oldest">Terlama</option>
               <option value="amount_desc">Ongkir Tertinggi</option>
               <option value="amount_asc">Ongkir Terendah</option>
-              <option value="resi_asc">Cnote No (A-Z)</option>
+              <option value="resi_asc">Nomor Resi (A–Z)</option>
             </select>
           </div>
 
@@ -1359,7 +1594,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                  Services (Layanan)
+                  Layanan JNE
                 </label>
                 <select
                   value={serviceFilter}
@@ -1374,27 +1609,51 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                   ))}
                 </select>
               </div>
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
-                  Shipper Name
-                </label>
-                <select
-                  value={shipperFilter}
-                  onChange={(e) => setShipperFilter(e.target.value)}
-                  className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
-                >
-                  <option value="ALL">Semua Pengirim</option>
-                  {distinctShippers.map((sh) => (
-                    <option key={sh} value={sh}>
-                      {sh}
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {isCorporate ? (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                    Status Pembayaran
+                  </label>
+                  <select
+                    value={paymentStatusFilter}
+                    onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                    className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                  >
+                    <option value="ALL">Semua Status</option>
+                    <option value="UNBILLED">Belum Ada Tagihan</option>
+                    <option value="BILLED">Sudah Ada Tagihan</option>
+                    {distinctPaymentStatuses
+                      .filter((st) => st.toLowerCase() !== 'belum ada tagihan')
+                      .map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-1">
+                    Pengirim
+                  </label>
+                  <select
+                    value={shipperFilter}
+                    onChange={(e) => setShipperFilter(e.target.value)}
+                    className="w-full py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                  >
+                    <option value="ALL">Semua Pengirim</option>
+                    {distinctShippers.map((sh) => (
+                      <option key={sh} value={sh}>
+                        {sh}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Periode Cepat:</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase mr-1">Periode:</span>
               {[
                 { label: '7 Hari Terakhir', action: () => applyQuickDateRange(7) },
                 { label: '30 Hari Terakhir', action: () => applyQuickDateRange(30) },
@@ -1438,13 +1697,17 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
             >
               <Tag className="w-3.5 h-3.5" />
-              <span>Isi Kolom D Massal</span>
+              <span>Isi Deskripsi Massal</span>
             </button>
 
             <button
               type="button"
               onClick={() => {
-                exportJneRecordsToExcel(selectedSummary.list, 'JNEMember_Terpilih');
+                exportJneRecordsToExcel(
+                  selectedSummary.list,
+                  `${activeConfig.label}_Terpilih`,
+                  activeSheetTab
+                );
                 onShowToast(`Mengunduh ${selectedSummary.count} baris terpilih.`, 'success');
               }}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 cursor-pointer"
@@ -1481,7 +1744,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
           <div className="py-16 px-4 text-center space-y-3">
             <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mx-auto" />
             <div className="text-xs font-bold text-slate-700 dark:text-slate-200">
-              Memuat data dari Google Sheets JNEMember...
+              Memuat data {activeConfig.label} dari Google Sheets...
             </div>
           </div>
         ) : filteredRecords.length === 0 ? (
@@ -1489,13 +1752,13 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             <Receipt className="w-10 h-10 text-slate-300 dark:text-slate-700 mx-auto" />
             <div className="text-sm font-bold text-slate-800 dark:text-slate-100">
               {records.length === 0
-                ? 'Belum ada data di memori lokal'
-                : 'Tidak ada data resi yang cocok dengan filter aktif'}
+                ? `Belum ada data ${activeConfig.label}`
+                : 'Tidak ada data yang cocok dengan filter'}
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
               {records.length === 0
-                ? 'Klik tombol Sinkron untuk menarik data dari GSheet JNEMember, atau klik Tambah / Import untuk memasukkan data baru.'
-                : 'Coba ubah kata kunci pencarian atau klik Reset Filter untuk menampilkan seluruh resi.'}
+                ? `Klik Sinkron untuk mengambil data terbaru dari ${activeConfig.label}, atau klik Tambah / Import untuk input baru.`
+                : 'Coba ubah kata kunci pencarian atau reset filter untuk melihat semua resi.'}
             </p>
             {records.length > 0 && (
               <button
@@ -1522,11 +1785,15 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                         className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
                       />
                     </th>
-                    <th className="lg:w-[17%] px-3 py-2.5">Cnote No & Tanggal</th>
-                    <th className="lg:w-[27%] px-3 py-2.5">Deskripsi Pengiriman (Kolom D)</th>
-                    <th className="lg:w-[21%] px-3 py-2.5">Penerima & Tujuan</th>
-                    <th className="lg:w-[13%] px-3 py-2.5">Services & Shipper</th>
-                    <th className="lg:w-[11%] px-3 py-2.5 text-right">Amount</th>
+                    <th className="lg:w-[17%] px-3 py-2.5">No. Resi &amp; Tanggal</th>
+                    <th className="lg:w-[25%] px-3 py-2.5">Deskripsi Pengiriman</th>
+                    <th className="lg:w-[22%] px-3 py-2.5">Penerima &amp; Tujuan</th>
+                    <th className="lg:w-[14%] px-3 py-2.5">
+                      {isCorporate ? 'Layanan & Tagihan' : 'Layanan & Pengirim'}
+                    </th>
+                    <th className="lg:w-[11%] px-3 py-2.5 text-right">
+                      {isCorporate ? 'Ongkir' : 'Amount'}
+                    </th>
                     <th className="lg:w-[11%] px-3 py-2.5 text-right">Aksi</th>
                   </tr>
                 </thead>
@@ -1556,7 +1823,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                           />
                         </td>
 
-                        {/* Cnote No & Tanggal */}
+                        {/* No. Resi & Tanggal */}
                         <td className="px-3 py-2.5 align-top">
                           <div className="flex items-center gap-1.5">
                             <span
@@ -1568,7 +1835,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                             <button
                               type="button"
                               onClick={() => copyToClipboard(rec.no_resi)}
-                              title="Salin Cnote No"
+                              title="Salin nomor resi"
                               className="text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 shrink-0 cursor-pointer"
                             >
                               <Copy className="w-3 h-3" />
@@ -1584,7 +1851,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                           </div>
                         </td>
 
-                        {/* Kolom D: Deskripsi Pengiriman (Inline Spreadsheet Edit) */}
+                        {/* Deskripsi Pengiriman (Inline Spreadsheet Edit) */}
                         <td className="px-3 py-2 align-top">
                           {isEditingThis ? (
                             <div className="space-y-1.5">
@@ -1602,13 +1869,13 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                                       setEditingResi(null);
                                     }
                                   }}
-                                  placeholder="Ketik deskripsi pengiriman (Enter = Simpan & Lanjut)"
+                                  placeholder="Ketik deskripsi, tekan Enter untuk simpan"
                                   className="flex-1 min-w-0 px-2.5 py-1 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 border-2 border-indigo-500 text-slate-900 dark:text-white focus:outline-none"
                                 />
                                 <button
                                   type="button"
                                   onClick={() => commitInlineDeskripsi(rec.no_resi, false)}
-                                  title="Simpan ke Kolom D GSheet"
+                                  title="Simpan deskripsi"
                                   className="w-7 h-7 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white flex items-center justify-center shrink-0 cursor-pointer"
                                 >
                                   <Check className="w-3.5 h-3.5" />
@@ -1642,7 +1909,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                             <button
                               type="button"
                               onClick={() => startInlineEditDeskripsi(rec)}
-                              title="Klik untuk mengisi/mengubah Kolom D di GSheet JNEMember"
+                              title={`Klik untuk isi atau ubah deskripsi (${activeConfig.label})`}
                               className={`w-full text-left group rounded-lg px-2 py-1.5 -mx-2 transition-colors flex items-start justify-between gap-2 cursor-pointer ${
                                 rec.deskripsi
                                   ? 'hover:bg-slate-100/90 dark:hover:bg-slate-800/70'
@@ -1656,19 +1923,19 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                                   </span>
                                 ) : (
                                   <span className="text-[11px] font-semibold text-amber-700 dark:text-amber-300">
-                                    + Klik untuk isi Deskripsi (Kolom D)
+                                    + Isi Deskripsi
                                   </span>
                                 )}
                                 {isSavingThis && (
                                   <span className="inline-flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold mt-0.5">
                                     <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                                    Menyimpan ke GSheet...
+                                    Menyimpan...
                                   </span>
                                 )}
                                 {!isSavingThis && isSavedFlash && (
                                   <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold mt-0.5">
                                     <Check className="w-2.5 h-2.5" />
-                                    Tersimpan di GSheet
+                                    Tersimpan
                                   </span>
                                 )}
                               </div>
@@ -1691,24 +1958,40 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                           >
                             {rec.alamat_tujuan || '-'}
                           </div>
+                          {isCorporate && rec.alamat_penerima && rec.alamat_penerima !== '-' && (
+                            <div
+                              className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-1 mt-0.5"
+                              title={rec.alamat_penerima}
+                            >
+                              {rec.alamat_penerima}
+                            </div>
+                          )}
                         </td>
 
-                        {/* Services & Shipper */}
+                        {/* Layanan & Status / Pengirim */}
                         <td className="px-3 py-2.5 align-top">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             {renderServiceBadge(rec.layanan)}
+                            {isCorporate && renderPaymentBadge(rec.status_pembayaran)}
                           </div>
                           <div
                             className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-1"
-                            title={`${rec.nama_pengirim} · ${rec.agen}`}
+                            title={[rec.nama_pengirim, rec.agen].filter(Boolean).join(' · ')}
                           >
                             {[rec.nama_pengirim, rec.agen].filter(Boolean).join(' · ')}
                           </div>
                         </td>
 
-                        {/* Amount */}
-                        <td className="px-3 py-2.5 align-top text-right font-mono font-bold tabular-nums text-slate-900 dark:text-white">
-                          Rp {(rec.nominal || 0).toLocaleString('id-ID')}
+                        {/* Ongkir / Amount (+ Asuransi jika ada) */}
+                        <td className="px-3 py-2.5 align-top text-right font-mono tabular-nums">
+                          <div className="font-bold text-slate-900 dark:text-white">
+                            Rp {(rec.nominal || 0).toLocaleString('id-ID')}
+                          </div>
+                          {isCorporate && (rec.asuransi || 0) > 0 && (
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5">
+                              Asr Rp {(rec.asuransi || 0).toLocaleString('id-ID')}
+                            </div>
+                          )}
                         </td>
 
                         {/* Aksi (`1 Primary CTA + ⋯`) */}
@@ -1717,9 +2000,9 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                             <button
                               type="button"
                               onClick={() => startInlineEditDeskripsi(rec)}
-                              className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer"
+                              className="px-2 py-1 rounded-lg text-[11px] font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer whitespace-nowrap"
                             >
-                              {rec.deskripsi ? 'Kolom D' : '+ Isi D'}
+                              {rec.deskripsi ? 'Ubah' : 'Isi Deskripsi'}
                             </button>
                             <button
                               type="button"
@@ -1778,6 +2061,12 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                             {renderServiceBadge(rec.layanan)}
                             <span>·</span>
                             <span className="tabular-nums">{formatDisplayDateJne(rec.tanggal)}</span>
+                            {isCorporate && (
+                              <>
+                                <span>·</span>
+                                {renderPaymentBadge(rec.status_pembayaran)}
+                              </>
+                            )}
                           </div>
                           <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                             {rec.alamat_tujuan || '-'}
@@ -1795,7 +2084,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                       </button>
                     </div>
 
-                    {/* Baris Kolom D Mobile */}
+                    {/* Baris Deskripsi Mobile */}
                     <div className="pl-6">
                       {isEditingThis ? (
                         <div className="flex items-center gap-1.5 pt-1">
@@ -1808,7 +2097,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                               if (e.key === 'Enter') commitInlineDeskripsi(rec.no_resi, false);
                               if (e.key === 'Escape') setEditingResi(null);
                             }}
-                            placeholder="Isi Deskripsi Pengiriman (Kolom D)..."
+                            placeholder="Isi deskripsi pengiriman..."
                             className="flex-1 min-w-0 px-2.5 py-2 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 border-2 border-indigo-500 text-slate-900 dark:text-white"
                           />
                           <button
@@ -1838,8 +2127,8 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                         >
                           <span className="truncate">
                             {isSavingThis
-                              ? 'Menyimpan ke GSheet...'
-                              : rec.deskripsi || '+ Ketuk untuk isi Deskripsi (Kolom D)'}
+                              ? 'Menyimpan...'
+                              : rec.deskripsi || '+ Ketuk untuk isi Deskripsi'}
                           </span>
                           <Edit2 className="w-3 h-3 text-slate-400 shrink-0" />
                         </button>
@@ -1889,7 +2178,9 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                           <Copy className="w-3 h-3" />
                         </button>
                       </div>
-                      {renderServiceBadge(rec.layanan)}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {renderServiceBadge(rec.layanan)}
+                      </div>
                     </div>
 
                     {/* Subject & Route */}
@@ -1905,17 +2196,28 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                       <div className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1">
                         {rec.alamat_tujuan || '-'}
                       </div>
-                      <div className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
-                        {[formatDisplayDateJne(rec.tanggal), rec.nama_pengirim, rec.agen]
-                          .filter(Boolean)
-                          .join(' · ')}
+                      {isCorporate && rec.alamat_penerima && rec.alamat_penerima !== '-' && (
+                        <div
+                          className="text-[10px] text-slate-400 dark:text-slate-500 line-clamp-1"
+                          title={rec.alamat_penerima}
+                        >
+                          {rec.alamat_penerima}
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-2 pt-0.5 flex-wrap">
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500 tabular-nums">
+                          {[formatDisplayDateJne(rec.tanggal), rec.nama_pengirim, rec.agen]
+                            .filter(Boolean)
+                            .join(' · ')}
+                        </span>
+                        {isCorporate && renderPaymentBadge(rec.status_pembayaran)}
                       </div>
                     </div>
 
-                    {/* Kolom D Section */}
+                    {/* Deskripsi Section */}
                     <div className="px-3.5 py-2.5">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                        Deskripsi Pengiriman (Kolom D)
+                        Deskripsi Pengiriman
                       </div>
                       {isEditingThis ? (
                         <div className="flex items-center gap-1.5">
@@ -1928,7 +2230,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                               if (e.key === 'Enter') commitInlineDeskripsi(rec.no_resi, false);
                               if (e.key === 'Escape') setEditingResi(null);
                             }}
-                            placeholder="Ketik Kolom D..."
+                            placeholder="Ketik deskripsi..."
                             className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 border-2 border-indigo-500 text-slate-900 dark:text-white"
                           />
                           <button
@@ -1949,8 +2251,8 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                           }`}
                         >
                           {isSavingThis
-                            ? 'Menyimpan ke GSheet...'
-                            : rec.deskripsi || '+ Klik untuk isi Deskripsi'}
+                            ? 'Menyimpan...'
+                            : rec.deskripsi || '+ Isi Deskripsi'}
                         </div>
                       )}
                     </div>
@@ -1963,7 +2265,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                       onClick={() => startInlineEditDeskripsi(rec)}
                       className="flex-1 h-10 sm:h-8 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 transition-colors cursor-pointer"
                     >
-                      {rec.deskripsi ? 'Ubah Kolom D' : 'Isi Kolom D'}
+                      {rec.deskripsi ? 'Ubah Deskripsi' : 'Isi Deskripsi'}
                     </button>
                     <button
                       type="button"
@@ -1999,7 +2301,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 <option value={50}>50 / hal</option>
                 <option value={100}>100 / hal</option>
                 <option value={250}>250 / hal</option>
-                <option value={2000}>Semua</option>
+                <option value={10000}>Semua</option>
               </select>
             </div>
 
@@ -2030,13 +2332,11 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         )}
       </div>
 
-      {/* ========================================================================= */}
-      {/* UNIFIED ROW ACTION SHEET (`⋯` Mobile Bottom Sheet & Desktop Action Modal) */}
-      {/* ========================================================================= */}
+      {/* UNIFIED ROW ACTION SHEET */}
       <AppActionSheet
         isOpen={Boolean(actionSheetRecord)}
         onClose={() => setActionSheetRecord(null)}
-        title={actionSheetRecord?.nama_tujuan || 'Aksi Data Resi JNE'}
+        title={actionSheetRecord?.nama_tujuan || 'Detail Resi JNE'}
         subtitle={
           actionSheetRecord
             ? `${actionSheetRecord.no_resi} · Rp ${(actionSheetRecord.nominal || 0).toLocaleString('id-ID')}`
@@ -2045,9 +2345,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         groups={actionSheetGroups}
       />
 
-      {/* ========================================================================= */}
-      {/* UNIFIED TAMBAH & IMPORT MODAL (Excel, CSV, Gambar/SS AI Vision, Manual)   */}
-      {/* ========================================================================= */}
+      {/* UNIFIED TAMBAH & IMPORT MODAL */}
       {isAddModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4"
@@ -2061,10 +2359,10 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             <div className="px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
               <div>
                 <h2 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white">
-                  Tambah & Import Data ke GSheet JNEMember
+                  Tambah &amp; Import Data ({activeConfig.label})
                 </h2>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Pilih sumber input: Upload Excel/CSV, Lampiran Gambar/Screenshot (AI Vision), Input Manual, atau Tempel Teks.
+                  Import file Excel, CSV, PDF, gambar resi, atau input satuan ke Google Sheets {activeConfig.sheetName}.
                 </p>
               </div>
               <button
@@ -2081,17 +2379,17 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               {[
                 {
                   id: 'import' as AddModalTab,
-                  label: `Import Excel / CSV / Gambar SS${stagingRecords.length > 0 ? ` (${stagingRecords.length})` : ''}`,
+                  label: `Upload File / Screenshot${stagingRecords.length > 0 ? ` (${stagingRecords.length})` : ''}`,
                   icon: <Upload className="w-3.5 h-3.5" />,
                 },
                 {
                   id: 'manual' as AddModalTab,
-                  label: 'Input Manual Satuan',
+                  label: 'Input Satuan',
                   icon: <Plus className="w-3.5 h-3.5" />,
                 },
                 {
                   id: 'paste' as AddModalTab,
-                  label: 'Tempel Baris Spreadsheet',
+                  label: 'Tempel Teks',
                   icon: <ClipboardPaste className="w-3.5 h-3.5" />,
                 },
               ].map((t) => (
@@ -2115,7 +2413,6 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
               {addModalTab === 'import' && (
                 <>
-                  {/* Dropzone Multi-Format */}
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -2147,7 +2444,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                       <div className="space-y-2 py-2">
                         <Loader2 className="w-7 h-7 text-indigo-600 animate-spin mx-auto" />
                         <div className="text-xs font-bold text-indigo-700 dark:text-indigo-300">
-                          {parsingStatusLabel || 'Mengekstrak data resi...'} ({parsingProgress}%)
+                          {parsingStatusLabel || 'Membaca data resi...'} ({parsingProgress}%)
                         </div>
                         <div className="w-48 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden mx-auto">
                           <div
@@ -2164,33 +2461,32 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                           <Sparkles className="w-5 h-5" />
                         </div>
                         <div className="text-xs sm:text-sm font-extrabold text-slate-900 dark:text-white">
-                          Klik untuk pilih file, seret ke sini, atau tekan{' '}
+                          Pilih file, seret ke sini, atau tekan{' '}
                           <kbd className="px-1.5 py-0.5 rounded bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 font-mono text-[11px]">
                             Ctrl+V
                           </kbd>{' '}
-                          untuk tempel Screenshot
+                          untuk tempel screenshot
                         </div>
                         <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                          Mendukung <b>Excel (.xlsx/.xls)</b>, <b>CSV (.csv)</b>,{' '}
-                          <b>Gambar / Screenshot Tabel & Struk Resi (.png/.jpg/.webp — AI Vision)</b>, dan <b>PDF (.pdf)</b>.
+                          Mendukung Excel (.xlsx/.xls), CSV, foto/screenshot resi (.png/.jpg/.webp), dan PDF.
                         </p>
                       </div>
                     )}
                   </div>
 
-                  {/* Tabel Staging Preview Hasil Parsing */}
+                  {/* Tabel Preview Hasil Baca File */}
                   {stagingRecords.length > 0 && (
                     <div className="space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl p-3">
                         <div className="space-y-0.5">
                           <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-2 flex-wrap">
-                            <span>Pratinjau Hasil Parsing ({stagingRecords.length} Baris)</span>
+                            <span>Hasil Baca Data ({stagingRecords.length} Baris)</span>
                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300">
                               {stagingStats.newCount} Baru
                             </span>
                             {stagingStats.dupCount > 0 && (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-300 dark:bg-amber-950/60 dark:text-amber-300">
-                                {stagingStats.dupCount} Sudah Ada di GSheet
+                                {stagingStats.dupCount} Sudah Ada
                               </span>
                             )}
                             <span className="font-mono text-indigo-600 dark:text-indigo-400">
@@ -2199,7 +2495,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                           </div>
                           {stagingSourceInfo && (
                             <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                              Sumber: {stagingSourceInfo} — Anda dapat mengedit sel mana pun sebelum disimpan ke GSheet.
+                              Sumber: {stagingSourceInfo} — periksa atau edit langsung sebelum disimpan.
                             </div>
                           )}
                         </div>
@@ -2207,17 +2503,19 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                         <div className="flex items-center gap-2 flex-wrap">
                           <select
                             value={duplicateMode}
-                            onChange={(e) => setDuplicateMode(e.target.value as DuplicateHandlingMode)}
+                            onChange={(e) =>
+                              setDuplicateMode(e.target.value as DuplicateHandlingMode)
+                            }
                             className="py-1.5 px-2.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200"
                           >
                             <option value="fill_empty_desc">
-                              Jika Cnote sudah ada: Jaga data lama, isi Kolom D jika kosong
+                              Jika resi sudah ada: jaga data lama, lengkapi deskripsi jika kosong
                             </option>
                             <option value="skip_existing">
-                              Jika Cnote sudah ada: Lewati seluruh duplikat
+                              Jika resi sudah ada: lewati duplikat
                             </option>
                             <option value="overwrite_all">
-                              Jika Cnote sudah ada: Perbarui seluruh kolom
+                              Jika resi sudah ada: perbarui semua data
                             </option>
                           </select>
 
@@ -2235,16 +2533,22 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                       </div>
 
                       <div className="w-full overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-xl max-h-[42vh]">
-                        <table className="w-full text-left border-collapse text-xs min-w-[820px]">
+                        <table className="w-full text-left border-collapse text-xs min-w-[920px]">
                           <thead className="sticky top-0 z-10 bg-slate-100 dark:bg-slate-800 text-[10px] font-bold uppercase text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">
                             <tr>
                               <th className="px-2.5 py-2 w-20">Status</th>
-                              <th className="px-2.5 py-2 w-40">Cnote No</th>
-                              <th className="px-2.5 py-2 w-48">Deskripsi (Kolom D)</th>
-                              <th className="px-2.5 py-2 w-24">Services</th>
-                              <th className="px-2.5 py-2 w-40">Receiver Name</th>
-                              <th className="px-2.5 py-2 w-40">Destination</th>
-                              <th className="px-2.5 py-2 w-28 text-right">Amount (Rp)</th>
+                              <th className="px-2.5 py-2 w-40">No. Resi</th>
+                              <th className="px-2.5 py-2 w-48">Deskripsi Pengiriman</th>
+                              <th className="px-2.5 py-2 w-24">Layanan</th>
+                              <th className="px-2.5 py-2 w-40">Nama Penerima</th>
+                              {isCorporate && (
+                                <th className="px-2.5 py-2 w-48">Alamat Penerima</th>
+                              )}
+                              <th className="px-2.5 py-2 w-40">Kota / Tujuan</th>
+                              <th className="px-2.5 py-2 w-28 text-right">Ongkir (Rp)</th>
+                              {isCorporate && (
+                                <th className="px-2.5 py-2 w-24 text-right">Asuransi</th>
+                              )}
                               <th className="px-2.5 py-2 w-32">Tanggal</th>
                               <th className="px-2 py-2 w-10 text-center">✕</th>
                             </tr>
@@ -2278,7 +2582,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                                       type="text"
                                       value={row.deskripsi}
                                       onChange={(e) => updateStagingField(idx, 'deskripsi', e.target.value)}
-                                      placeholder="Opsional (Kolom D)"
+                                      placeholder="Opsional"
                                       className="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
                                     />
                                   </td>
@@ -2286,7 +2590,9 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                                     <input
                                       type="text"
                                       value={row.layanan}
-                                      onChange={(e) => updateStagingField(idx, 'layanan', e.target.value.toUpperCase())}
+                                      onChange={(e) =>
+                                        updateStagingField(idx, 'layanan', e.target.value.toUpperCase())
+                                      }
                                       className="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-xs"
                                     />
                                   </td>
@@ -2298,6 +2604,19 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                                       className="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
                                     />
                                   </td>
+                                  {isCorporate && (
+                                    <td className="px-2 py-1.5">
+                                      <input
+                                        type="text"
+                                        value={row.alamat_penerima === '-' ? '' : (row.alamat_penerima || '')}
+                                        onChange={(e) =>
+                                          updateStagingField(idx, 'alamat_penerima', e.target.value)
+                                        }
+                                        placeholder="Alamat lengkap"
+                                        className="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs"
+                                      />
+                                    </td>
+                                  )}
                                   <td className="px-2 py-1.5">
                                     <input
                                       type="text"
@@ -2314,6 +2633,16 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                                       className="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-right text-xs"
                                     />
                                   </td>
+                                  {isCorporate && (
+                                    <td className="px-2 py-1.5">
+                                      <input
+                                        type="number"
+                                        value={row.asuransi || 0}
+                                        onChange={(e) => updateStagingField(idx, 'asuransi', e.target.value)}
+                                        className="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 font-mono text-right text-xs"
+                                      />
+                                    </td>
+                                  )}
                                   <td className="px-2 py-1.5">
                                     <input
                                       type="date"
@@ -2348,13 +2677,13 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                      Cnote No (Nomor Resi JNE) <span className="text-rose-500">*</span>
+                      Nomor Resi JNE <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       value={manualForm.no_resi}
                       onChange={(e) => setManualForm({ ...manualForm, no_resi: e.target.value })}
-                      placeholder="Contoh: 013790032629726"
+                      placeholder={isCorporate ? 'Contoh: CGKEC79399447826' : 'Contoh: 013790032629726'}
                       className="w-full px-3 py-2 rounded-xl text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                     />
                   </div>
@@ -2373,7 +2702,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
                   <div className="sm:col-span-2">
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                      Deskripsi Pengiriman (Kolom D)
+                      Deskripsi Pengiriman
                     </label>
                     <input
                       type="text"
@@ -2398,7 +2727,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                      Receiver Name (Nama Penerima)
+                      Nama Penerima
                     </label>
                     <input
                       type="text"
@@ -2411,7 +2740,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                      Destination (Kecamatan / Kota Tujuan)
+                      {isCorporate ? 'Kota Tujuan Penerima' : 'Kecamatan / Kota Tujuan'}
                     </label>
                     <input
                       type="text"
@@ -2422,9 +2751,26 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     />
                   </div>
 
+                  {isCorporate && (
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
+                        Alamat Lengkap Penerima
+                      </label>
+                      <input
+                        type="text"
+                        value={manualForm.alamat_penerima}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, alamat_penerima: e.target.value })
+                        }
+                        placeholder="Jalan, nomor rumah, RT/RW, kelurahan..."
+                        className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                      Amount / Nominal Ongkir (Rp)
+                      Ongkir (Rp)
                     </label>
                     <input
                       type="number"
@@ -2436,9 +2782,25 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     />
                   </div>
 
+                  {isCorporate && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
+                        Nominal Asuransi (Rp)
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={manualForm.asuransi}
+                        onChange={(e) => setManualForm({ ...manualForm, asuransi: e.target.value })}
+                        placeholder="0"
+                        className="w-full px-3 py-2 rounded-xl text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                      Services (Layanan JNE)
+                      Layanan JNE
                     </label>
                     <input
                       type="text"
@@ -2466,29 +2828,33 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                      Shipper Name (Pengirim)
-                    </label>
-                    <input
-                      type="text"
-                      value={manualForm.nama_pengirim}
-                      onChange={(e) => setManualForm({ ...manualForm, nama_pengirim: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                    />
-                    <div className="flex items-center gap-1 flex-wrap mt-1.5">
-                      {SHIPPER_PRESETS.map((sh) => (
-                        <button
-                          key={sh}
-                          type="button"
-                          onClick={() => setManualForm({ ...manualForm, nama_pengirim: sh })}
-                          className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
-                        >
-                          {sh}
-                        </button>
-                      ))}
+                  {!isCorporate && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
+                        Pengirim (Shipper)
+                      </label>
+                      <input
+                        type="text"
+                        value={manualForm.nama_pengirim}
+                        onChange={(e) =>
+                          setManualForm({ ...manualForm, nama_pengirim: e.target.value })
+                        }
+                        className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                      />
+                      <div className="flex items-center gap-1 flex-wrap mt-1.5">
+                        {SHIPPER_PRESETS.map((sh) => (
+                          <button
+                            key={sh}
+                            type="button"
+                            onClick={() => setManualForm({ ...manualForm, nama_pengirim: sh })}
+                            className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
+                          >
+                            {sh}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
@@ -2507,13 +2873,17 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               {addModalTab === 'paste' && (
                 <div className="space-y-3">
                   <p className="text-xs text-slate-600 dark:text-slate-300">
-                    Salin beberapa baris langsung dari file Excel / Google Sheets lain atau daftar resi, lalu tempel di bawah ini:
+                    Salin beberapa baris langsung dari Excel atau Google Sheets lain lalu tempel di bawah ini:
                   </p>
                   <textarea
                     rows={8}
                     value={pasteRawText}
                     onChange={(e) => setPasteRawText(e.target.value)}
-                    placeholder={`Contoh tempel baris:\n013790032618026\t#MSLWS-261121-BLCU\tCTC23\tCINDY NATASYA S\tCILINCING ,JAKARTA U\tCCH-CHOCOCHIPS\t10000\t23/11/2026\tJNE Member`}
+                    placeholder={
+                      isCorporate
+                        ? `Contoh:\nCGKEC79399447826\t#MSPMS-261120-UR54\t22/11/2026\tCYNTHIA CANDRA\tJL PRAMUKA NO 15\tBANJARMASIN\tREG23\t52000\t0`
+                        : `Contoh:\n013790032618026\t#MSLWS-261121-BLCU\tCTC23\tCINDY NATASYA S\tCILINCING ,JAKARTA U\tCCH-CHOCOCHIPS\t10000\t23/11/2026\tJNE Member`
+                    }
                     className="w-full p-3 rounded-xl text-xs font-mono bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                   />
                   <div className="flex justify-end">
@@ -2523,7 +2893,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                       className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
-                      <span>Urai ke Tabel Pratinjau</span>
+                      <span>Tampilkan Pratinjau</span>
                     </button>
                   </div>
                 </div>
@@ -2550,12 +2920,14 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                   {isSubmittingStaging ? (
                     <>
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>Menyimpan ke GSheet...</span>
+                      <span>Menyimpan...</span>
                     </>
                   ) : (
                     <>
                       <Check className="w-3.5 h-3.5" />
-                      <span>Simpan {stagingRecords.length} Baris ke GSheet JNEMember</span>
+                      <span>
+                        Simpan {stagingRecords.length} Baris ke {activeConfig.label}
+                      </span>
                     </>
                   )}
                 </button>
@@ -2569,7 +2941,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     onClick={() => handleSaveManualRecord(true)}
                     className="px-3.5 py-2 rounded-xl text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 disabled:opacity-50 cursor-pointer"
                   >
-                    Simpan & Tambah Lagi
+                    Simpan &amp; Tambah Lagi
                   </button>
                   <button
                     type="button"
@@ -2582,7 +2954,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                     ) : (
                       <Check className="w-3.5 h-3.5" />
                     )}
-                    <span>Simpan ke GSheet</span>
+                    <span>Simpan</span>
                   </button>
                 </div>
               )}
@@ -2591,9 +2963,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL BATCH UPDATE KOLOM D (DESKRIPSI PENGIRIMAN MASSAL)                  */}
-      {/* ========================================================================= */}
+      {/* MODAL BATCH UPDATE DESKRIPSI MASSAL */}
       {isBatchDescModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
@@ -2606,10 +2976,10 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             <div className="flex items-start justify-between gap-2">
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                  Isi Kolom D Massal ({selectedSummary.count} Resi)
+                  Isi Deskripsi Massal ({selectedSummary.count} Resi)
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Menulis serentak ke kolom <b>Deskripsi pengiriman</b> di GSheet JNEMember.
+                  Terapkan deskripsi yang sama ke semua resi terpilih di {activeConfig.label}.
                 </p>
               </div>
               <button
@@ -2662,16 +3032,14 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 cursor-pointer"
               >
                 {isSavingBatchDesc && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Simpan ke {selectedSummary.count} Baris</span>
+                <span>Simpan ke {selectedSummary.count} Resi</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL EDIT LENGKAP SEMUA KOLOM (KHUSUS ADMIN & WAREHOUSE)                 */}
-      {/* ========================================================================= */}
+      {/* MODAL EDIT LENGKAP SEMUA KOLOM (KHUSUS ADMIN & WAREHOUSE) */}
       {editingFullRecord && canManage && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4"
@@ -2685,10 +3053,10 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             <div className="px-5 py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0">
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                  Edit Data Resi JNE (Admin & Warehouse)
+                  Edit Data Resi ({activeConfig.label})
                 </h3>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                  Cnote Awal: {editingFullRecord.original_no_resi}
+                  Resi Awal: {editingFullRecord.original_no_resi}
                   {editingFullRecord.row_number ? ` · Baris #${editingFullRecord.row_number}` : ''}
                 </p>
               </div>
@@ -2704,7 +3072,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
             <div className="flex-1 overflow-y-auto p-5 grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Cnote No (Kolom C)
+                  Nomor Resi JNE
                 </label>
                 <input
                   type="text"
@@ -2719,7 +3087,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Tanggal Pengiriman (Kolom J)
+                  Tanggal Pengiriman
                 </label>
                 <input
                   type="date"
@@ -2733,7 +3101,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
               <div className="sm:col-span-2">
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Deskripsi Pengiriman (Kolom D)
+                  Deskripsi Pengiriman
                 </label>
                 <input
                   type="text"
@@ -2747,7 +3115,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Receiver Name (Kolom F)
+                  Nama Penerima
                 </label>
                 <input
                   type="text"
@@ -2761,7 +3129,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Destination (Kolom G)
+                  {isCorporate ? 'Kota Tujuan Penerima' : 'Tujuan (Kecamatan / Kota)'}
                 </label>
                 <input
                   type="text"
@@ -2773,9 +3141,28 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 />
               </div>
 
+              {isCorporate && (
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
+                    Alamat Lengkap Penerima
+                  </label>
+                  <input
+                    type="text"
+                    value={editingFullRecord.alamat_penerima}
+                    onChange={(e) =>
+                      setEditingFullRecord({
+                        ...editingFullRecord,
+                        alamat_penerima: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                  />
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Services (Kolom E)
+                  Layanan JNE
                 </label>
                 <input
                   type="text"
@@ -2792,7 +3179,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Amount / Ongkir Rp (Kolom I)
+                  Ongkir (Rp)
                 </label>
                 <input
                   type="number"
@@ -2805,23 +3192,40 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Shipper Name (Kolom H)
-                </label>
-                <input
-                  type="text"
-                  value={editingFullRecord.nama_pengirim}
-                  onChange={(e) =>
-                    setEditingFullRecord({ ...editingFullRecord, nama_pengirim: e.target.value })
-                  }
-                  className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
-                />
-              </div>
+              {isCorporate ? (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
+                    Nominal Asuransi (Rp)
+                  </label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editingFullRecord.asuransi}
+                    onChange={(e) =>
+                      setEditingFullRecord({ ...editingFullRecord, asuransi: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-xl text-xs font-mono font-bold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
+                    Pengirim (Shipper)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingFullRecord.nama_pengirim}
+                    onChange={(e) =>
+                      setEditingFullRecord({ ...editingFullRecord, nama_pengirim: e.target.value })
+                    }
+                    className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-200 mb-1">
-                  Agen (Kolom K)
+                  Agen
                 </label>
                 <input
                   type="text"
@@ -2832,6 +3236,15 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                   className="w-full px-3 py-2 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white"
                 />
               </div>
+
+              {isCorporate && (
+                <div className="sm:col-span-2 flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs">
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">
+                    Status Pembayaran (otomatis dari sheet Tagihan JNECorporate)
+                  </span>
+                  {renderPaymentBadge(editingFullRecord.status_pembayaran)}
+                </div>
+              )}
             </div>
 
             <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-800 flex justify-end gap-2 shrink-0">
@@ -2848,16 +3261,14 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50 cursor-pointer"
               >
                 {isSavingFullEdit && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Simpan Perubahan GSheet</span>
+                <span>Simpan Perubahan</span>
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL KONFIRMASI HAPUS DARI GSHEET (KHUSUS ADMIN & WAREHOUSE)             */}
-      {/* ========================================================================= */}
+      {/* MODAL KONFIRMASI HAPUS (KHUSUS ADMIN & WAREHOUSE) */}
       {deleteTargetResis && canManage && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
@@ -2873,10 +3284,10 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
               </div>
               <div>
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                  Hapus {deleteTargetResis.length} Baris dari GSheet JNEMember?
+                  Hapus {deleteTargetResis.length} Resi dari {activeConfig.label}?
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
-                  Baris resi berikut akan dihapus langsung dari tab <b>JNEMember</b> di Google Sheets:
+                  Resi berikut akan dihapus langsung dari sheet <b>{activeConfig.sheetName}</b> di Google Sheets:
                 </p>
               </div>
             </div>
@@ -2913,16 +3324,14 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white disabled:opacity-50 cursor-pointer"
               >
                 {isDeleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                <span>Ya, Hapus dari GSheet</span>
+                <span>Ya, Hapus</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* MODAL PENGATURAN ENDPOINT GAS                                             */}
-      {/* ========================================================================= */}
+      {/* MODAL PENGATURAN ENDPOINT GAS */}
       {isSettingsModalOpen && (
         <div
           className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
@@ -2934,7 +3343,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
           >
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-                Pengaturan Endpoint Google Apps Script (JNEMember)
+                Pengaturan Endpoint Google Apps Script (JNE)
               </h3>
               <button
                 type="button"
@@ -2982,7 +3391,7 @@ export const JneRekapView: React.FC<JneRekapViewProps> = ({ session, onShowToast
                 }}
                 className="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer"
               >
-                Simpan & Tes Koneksi
+                Simpan &amp; Tes Koneksi
               </button>
             </div>
           </div>

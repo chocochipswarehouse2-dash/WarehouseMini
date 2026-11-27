@@ -1,117 +1,149 @@
 /**
  * =========================================================================
- * GOOGLE APPS SCRIPT BACKEND — REKAP TAGIHAN JNE (SHEET "JNEMember")
+ * GOOGLE APPS SCRIPT BACKEND — REKAP TAGIHAN JNE ("JNEmember" & "JNECorporate")
  * =========================================================================
  * Script ID   : 1Z1cIj3vnYR_CxK_SLuFqeOvlxnT5dUf7brhgW2X1Njj-Qr0qC7F9QmgZ
- * Spreadsheet : https://docs.google.com/spreadsheets/d/1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k/edit?gid=1026608111#gid=1026608111
- * Sheet Target: "JNEMember" (gid = 1026608111)
+ * Spreadsheet : https://docs.google.com/spreadsheets/d/1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k
  *
- * Struktur Kolom Baku Sheet JNEMember (Baris 1 = Header):
- * A (1)  : "" (Margin Kosong)
- * B (2)  : No
- * C (3)  : Cnote No (Format Teks '@' agar angka 0 di depan tidak hilang)
- * D (4)  : Deskripsi pengiriman (Sinkron 2 Arah: Frontend WMS <-> GSheet)
- * E (5)  : Services (CTC23, REG23, CTCYES23, YES23, JTR23, dll.)
- * F (6)  : Receiver Name
- * G (7)  : Destination
- * H (8)  : Shipper Name (Default: CCH-CHOCOCHIPS)
- * I (9)  : Amount (Numerik Rupiah dengan format '"Rp   "#,##0')
- * J (10) : Tanggal Pengiriman (Date dengan format 'dd/mm/yyyy')
- * K (11) : Agen (Default: JNE Member)
+ * 1) Sheet "JNEmember" (gid = 1026608111, A..K):
+ *    A(1): "" | B(2): No | C(3): Cnote No (@) | D(4): Deskripsi pengiriman
+ *    E(5): Services | F(6): Receiver Name | G(7): Destination | H(8): Shipper Name
+ *    I(9): Amount ("Rp   "#,##0) | J(10): Tanggal Pengiriman (dd/mm/yyyy) | K(11): Agen
+ *
+ * 2) Sheet "JNECorporate" (gid = 843586287, A..L):
+ *    A(1): "" | B(2): No Resi (@) | C(3): Deskripsi pengiriman | D(4): Tanggal Kiriman (dd/mm/yyyy)
+ *    E(5): Nama Penerima | F(6): Alamat Penerima | G(7): Kota Tujuan Penerima
+ *    H(8): Service | I(9): Ongkir | J(10): Nominal Asuransi
+ *    K(11): Status Pembayaran [RUMUS VLOOKUP ke 'Tagihan JNECorporate'!L:N — DILARANG TIMPA!]
+ *    L(12): Agen (Default: JNECorporated)
  * =========================================================================
  */
 
 var SPREADSHEET_ID = "1AvDc-u_mcxn3WwW6CV4WYfq05sWl4opdLJ2oC7SUP1k";
-var SHEET_NAME = "JNEMember";
-var TARGET_GID = 1026608111;
-var TOTAL_COLS = 11;
 
-var HEADERS = [
-  "",                       // A (1)
-  "No",                     // B (2)
-  "Cnote No",               // C (3)
-  "Deskripsi pengiriman",   // D (4)
-  "Services",               // E (5)
-  "Receiver Name",          // F (6)
-  "Destination",            // G (7)
-  "Shipper Name",           // H (8)
-  "Amount",                 // I (9)
-  "Tanggal Pengiriman",     // J (10)
-  "Agen"                    // K (11)
-];
+var SHEET_CONFIGS = {
+  member: {
+    type: "member",
+    names: ["JNEmember", "JNEMember"],
+    gid: 1026608111,
+    totalCols: 11,
+    resiCol: 3,  // C
+    descCol: 4,  // D
+    dateCol: 10, // J
+    amountCol: 9, // I
+    defaultAgen: "JNE Member",
+    headers: [
+      "", "No", "Cnote No", "Deskripsi pengiriman", "Services",
+      "Receiver Name", "Destination", "Shipper Name", "Amount",
+      "Tanggal Pengiriman", "Agen"
+    ]
+  },
+  corporate: {
+    type: "corporate",
+    names: ["JNECorporate", "JNECorporated"],
+    gid: 843586287,
+    totalCols: 12,
+    resiCol: 2,  // B
+    descCol: 3,  // C
+    dateCol: 4,  // D
+    amountCol: 9, // I
+    defaultAgen: "JNECorporated",
+    headers: [
+      "", "No Resi", "Deskripsi pengiriman", "Tanggal Kiriman",
+      "Nama Penerima", "Alamat Penerima", "Kota Tujuan Penerima",
+      "Service", "Ongkir", "Nominal Asuransi", "Status Pembayaran", "Agen"
+    ]
+  }
+};
 
 function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
 
-/**
- * Ambil sheet JNEMember berdasarkan nama atau gid=1026608111
- */
-function getJneMemberSheet() {
-  var ss;
+function resolveSheetType(rawType) {
+  var s = String(rawType || "").toLowerCase().replace(/[\s_\-]/g, "");
+  if (s === "corporate" || s === "jnecorporate" || s === "jnecorporated") {
+    return "corporate";
+  }
+  return "member";
+}
+
+function getSpreadsheet() {
   try {
-    ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+    return SpreadsheetApp.openById(SPREADSHEET_ID);
   } catch (e) {
-    ss = SpreadsheetApp.getActiveSpreadsheet();
+    return SpreadsheetApp.getActiveSpreadsheet();
+  }
+}
+
+function getTargetSheet(sheetType) {
+  var cfg = SHEET_CONFIGS[resolveSheetType(sheetType)];
+  var ss = getSpreadsheet();
+  var sheet = null;
+
+  for (var i = 0; i < cfg.names.length; i++) {
+    sheet = ss.getSheetByName(cfg.names[i]);
+    if (sheet) break;
   }
 
-  var sheet = ss.getSheetByName(SHEET_NAME);
   if (!sheet) {
     var allSheets = ss.getSheets();
-    for (var i = 0; i < allSheets.length; i++) {
-      if (allSheets[i].getSheetId() === TARGET_GID) {
-        sheet = allSheets[i];
+    for (var s = 0; s < allSheets.length; s++) {
+      if (allSheets[s].getSheetId() === cfg.gid) {
+        sheet = allSheets[s];
         break;
       }
     }
   }
 
   if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAME);
+    sheet = ss.insertSheet(cfg.names[0]);
   }
 
-  var lr = sheet.getLastRow();
-  if (lr < 1) {
-    sheet.getRange(1, 1, 1, TOTAL_COLS).setValues([HEADERS]);
-    sheet.getRange(1, 2, 1, TOTAL_COLS - 1)
+  if (sheet.getLastRow() < 1) {
+    sheet.getRange(1, 1, 1, cfg.totalCols).setValues([cfg.headers]);
+    sheet.getRange(1, 2, 1, cfg.totalCols - 1)
       .setFontWeight("bold")
       .setHorizontalAlignment("center");
     sheet.setFrozenRows(1);
   }
 
-  return sheet;
+  return { sheet: sheet, cfg: cfg };
 }
 
-/**
- * Deteksi baris header ("Cnote No") secara dinamis di baris 1..5 (default baris 1)
- */
-function detectHeaderRow(sheet) {
+function detectHeaderRow(sheet, cfg) {
   var lr = sheet.getLastRow();
   if (lr < 1) return 1;
   var scanRows = Math.min(lr, 5);
-  var sample = sheet.getRange(1, 1, scanRows, TOTAL_COLS).getDisplayValues();
+  var sample = sheet.getRange(1, 1, scanRows, cfg.totalCols).getDisplayValues();
   for (var r = 0; r < sample.length; r++) {
-    var colC = String(sample[r][2] || "").trim().toLowerCase();
-    var colD = String(sample[r][3] || "").trim().toLowerCase();
-    if (colC.indexOf("cnote") !== -1 || colC.indexOf("resi") !== -1 || colD.indexOf("deskripsi") !== -1) {
+    var colResi = String(sample[r][cfg.resiCol - 1] || "").trim().toLowerCase();
+    var colDesc = String(sample[r][cfg.descCol - 1] || "").trim().toLowerCase();
+    if (
+      colResi.indexOf("cnote") !== -1 ||
+      colResi.indexOf("resi") !== -1 ||
+      colDesc.indexOf("deskripsi") !== -1
+    ) {
       return r + 1;
     }
   }
   return 1;
 }
 
-/**
- * Normalisasi nomor resi tanpa memangkas leading zero
- */
 function cleanCnote(val) {
   if (val === null || val === undefined) return "";
-  return String(val).trim().replace(/[\s\-]/g, "").toUpperCase();
+  var s = String(val).trim().replace(/^['"`]+/, "").replace(/[\s\-_]/g, "").toUpperCase();
+  if (/^1379\d{10}$/.test(s) || /^14819\d{10,12}$/.test(s)) {
+    s = "0" + s;
+  }
+  return s;
 }
 
-/**
- * Parse nominal Rupiah baik dari angka maupun string "Rp   10.000" / "10,000.00"
- */
+function isHeaderPlaceholderResi(cnote) {
+  return !cnote || cnote === "CNOTENO" || cnote === "NORESI" || cnote === "RESI";
+}
+
 function parseAmountNumber(rawVal, displayVal) {
   if (typeof rawVal === "number" && !isNaN(rawVal)) {
     return Math.round(rawVal);
@@ -138,9 +170,6 @@ function parseAmountNumber(rawVal, displayVal) {
   return digits ? (parseInt(digits, 10) || 0) : 0;
 }
 
-/**
- * Normalisasi Tanggal dari sel GSheet ke string ISO YYYY-MM-DD
- */
 function normalizeSheetDateToIso(rawVal, displayVal) {
   if (rawVal instanceof Date && !isNaN(rawVal.getTime())) {
     return Utilities.formatDate(rawVal, "Asia/Jakarta", "yyyy-MM-dd");
@@ -148,11 +177,12 @@ function normalizeSheetDateToIso(rawVal, displayVal) {
   var s = String(displayVal || rawVal || "").trim();
   if (!s) return "";
 
-  var dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  var dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
   if (dmy) {
     var dd = ("0" + dmy[1]).slice(-2);
     var mm = ("0" + dmy[2]).slice(-2);
-    return dmy[3] + "-" + mm + "-" + dd;
+    var yy = dmy[3].length === 2 ? ("20" + dmy[3]) : dmy[3];
+    return yy + "-" + mm + "-" + dd;
   }
 
   var ymd = s.match(/^(\d{4})[\/\-\.](\d{1,2})[\/\-\.](\d{1,2})/);
@@ -165,10 +195,6 @@ function normalizeSheetDateToIso(rawVal, displayVal) {
   return s;
 }
 
-/**
- * Konversi string YYYY-MM-DD atau DD/MM/YYYY menjadi Date objek pukul 12:00 siang
- * agar tersimpan sebagai Date asli di GSheet dengan format dd/mm/yyyy tanpa geser timezone.
- */
 function parseIsoToSheetDateCell(dateStr) {
   var s = String(dateStr || "").trim();
   if (!s) return "";
@@ -178,40 +204,81 @@ function parseIsoToSheetDateCell(dateStr) {
     return new Date(parseInt(ymd[1], 10), parseInt(ymd[2], 10) - 1, parseInt(ymd[3], 10), 12, 0, 0);
   }
 
-  var dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{4})/);
+  var dmy = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
   if (dmy) {
-    return new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10), 12, 0, 0);
+    var y = dmy[3].length === 2 ? ("20" + dmy[3]) : dmy[3];
+    return new Date(parseInt(y, 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10), 12, 0, 0);
   }
 
   return s;
 }
 
-/**
- * Terapkan format kolom standar JNEMember SEBELUM/SESUDAH penulisan baris baru
- */
-function preFormatCnoteAsText(sheet, startRow, numRows) {
+function preFormatResiAsText(sheet, cfg, startRow, numRows) {
   if (numRows < 1) return;
-  sheet.getRange(startRow, 3, numRows, 1).setNumberFormat("@");
+  sheet.getRange(startRow, cfg.resiCol, numRows, 1).setNumberFormat("@");
 }
 
-function postFormatJneMemberRows(sheet, startRow, numRows) {
+function postFormatRows(sheet, cfg, startRow, numRows) {
   if (numRows < 1) return;
-  sheet.getRange(startRow, 3, numRows, 1).setNumberFormat("@");
-  sheet.getRange(startRow, 9, numRows, 1).setNumberFormat('"Rp   "#,##0');
-  sheet.getRange(startRow, 10, numRows, 1).setNumberFormat("dd/mm/yyyy");
+  sheet.getRange(startRow, cfg.resiCol, numRows, 1).setNumberFormat("@");
+  sheet.getRange(startRow, cfg.dateCol, numRows, 1).setNumberFormat("dd/mm/yyyy");
+  if (cfg.type === "member") {
+    sheet.getRange(startRow, cfg.amountCol, numRows, 1).setNumberFormat('"Rp   "#,##0');
+  } else {
+    // Pastikan Kolom K (Status Pembayaran) memiliki formula VLOOKUP jika masih kosong
+    var kRange = sheet.getRange(startRow, 11, numRows, 1);
+    var existingFormulas = kRange.getFormulas();
+    var existingVals = kRange.getValues();
+    var needFormulaUpdate = false;
+    var formulasOut = [];
+    for (var i = 0; i < numRows; i++) {
+      var curF = existingFormulas[i][0];
+      var curV = String(existingVals[i][0] || "").trim();
+      if (curF) {
+        formulasOut.push([curF]);
+      } else if (!curV || curV === "Belum Ada Tagihan") {
+        var rNum = startRow + i;
+        formulasOut.push(['=IFERROR(VLOOKUP(B' + rNum + ',\'Tagihan JNECorporate\'!L:N,3,0),"Belum Ada Tagihan")']);
+        needFormulaUpdate = true;
+      } else {
+        formulasOut.push([""]);
+      }
+    }
+    if (needFormulaUpdate) {
+      for (var k = 0; k < formulasOut.length; k++) {
+        if (formulasOut[k][0] && !existingFormulas[k][0]) {
+          sheet.getRange(startRow + k, 11).setFormula(formulasOut[k][0]);
+        }
+      }
+    }
+  }
 }
 
 /**
- * Bangun peta Cnote -> Nomor Baris 1-based di GSheet
+ * Cari baris terakhir yang Kolom Resi-nya benar-benar terisi
+ * (kritis untuk JNECorporate yang punya formula VLOOKUP kosong sampai baris 2961)
  */
-function buildCnoteRowMap(sheet, dataStartRow, lastRow) {
+function findLastDataRowByResiCol(sheet, dataStartRow, resiCol) {
+  var lr = sheet.getLastRow();
+  if (lr < dataStartRow) return dataStartRow - 1;
+  var numRows = lr - dataStartRow + 1;
+  var vals = sheet.getRange(dataStartRow, resiCol, numRows, 1).getDisplayValues();
+  for (var i = vals.length - 1; i >= 0; i--) {
+    if (String(vals[i][0] || "").trim() !== "") {
+      return dataStartRow + i;
+    }
+  }
+  return dataStartRow - 1;
+}
+
+function buildResiRowMap(sheet, cfg, dataStartRow, lastDataRow) {
   var map = {};
-  if (lastRow < dataStartRow) return map;
-  var numRows = lastRow - dataStartRow + 1;
-  var cnoteDisplay = sheet.getRange(dataStartRow, 3, numRows, 1).getDisplayValues();
-  for (var i = 0; i < cnoteDisplay.length; i++) {
-    var key = cleanCnote(cnoteDisplay[i][0]);
-    if (key) {
+  if (lastDataRow < dataStartRow) return map;
+  var numRows = lastDataRow - dataStartRow + 1;
+  var resiDisplay = sheet.getRange(dataStartRow, cfg.resiCol, numRows, 1).getDisplayValues();
+  for (var i = 0; i < resiDisplay.length; i++) {
+    var key = cleanCnote(resiDisplay[i][0]);
+    if (!isHeaderPlaceholderResi(key)) {
       map[key] = dataStartRow + i;
     }
   }
@@ -220,19 +287,24 @@ function buildCnoteRowMap(sheet, dataStartRow, lastRow) {
 
 /**
  * =========================================================================
- * 1. API GET: Baca seluruh baris dari Sheet "JNEMember"
+ * 1. API GET: Baca seluruh baris dari Sheet "JNEmember" atau "JNECorporate"
  * =========================================================================
  */
 function doGet(e) {
   try {
-    var sheet = getJneMemberSheet();
-    var lastRow = sheet.getLastRow();
-    var headerRow = detectHeaderRow(sheet);
-    var dataStartRow = headerRow + 1;
+    var sheetType = resolveSheetType(e && e.parameter ? e.parameter.sheet : "member");
+    var ctx = getTargetSheet(sheetType);
+    var sheet = ctx.sheet;
+    var cfg = ctx.cfg;
 
-    if (lastRow < dataStartRow) {
+    var headerRow = detectHeaderRow(sheet, cfg);
+    var dataStartRow = headerRow + 1;
+    var lastDataRow = findLastDataRowByResiCol(sheet, dataStartRow, cfg.resiCol);
+
+    if (lastDataRow < dataStartRow) {
       return jsonResponse({
         success: true,
+        sheet_type: cfg.type,
         sheet_name: sheet.getName(),
         gid: sheet.getSheetId(),
         header_row: headerRow,
@@ -241,8 +313,8 @@ function doGet(e) {
       });
     }
 
-    var numRows = lastRow - dataStartRow + 1;
-    var rawRange = sheet.getRange(dataStartRow, 1, numRows, TOTAL_COLS);
+    var numRows = lastDataRow - dataStartRow + 1;
+    var rawRange = sheet.getRange(dataStartRow, 1, numRows, cfg.totalCols);
     var rawValues = rawRange.getValues();
     var displayValues = rawRange.getDisplayValues();
     var records = [];
@@ -250,38 +322,51 @@ function doGet(e) {
     for (var i = 0; i < numRows; i++) {
       var raw = rawValues[i];
       var disp = displayValues[i];
-
-      var cnote = cleanCnote(disp[2] || raw[2]);
-      if (!cnote || cnote === "CNOTENO" || cnote === "NORESI") continue;
-
       var rowNumber = dataStartRow + i;
-      var noVal = String(disp[1] || raw[1] || "").trim();
-      var deskripsi = String(disp[3] !== undefined ? disp[3] : (raw[3] || "")).trim();
-      var layanan = String(disp[4] || raw[4] || "").trim();
-      var namaTujuan = String(disp[5] || raw[5] || "").trim();
-      var alamatTujuan = String(disp[6] || raw[6] || "").trim();
-      var namaPengirim = String(disp[7] || raw[7] || "CCH-CHOCOCHIPS").trim();
-      var nominal = parseAmountNumber(raw[8], disp[8]);
-      var tanggalIso = normalizeSheetDateToIso(raw[9], disp[9]);
-      var agen = String(disp[10] || raw[10] || "JNE Member").trim();
 
-      records.push({
-        row_number: rowNumber,
-        no: noVal,
-        no_resi: cnote,
-        deskripsi: deskripsi,
-        layanan: layanan || "REG23",
-        nama_tujuan: namaTujuan,
-        alamat_tujuan: alamatTujuan,
-        nama_pengirim: namaPengirim || "CCH-CHOCOCHIPS",
-        nominal: nominal,
-        tanggal: tanggalIso,
-        agen: agen || "JNE Member"
-      });
+      if (cfg.type === "member") {
+        var cnote = cleanCnote(disp[2] || raw[2]);
+        if (isHeaderPlaceholderResi(cnote)) continue;
+
+        records.push({
+          row_number: rowNumber,
+          no: String(disp[1] || raw[1] || "").trim(),
+          no_resi: cnote,
+          deskripsi: String(disp[3] !== undefined ? disp[3] : (raw[3] || "")).trim(),
+          layanan: String(disp[4] || raw[4] || "REG23").trim() || "REG23",
+          nama_tujuan: String(disp[5] || raw[5] || "").trim(),
+          alamat_tujuan: String(disp[6] || raw[6] || "").trim(),
+          nama_pengirim: String(disp[7] || raw[7] || "CCH-CHOCOCHIPS").trim() || "CCH-CHOCOCHIPS",
+          nominal: parseAmountNumber(raw[8], disp[8]),
+          tanggal: normalizeSheetDateToIso(raw[9], disp[9]),
+          agen: String(disp[10] || raw[10] || "JNE Member").trim() || "JNE Member"
+        });
+      } else {
+        var resiCorp = cleanCnote(disp[1] || raw[1]);
+        if (isHeaderPlaceholderResi(resiCorp)) continue;
+
+        records.push({
+          row_number: rowNumber,
+          no: "",
+          no_resi: resiCorp,
+          deskripsi: String(disp[2] !== undefined ? disp[2] : (raw[2] || "")).trim(),
+          tanggal: normalizeSheetDateToIso(raw[3], disp[3]),
+          nama_tujuan: String(disp[4] || raw[4] || "").trim(),
+          alamat_penerima: String(disp[5] || raw[5] || "").trim(),
+          alamat_tujuan: String(disp[6] || raw[6] || "").trim(),
+          layanan: String(disp[7] || raw[7] || "REG23").trim() || "REG23",
+          nama_pengirim: "",
+          nominal: parseAmountNumber(raw[8], disp[8]),
+          asuransi: parseAmountNumber(raw[9], disp[9]),
+          status_pembayaran: String(disp[10] || raw[10] || "Belum Ada Tagihan").trim() || "Belum Ada Tagihan",
+          agen: String(disp[11] || raw[11] || "JNECorporated").trim() || "JNECorporated"
+        });
+      }
     }
 
     return jsonResponse({
       success: true,
+      sheet_type: cfg.type,
       sheet_name: sheet.getName(),
       gid: sheet.getSheetId(),
       header_row: headerRow,
@@ -295,7 +380,7 @@ function doGet(e) {
 
 /**
  * =========================================================================
- * 2. API POST: Operasi CRUD & Sinkronisasi 2 Arah pada Sheet "JNEMember"
+ * 2. API POST: Operasi CRUD & Sinkronisasi 2 Arah pada Sheet Pilihan
  * =========================================================================
  */
 function doPost(e) {
@@ -303,7 +388,7 @@ function doPost(e) {
   try {
     lock.waitLock(25000);
   } catch (lockErr) {
-    return jsonResponse({ success: false, error: "Server GSheet sedang sibuk, silakan coba beberapa detik lagi." });
+    return jsonResponse({ success: false, error: "Google Sheets sedang sibuk, silakan coba beberapa detik lagi." });
   }
 
   try {
@@ -318,13 +403,16 @@ function doPost(e) {
       payload = e ? e.parameter : {};
     }
 
-    var sheet = getJneMemberSheet();
-    var headerRow = detectHeaderRow(sheet);
+    var sheetType = resolveSheetType(payload.sheet || (e && e.parameter ? e.parameter.sheet : "member"));
+    var ctx = getTargetSheet(sheetType);
+    var sheet = ctx.sheet;
+    var cfg = ctx.cfg;
+    var headerRow = detectHeaderRow(sheet, cfg);
     var dataStartRow = headerRow + 1;
     var action = String(payload.action || "").trim();
 
     // -----------------------------------------------------------------------
-    // ACTION 1: UPDATE DESKRIPSI PENGIRIMAN (KOLOM D) — SATUAN
+    // ACTION 1: UPDATE DESKRIPSI PENGIRIMAN — SATUAN
     // -----------------------------------------------------------------------
     if (action === "updateDeskripsi") {
       var targetResi = cleanCnote(payload.no_resi || payload.cnote_no || payload.resi);
@@ -333,27 +421,27 @@ function doPost(e) {
         : "";
 
       if (!targetResi) {
-        return jsonResponse({ success: false, error: "Nomor Resi (Cnote No) wajib diisi." });
+        return jsonResponse({ success: false, error: "Nomor Resi wajib diisi." });
       }
 
-      var lr = sheet.getLastRow();
-      var cnoteMap = buildCnoteRowMap(sheet, dataStartRow, lr);
-      var foundRow = cnoteMap[targetResi] || -1;
+      var lastRow1 = findLastDataRowByResiCol(sheet, dataStartRow, cfg.resiCol);
+      var cnoteMap1 = buildResiRowMap(sheet, cfg, dataStartRow, lastRow1);
+      var foundRow = cnoteMap1[targetResi] || -1;
 
       if (foundRow === -1) {
         return jsonResponse({
           success: false,
-          error: "Cnote No '" + targetResi + "' belum ditemukan di sheet JNEMember."
+          error: "Nomor resi '" + targetResi + "' belum ditemukan di sheet " + sheet.getName() + "."
         });
       }
 
-      // Hanya tulis Kolom D (kolom ke-4) tanpa menyentuh kolom lain
-      sheet.getRange(foundRow, 4).setValue(newDeskripsi);
+      sheet.getRange(foundRow, cfg.descCol).setValue(newDeskripsi);
       SpreadsheetApp.flush();
 
       return jsonResponse({
         success: true,
-        message: "Deskripsi pengiriman untuk Cnote " + targetResi + " tersimpan ke GSheet.",
+        sheet_type: cfg.type,
+        message: "Deskripsi pengiriman untuk resi " + targetResi + " tersimpan ke Google Sheets.",
         row_number: foundRow,
         no_resi: targetResi,
         deskripsi: newDeskripsi
@@ -361,7 +449,7 @@ function doPost(e) {
     }
 
     // -----------------------------------------------------------------------
-    // ACTION 2: BULK UPDATE DESKRIPSI PENGIRIMAN (KOLOM D) — MASSAL
+    // ACTION 2: BULK UPDATE DESKRIPSI PENGIRIMAN — MASSAL
     // -----------------------------------------------------------------------
     if (action === "bulkUpdateDeskripsi") {
       var updates = Array.isArray(payload.updates) ? payload.updates : [];
@@ -369,8 +457,8 @@ function doPost(e) {
         return jsonResponse({ success: false, error: "Daftar update deskripsi kosong." });
       }
 
-      var lrBulk = sheet.getLastRow();
-      var mapBulk = buildCnoteRowMap(sheet, dataStartRow, lrBulk);
+      var lrBulk = findLastDataRowByResiCol(sheet, dataStartRow, cfg.resiCol);
+      var mapBulk = buildResiRowMap(sheet, cfg, dataStartRow, lrBulk);
       var updatedDescCount = 0;
 
       for (var u = 0; u < updates.length; u++) {
@@ -381,7 +469,7 @@ function doPost(e) {
         var dText = item.deskripsi !== undefined && item.deskripsi !== null
           ? String(item.deskripsi).trim()
           : "";
-        sheet.getRange(mapBulk[rKey], 4).setValue(dText);
+        sheet.getRange(mapBulk[rKey], cfg.descCol).setValue(dText);
         updatedDescCount++;
       }
 
@@ -389,13 +477,14 @@ function doPost(e) {
 
       return jsonResponse({
         success: true,
-        message: updatedDescCount + " deskripsi pengiriman berhasil disimpan ke GSheet JNEMember.",
+        sheet_type: cfg.type,
+        message: updatedDescCount + " deskripsi pengiriman tersimpan ke Google Sheets " + sheet.getName() + ".",
         updated_count: updatedDescCount
       });
     }
 
     // -----------------------------------------------------------------------
-    // ACTION 3: TAMBAH / IMPORT RECORDS BARU (UPSERT AMAN TANPA TIMPA KOLOM D)
+    // ACTION 3: TAMBAH / IMPORT RECORDS BARU (UPSERT AMAN)
     // -----------------------------------------------------------------------
     if (action === "upsertRecords" || action === "batchSave" || action === "saveRecords" || action === "addRecord") {
       var items = Array.isArray(payload.records)
@@ -410,20 +499,21 @@ function doPost(e) {
       var overwriteDeskripsi = payload.overwrite_deskripsi === true;
       var skipDuplicates = payload.skip_duplicates === true;
 
-      var lastRow = sheet.getLastRow();
-      var existingMap = buildCnoteRowMap(sheet, dataStartRow, lastRow);
+      var lastDataRow = findLastDataRowByResiCol(sheet, dataStartRow, cfg.resiCol);
+      var existingMap = buildResiRowMap(sheet, cfg, dataStartRow, lastDataRow);
 
-      // Baca nilai Kolom D existing agar deskripsi manual di GSheet tidak pernah tertimpa kosong
       var existingDescByRow = {};
-      if (lastRow >= dataStartRow) {
-        var numExisting = lastRow - dataStartRow + 1;
-        var colDValues = sheet.getRange(dataStartRow, 4, numExisting, 1).getDisplayValues();
-        for (var dIdx = 0; dIdx < colDValues.length; dIdx++) {
-          existingDescByRow[dataStartRow + dIdx] = String(colDValues[dIdx][0] || "").trim();
+      if (lastDataRow >= dataStartRow) {
+        var numExisting = lastDataRow - dataStartRow + 1;
+        var colDescValues = sheet.getRange(dataStartRow, cfg.descCol, numExisting, 1).getDisplayValues();
+        for (var dIdx = 0; dIdx < colDescValues.length; dIdx++) {
+          existingDescByRow[dataStartRow + dIdx] = String(colDescValues[dIdx][0] || "").trim();
         }
       }
 
-      var newRows = [];
+      var newRowsBtoJ = [];
+      var newRowsL = [];
+      var newMemberRows = [];
       var insertedCount = 0;
       var updatedCount = 0;
       var skippedCount = 0;
@@ -431,16 +521,18 @@ function doPost(e) {
       for (var j = 0; j < items.length; j++) {
         var it = items[j] || {};
         var cnote = cleanCnote(it.no_resi || it.cnote_no || it.resi);
-        if (!cnote) continue;
+        if (isHeaderPlaceholderResi(cnote)) continue;
 
         var deskripsiVal = String(it.deskripsi !== undefined ? it.deskripsi : (it.keterangan || "")).trim();
         var layananVal = String(it.layanan || it.services || it.service || "REG23").trim().toUpperCase();
         var receiverVal = String(it.nama_tujuan || it.receiver_name || it.nama_penerima || "").trim();
-        var destVal = String(it.alamat_tujuan || it.destination || it.alamat || "").trim();
+        var alamatPenerimaVal = String(it.alamat_penerima || it.full_address || "").trim();
+        var destVal = String(it.alamat_tujuan || it.destination || it.kota_tujuan || "").trim();
         var shipperVal = String(it.nama_pengirim || it.shipper_name || "CCH-CHOCOCHIPS").trim();
-        var amountVal = parseAmountNumber(it.nominal !== undefined ? it.nominal : it.amount, "");
-        var dateCellVal = parseIsoToSheetDateCell(it.tanggal || it.date || "");
-        var agenVal = String(it.agen || "JNE Member").trim();
+        var amountVal = parseAmountNumber(it.nominal !== undefined ? it.nominal : (it.ongkir !== undefined ? it.ongkir : it.amount), "");
+        var asuransiVal = parseAmountNumber(it.asuransi !== undefined ? it.asuransi : it.nominal_asuransi, "");
+        var dateCellVal = parseIsoToSheetDateCell(it.tanggal || it.tanggal_kiriman || it.date || "");
+        var agenVal = String(it.agen || cfg.defaultAgen).trim() || cfg.defaultAgen;
         var noColVal = it.no !== undefined && it.no !== null ? String(it.no).trim() : "";
 
         if (existingMap[cnote]) {
@@ -452,58 +544,93 @@ function doPost(e) {
           var rowNum = existingMap[cnote];
           var currentSheetDesc = existingDescByRow[rowNum] || "";
 
-          // Update Kolom D hanya jika diminta eksplisit ATAU jika Kolom D di GSheet masih kosong dan input baru punya isi
           if (overwriteDeskripsi || (!currentSheetDesc && deskripsiVal)) {
-            sheet.getRange(rowNum, 4).setValue(deskripsiVal);
+            sheet.getRange(rowNum, cfg.descCol).setValue(deskripsiVal);
             existingDescByRow[rowNum] = deskripsiVal;
           }
 
           if (overwriteExisting) {
-            if (layananVal) sheet.getRange(rowNum, 5).setValue(layananVal);
-            if (receiverVal && receiverVal !== "-") sheet.getRange(rowNum, 6).setValue(receiverVal);
-            if (destVal && destVal !== "-") sheet.getRange(rowNum, 7).setValue(destVal);
-            if (shipperVal) sheet.getRange(rowNum, 8).setValue(shipperVal);
-            if (amountVal > 0) {
-              sheet.getRange(rowNum, 9).setValue(amountVal).setNumberFormat('"Rp   "#,##0');
+            if (cfg.type === "member") {
+              if (layananVal) sheet.getRange(rowNum, 5).setValue(layananVal);
+              if (receiverVal && receiverVal !== "-") sheet.getRange(rowNum, 6).setValue(receiverVal);
+              if (destVal && destVal !== "-") sheet.getRange(rowNum, 7).setValue(destVal);
+              if (shipperVal) sheet.getRange(rowNum, 8).setValue(shipperVal);
+              if (amountVal > 0) {
+                sheet.getRange(rowNum, 9).setValue(amountVal).setNumberFormat('"Rp   "#,##0');
+              }
+              if (dateCellVal) {
+                sheet.getRange(rowNum, 10).setValue(dateCellVal).setNumberFormat("dd/mm/yyyy");
+              }
+              if (agenVal) sheet.getRange(rowNum, 11).setValue(agenVal);
+            } else {
+              if (dateCellVal) {
+                sheet.getRange(rowNum, 4).setValue(dateCellVal).setNumberFormat("dd/mm/yyyy");
+              }
+              if (receiverVal && receiverVal !== "-") sheet.getRange(rowNum, 5).setValue(receiverVal);
+              if (alamatPenerimaVal && alamatPenerimaVal !== "-") sheet.getRange(rowNum, 6).setValue(alamatPenerimaVal);
+              if (destVal && destVal !== "-") sheet.getRange(rowNum, 7).setValue(destVal);
+              if (layananVal) sheet.getRange(rowNum, 8).setValue(layananVal);
+              if (amountVal > 0) sheet.getRange(rowNum, 9).setValue(amountVal);
+              if (asuransiVal > 0) sheet.getRange(rowNum, 10).setValue(asuransiVal);
+              if (agenVal) sheet.getRange(rowNum, 12).setValue(agenVal);
             }
-            if (dateCellVal) {
-              sheet.getRange(rowNum, 10).setValue(dateCellVal).setNumberFormat("dd/mm/yyyy");
-            }
-            if (agenVal) sheet.getRange(rowNum, 11).setValue(agenVal);
           }
           updatedCount++;
         } else {
-          newRows.push([
-            "",            // A: kosong
-            noColVal,      // B: No
-            cnote,         // C: Cnote No
-            deskripsiVal,  // D: Deskripsi pengiriman
-            layananVal,    // E: Services
-            receiverVal === "-" ? "" : receiverVal, // F: Receiver Name
-            destVal === "-" ? "" : destVal,         // G: Destination
-            shipperVal || "CCH-CHOCOCHIPS",         // H: Shipper Name
-            amountVal,     // I: Amount
-            dateCellVal,   // J: Tanggal Pengiriman
-            agenVal || "JNE Member"                 // K: Agen
-          ]);
-          existingMap[cnote] = lastRow + newRows.length;
+          if (cfg.type === "member") {
+            newMemberRows.push([
+              "",
+              noColVal,
+              cnote,
+              deskripsiVal,
+              layananVal,
+              receiverVal === "-" ? "" : receiverVal,
+              destVal === "-" ? "" : destVal,
+              shipperVal || "CCH-CHOCOCHIPS",
+              amountVal,
+              dateCellVal,
+              agenVal || "JNE Member"
+            ]);
+            existingMap[cnote] = lastDataRow + newMemberRows.length;
+          } else {
+            newRowsBtoJ.push([
+              cnote,
+              deskripsiVal,
+              dateCellVal,
+              receiverVal === "-" ? "" : receiverVal,
+              alamatPenerimaVal === "-" ? "" : alamatPenerimaVal,
+              destVal === "-" ? "" : destVal,
+              layananVal,
+              amountVal,
+              asuransiVal
+            ]);
+            newRowsL.push([agenVal || "JNECorporated"]);
+            existingMap[cnote] = lastDataRow + newRowsBtoJ.length;
+          }
           insertedCount++;
         }
       }
 
-      if (newRows.length > 0) {
-        var startAppendRow = Math.max(sheet.getLastRow() + 1, dataStartRow);
-        // WAJIB format Kolom C sebagai teks '@' SEBELUM setValues agar leading 0 tidak hilang
-        preFormatCnoteAsText(sheet, startAppendRow, newRows.length);
-        sheet.getRange(startAppendRow, 1, newRows.length, TOTAL_COLS).setValues(newRows);
-        postFormatJneMemberRows(sheet, startAppendRow, newRows.length);
+      if (cfg.type === "member" && newMemberRows.length > 0) {
+        var startAppendMember = Math.max(lastDataRow + 1, dataStartRow);
+        preFormatResiAsText(sheet, cfg, startAppendMember, newMemberRows.length);
+        sheet.getRange(startAppendMember, 1, newMemberRows.length, cfg.totalCols).setValues(newMemberRows);
+        postFormatRows(sheet, cfg, startAppendMember, newMemberRows.length);
+      } else if (cfg.type === "corporate" && newRowsBtoJ.length > 0) {
+        var startAppendCorp = Math.max(lastDataRow + 1, dataStartRow);
+        preFormatResiAsText(sheet, cfg, startAppendCorp, newRowsBtoJ.length);
+        // Tulis B..J dan L tanpa menyentuh rumus VLOOKUP di Kolom K
+        sheet.getRange(startAppendCorp, 2, newRowsBtoJ.length, 9).setValues(newRowsBtoJ);
+        sheet.getRange(startAppendCorp, 12, newRowsL.length, 1).setValues(newRowsL);
+        postFormatRows(sheet, cfg, startAppendCorp, newRowsBtoJ.length);
       }
 
       SpreadsheetApp.flush();
 
       return jsonResponse({
         success: true,
-        message: "GSheet JNEMember diperbarui: " + insertedCount + " resi baru ditambahkan" +
+        sheet_type: cfg.type,
+        message: "Google Sheets " + sheet.getName() + " diperbarui: " + insertedCount + " resi baru ditambahkan" +
           (updatedCount > 0 ? (", " + updatedCount + " diperbarui") : "") +
           (skippedCount > 0 ? (", " + skippedCount + " duplikat dilewati") : "") + ".",
         inserted: insertedCount,
@@ -520,58 +647,80 @@ function doPost(e) {
       var rec = payload.record || payload;
       var newResi = cleanCnote(rec.no_resi || origResi);
 
-      if (!origResi || !newResi) {
-        return jsonResponse({ success: false, error: "Nomor Resi (Cnote No) wajib diisi." });
+      if (isHeaderPlaceholderResi(origResi) || isHeaderPlaceholderResi(newResi)) {
+        return jsonResponse({ success: false, error: "Nomor Resi wajib diisi." });
       }
 
-      var lrEdit = sheet.getLastRow();
-      var mapEdit = buildCnoteRowMap(sheet, dataStartRow, lrEdit);
+      var lrEdit = findLastDataRowByResiCol(sheet, dataStartRow, cfg.resiCol);
+      var mapEdit = buildResiRowMap(sheet, cfg, dataStartRow, lrEdit);
       var targetRowEdit = mapEdit[origResi] || -1;
 
       if (targetRowEdit === -1) {
         return jsonResponse({
           success: false,
-          error: "Baris Cnote '" + origResi + "' tidak ditemukan di GSheet JNEMember."
+          error: "Nomor resi '" + origResi + "' tidak ditemukan di Google Sheets " + sheet.getName() + "."
         });
       }
 
       if (newResi !== origResi && mapEdit[newResi] && mapEdit[newResi] !== targetRowEdit) {
         return jsonResponse({
           success: false,
-          error: "Cnote No '" + newResi + "' sudah terdaftar pada baris #" + mapEdit[newResi] + "."
+          error: "Nomor resi '" + newResi + "' sudah terdaftar pada baris #" + mapEdit[newResi] + "."
         });
       }
 
-      var currentRowVals = sheet.getRange(targetRowEdit, 1, 1, TOTAL_COLS).getValues()[0];
-      var updatedRow = [
-        currentRowVals[0] || "",
-        rec.no !== undefined ? String(rec.no).trim() : currentRowVals[1],
-        newResi,
-        rec.deskripsi !== undefined ? String(rec.deskripsi).trim() : currentRowVals[3],
-        String(rec.layanan || currentRowVals[4] || "REG23").trim().toUpperCase(),
-        rec.nama_tujuan !== undefined ? String(rec.nama_tujuan === "-" ? "" : rec.nama_tujuan).trim() : currentRowVals[5],
-        rec.alamat_tujuan !== undefined ? String(rec.alamat_tujuan === "-" ? "" : rec.alamat_tujuan).trim() : currentRowVals[6],
-        String(rec.nama_pengirim || currentRowVals[7] || "CCH-CHOCOCHIPS").trim(),
-        rec.nominal !== undefined ? parseAmountNumber(rec.nominal, "") : currentRowVals[8],
-        rec.tanggal ? parseIsoToSheetDateCell(rec.tanggal) : currentRowVals[9],
-        String(rec.agen || currentRowVals[10] || "JNE Member").trim()
-      ];
+      var currentRowVals = sheet.getRange(targetRowEdit, 1, 1, cfg.totalCols).getValues()[0];
+      if (cfg.type === "member") {
+        var updatedMemberRow = [
+          currentRowVals[0] || "",
+          rec.no !== undefined ? String(rec.no).trim() : currentRowVals[1],
+          newResi,
+          rec.deskripsi !== undefined ? String(rec.deskripsi).trim() : currentRowVals[3],
+          String(rec.layanan || currentRowVals[4] || "REG23").trim().toUpperCase(),
+          rec.nama_tujuan !== undefined ? String(rec.nama_tujuan === "-" ? "" : rec.nama_tujuan).trim() : currentRowVals[5],
+          rec.alamat_tujuan !== undefined ? String(rec.alamat_tujuan === "-" ? "" : rec.alamat_tujuan).trim() : currentRowVals[6],
+          String(rec.nama_pengirim || currentRowVals[7] || "CCH-CHOCOCHIPS").trim(),
+          rec.nominal !== undefined ? parseAmountNumber(rec.nominal, "") : currentRowVals[8],
+          rec.tanggal ? parseIsoToSheetDateCell(rec.tanggal) : currentRowVals[9],
+          String(rec.agen || currentRowVals[10] || "JNE Member").trim()
+        ];
 
-      preFormatCnoteAsText(sheet, targetRowEdit, 1);
-      sheet.getRange(targetRowEdit, 1, 1, TOTAL_COLS).setValues([updatedRow]);
-      postFormatJneMemberRows(sheet, targetRowEdit, 1);
+        preFormatResiAsText(sheet, cfg, targetRowEdit, 1);
+        sheet.getRange(targetRowEdit, 1, 1, cfg.totalCols).setValues([updatedMemberRow]);
+        postFormatRows(sheet, cfg, targetRowEdit, 1);
+      } else {
+        var updatedCorpBtoJ = [[
+          newResi,
+          rec.deskripsi !== undefined ? String(rec.deskripsi).trim() : currentRowVals[2],
+          rec.tanggal ? parseIsoToSheetDateCell(rec.tanggal) : currentRowVals[3],
+          rec.nama_tujuan !== undefined ? String(rec.nama_tujuan === "-" ? "" : rec.nama_tujuan).trim() : currentRowVals[4],
+          rec.alamat_penerima !== undefined ? String(rec.alamat_penerima === "-" ? "" : rec.alamat_penerima).trim() : currentRowVals[5],
+          rec.alamat_tujuan !== undefined ? String(rec.alamat_tujuan === "-" ? "" : rec.alamat_tujuan).trim() : currentRowVals[6],
+          String(rec.layanan || currentRowVals[7] || "REG23").trim().toUpperCase(),
+          rec.nominal !== undefined ? parseAmountNumber(rec.nominal, "") : currentRowVals[8],
+          rec.asuransi !== undefined ? parseAmountNumber(rec.asuransi, "") : currentRowVals[9]
+        ]];
+        var updatedCorpL = [[String(rec.agen || currentRowVals[11] || "JNECorporated").trim()]];
+
+        preFormatResiAsText(sheet, cfg, targetRowEdit, 1);
+        sheet.getRange(targetRowEdit, 2, 1, 9).setValues(updatedCorpBtoJ);
+        sheet.getRange(targetRowEdit, 12, 1, 1).setValues(updatedCorpL);
+        postFormatRows(sheet, cfg, targetRowEdit, 1);
+      }
+
       SpreadsheetApp.flush();
 
       return jsonResponse({
         success: true,
-        message: "Data Cnote " + newResi + " (baris #" + targetRowEdit + ") berhasil diperbarui di GSheet.",
+        sheet_type: cfg.type,
+        message: "Data resi " + newResi + " berhasil diperbarui di Google Sheets " + sheet.getName() + ".",
         row_number: targetRowEdit,
         no_resi: newResi
       });
     }
 
     // -----------------------------------------------------------------------
-    // ACTION 5: HAPUS BARIS DARI GSHEET JNEMember (KHUSUS ADMIN & WAREHOUSE)
+    // ACTION 5: HAPUS BARIS DARI GOOGLE SHEETS (KHUSUS ADMIN & WAREHOUSE)
     // -----------------------------------------------------------------------
     if (action === "deleteRecords" || action === "deleteRecord") {
       var rawTargets = Array.isArray(payload.no_resis)
@@ -584,22 +733,21 @@ function doPost(e) {
         if (cleaned) targetSet[cleaned] = true;
       }
 
-      var targetKeys = Object.keys(targetSet);
-      if (targetKeys.length === 0) {
-        return jsonResponse({ success: false, error: "Tidak ada Cnote No yang dipilih untuk dihapus." });
+      if (Object.keys(targetSet).length === 0) {
+        return jsonResponse({ success: false, error: "Tidak ada nomor resi yang dipilih untuk dihapus." });
       }
 
-      var lrDel = sheet.getLastRow();
+      var lrDel = findLastDataRowByResiCol(sheet, dataStartRow, cfg.resiCol);
       if (lrDel < dataStartRow) {
         return jsonResponse({ success: true, deleted_count: 0, message: "Sheet sudah kosong." });
       }
 
       var numDelScan = lrDel - dataStartRow + 1;
-      var cnotesCol = sheet.getRange(dataStartRow, 3, numDelScan, 1).getDisplayValues();
+      var resiColVals = sheet.getRange(dataStartRow, cfg.resiCol, numDelScan, 1).getDisplayValues();
       var rowsToDelete = [];
 
-      for (var rIdx = 0; rIdx < cnotesCol.length; rIdx++) {
-        var rowKey = cleanCnote(cnotesCol[rIdx][0]);
+      for (var rIdx = 0; rIdx < resiColVals.length; rIdx++) {
+        var rowKey = cleanCnote(resiColVals[rIdx][0]);
         if (rowKey && targetSet[rowKey]) {
           rowsToDelete.push(dataStartRow + rIdx);
         }
@@ -608,11 +756,10 @@ function doPost(e) {
       if (rowsToDelete.length === 0) {
         return jsonResponse({
           success: false,
-          error: "Data Cnote yang dipilih tidak ditemukan di GSheet JNEMember."
+          error: "Data resi yang dipilih tidak ditemukan di Google Sheets " + sheet.getName() + "."
         });
       }
 
-      // Urutkan descending (bawah ke atas) dan gabungkan baris berurutan agar cepat & aman indeks
       rowsToDelete.sort(function(a, b) { return b - a; });
 
       var deletedTotal = 0;
@@ -636,8 +783,9 @@ function doPost(e) {
 
       return jsonResponse({
         success: true,
+        sheet_type: cfg.type,
         deleted_count: deletedTotal,
-        message: deletedTotal + " baris data berhasil dihapus dari GSheet JNEMember."
+        message: deletedTotal + " baris data dihapus dari Google Sheets " + sheet.getName() + "."
       });
     }
 

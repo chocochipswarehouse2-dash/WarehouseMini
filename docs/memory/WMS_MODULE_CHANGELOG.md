@@ -4,6 +4,18 @@
 
 ---
 
+## v2.39.0 — 27 November 2026
+**Modul**: Rekap Tagihan JNE Dual-Tab (`JNEmember` & `JNECorporated`) + Skill Anti-Slop Copy (`.agents/skills/wms-antislop-copy/SKILL.md`, `src/components/JneRekapView.tsx`, `src/services/jneRekapService.ts`, `src/services/jneRekapParser.ts`, `gas/jne_tagihan_backend.js`)
+- **Penambahan Tab `JNECorporated` (Sheet `JNECorporate`, `gid = 843586287`)**:
+  - Menambahkan 2 tab terpisah pada halaman **Rekap Tagihan JNE** (**`JNEmember`** | **`JNECorporated`**) dengan cache lokal terpisah, badge jumlah resi masing-masing, link Google Sheets dinamis, serta form & kolom import/export/edit yang menyesuaikan struktur `A..K` (`JNEmember`) dan `A..L` (`JNECorporate`).
+  - Tab **`JNECorporated`** menampilkan **Alamat Lengkap Penerima**, **Nominal Asuransi**, serta badge & filter **Status Pembayaran** (`Belum Ada Tagihan` / `TAGIHAN ...`).
+  - Mengupgrade backend GAS ([gas/jne_tagihan_backend.js](gas/jne_tagihan_backend.js)) dengan parameter `sheet=member|corporate`, deteksi baris terakhir berbasis kolom resi (`findLastDataRowByResiCol`) agar tidak melompati 265 baris formula VLOOKUP kosong di bawah baris `2696`, **proteksi penuh rumus VLOOKUP Kolom K `Status Pembayaran`** (`hanya tulis B..J & L`), format teks `@` Kolom B sebelum penulisan, dan dukungan format resi `CGKEC...` / `014819...`.
+- **Skill Anti-Slop Copy & Perbaikan Bahasa UI (`wms-antislop-copy`)**:
+  - Memasang skill permanen `.agents/skills/wms-antislop-copy/SKILL.md` dan mendaftarkannya di `GEMINI.md` agar seluruh agen coding memakai bahasa Indonesia operasional yang natural (dilarang memakai huruf kolom mentah seperti `Kolom D Kosong` atau jargon `memparsing` / `total baris GSheet`).
+  - Mengubah seluruh label UI `JneRekapView.tsx` (`Perlu Isi Deskripsi`, `Deskripsi Lengkap`, `Total Resi`, `Ubah` / `Isi Deskripsi`, `Isi Deskripsi Massal`, dsb.) menjadi lebih natural.
+
+---
+
 ## v2.38.3 — 27 November 2026
 **Modul**: Inventory & Scanner Barcode Header (`src/components/InventoryView.tsx`)
 - **Fix Tab `Scanner Barcode` Terpotong & `Log Produk` Tertutup Toolbar di Desktop**:

@@ -1,18 +1,23 @@
 import * as XLSX from 'xlsx';
 
+export type JneSheetTab = 'member' | 'corporate';
+
 export interface JneDetectedRecord {
   id: string;
   row_number?: number;
   no?: string | number;
-  no_resi: string;         // Kolom C: Cnote No
-  deskripsi: string;       // Kolom D: Deskripsi pengiriman
-  layanan: string;         // Kolom E: Services (CTC23, REG23, CTCYES23, YES23, dll.)
-  nama_tujuan: string;     // Kolom F: Receiver Name
-  alamat_tujuan: string;   // Kolom G: Destination
-  nama_pengirim: string;   // Kolom H: Shipper Name (default: CCH-CHOCOCHIPS)
-  nominal: number;         // Kolom I: Amount (Rp)
-  tanggal: string;         // Kolom J: Tanggal Pengiriman (YYYY-MM-DD)
-  agen: string;            // Kolom K: Agen (default: JNE Member)
+  no_resi: string;            // Cnote No / No Resi
+  deskripsi: string;          // Deskripsi pengiriman
+  layanan: string;            // Service (CTC23, REG23, CTCYES23, YES23, dll.)
+  nama_tujuan: string;        // Nama Penerima
+  alamat_penerima?: string;   // Alamat lengkap Penerima (JNECorporate Kolom F)
+  alamat_tujuan: string;      // Kota / Kecamatan Tujuan (Destination)
+  nama_pengirim: string;      // Shipper Name (JNEmember)
+  nominal: number;            // Ongkir / Amount (Rp)
+  asuransi?: number;          // Nominal Asuransi (Rp, JNECorporate Kolom J)
+  status_pembayaran?: string; // Status Pembayaran VLOOKUP (JNECorporate Kolom K)
+  tanggal: string;            // Tanggal Kiriman (YYYY-MM-DD)
+  agen: string;               // Agen (JNE Member / JNECorporated)
   source_file?: string;
   raw_line?: string;
 }
@@ -29,6 +34,7 @@ export interface ParseResult {
 
 export const DEFAULT_SHIPPER_NAME = 'CCH-CHOCOCHIPS';
 export const DEFAULT_AGEN_NAME = 'JNE Member';
+export const DEFAULT_AGEN_CORPORATE = 'JNECorporated';
 export const DEFAULT_JNE_SERVICE = 'REG23';
 
 /**
@@ -162,8 +168,8 @@ export function normalizeNominal(raw: any): number {
 export function cleanResi(raw: any): string {
   if (raw === null || raw === undefined) return '';
   let s = String(raw).trim().replace(/^['"`]+/, '').replace(/[\s\-_]/g, '').toUpperCase();
-  // Jika Excel memotong leading zero pada resi 14 digit yang dimulai "137900..." -> pulihkan "0137900..."
-  if (/^1379\d{10}$/.test(s)) {
+  // Jika Excel memotong leading zero pada resi angka panjang -> pulihkan '0' di depan
+  if (/^1379\d{10}$/.test(s) || /^14819\d{10,12}$/.test(s)) {
     s = '0' + s;
   }
   return s;
@@ -233,9 +239,13 @@ function extractRecordsFromMatrix(
   displayRows: string[][],
   rawRows: any[][],
   fileName: string,
-  sheetName: string
+  sheetName: string,
+  sheetTab: JneSheetTab = 'member'
 ): JneDetectedRecord[] {
   if (!displayRows || displayRows.length < 1) return [];
+
+  const defaultAgen = sheetTab === 'corporate' ? DEFAULT_AGEN_CORPORATE : DEFAULT_AGEN_NAME;
+  const defaultShipper = sheetTab === 'corporate' ? '' : DEFAULT_SHIPPER_NAME;
 
   const headerRowIndices: number[] = [];
   for (let r = 0; r < Math.min(displayRows.length, 10); r++) {
@@ -247,14 +257,14 @@ function extractRecordsFromMatrix(
       const s = String(cell || '').toLowerCase().trim();
       if (!s) continue;
       if (/^(no|no\.|cnote\s*no|c[\s_-]?note|awb|no\s*resi|resi|connote)$/i.test(s)) headerScore += 2;
-      else if (/deskripsi|keterangan|services?|layanan|receiver|consignee|penerima|destination|tujuan|shipper|pengirim|amount|nominal|ongkir|tarif|tanggal|date|agen/i.test(s)) {
+      else if (/deskripsi|keterangan|services?|layanan|receiver|consignee|penerima|destination|tujuan|shipper|pengirim|amount|nominal|ongkir|asuransi|tarif|tanggal|date|agen|status/i.test(s)) {
         headerScore += 1;
       }
     }
 
     const hasResiDataCell = row.some((cell) => {
       const c = cleanResi(cell);
-      return /^01\d{11,16}$/.test(c) || /^(?:JNE|TJNE|CGK)\d{8,16}$/i.test(c);
+      return /^01\d{11,16}$/.test(c) || /^(?:JNE|TJNE|CGK[A-Z0-9]*)\d{8,16}$/i.test(c);
     });
 
     if (headerScore >= 2 && !hasResiDataCell) {
@@ -268,9 +278,12 @@ function extractRecordsFromMatrix(
     deskripsi: -1,
     layanan: -1,
     nama: -1,
+    alamatPenerima: -1,
     alamat: -1,
     pengirim: -1,
     nominal: -1,
+    asuransi: -1,
+    statusPembayaran: -1,
     tanggal: -1,
     agen: -1,
   };
@@ -295,10 +308,19 @@ function extractRecordsFromMatrix(
     colMap.resi = mergedHeaders.findIndex((h) => /cnote|c[\s_-]?note|no\s*resi|\bresi\b|awb|connote|airway\s*bill|no\s*cn|tracking/i.test(h));
     colMap.deskripsi = mergedHeaders.findIndex((h) => /deskripsi|keterangan|remarks|goods|isi\s*paket|description|catatan/i.test(h));
     colMap.layanan = mergedHeaders.findIndex((h) => /services?|layanan|produk|product/i.test(h));
-    colMap.nama = mergedHeaders.findIndex((h) => /receiver|penerima|consignee|nama\s*tujuan/i.test(h));
-    colMap.alamat = mergedHeaders.findIndex((h) => /destination|alamat|tujuan|kota|address|city/i.test(h));
+    colMap.nama = mergedHeaders.findIndex((h) => /receiver|nama\s*penerima|penerima|consignee|nama\s*tujuan/i.test(h));
+    colMap.alamatPenerima = mergedHeaders.findIndex((h) => /alamat\s*penerima|full\s*address|street/i.test(h));
+    colMap.alamat = mergedHeaders.findIndex((h) => /kota\s*tujuan|destination|kecamatan|\bkota\b|city/i.test(h));
+    if (colMap.alamat === -1) {
+      colMap.alamat = mergedHeaders.findIndex((h, idx) => idx !== colMap.alamatPenerima && /tujuan|alamat|address/i.test(h));
+    }
     colMap.pengirim = mergedHeaders.findIndex((h) => /shipper|pengirim|sender/i.test(h));
-    colMap.nominal = mergedHeaders.findIndex((h) => /amount|nominal|tarif|ongkir|total\s*bayar|biaya|charge|freight|\bnet\b/i.test(h));
+    colMap.nominal = mergedHeaders.findIndex((h) => /amount|ongkir|total\s*bayar|biaya|charge|freight|\bnet\b|tarif/i.test(h) && !/asuransi/i.test(h));
+    if (colMap.nominal === -1) {
+      colMap.nominal = mergedHeaders.findIndex((h) => /nominal/i.test(h) && !/asuransi/i.test(h));
+    }
+    colMap.asuransi = mergedHeaders.findIndex((h) => /asuransi|insurance/i.test(h));
+    colMap.statusPembayaran = mergedHeaders.findIndex((h) => /status\s*pembayaran|payment\s*status|status\s*tagihan/i.test(h));
     colMap.tanggal = mergedHeaders.findIndex((h) => /tanggal|tgl|date|shipment/i.test(h));
     colMap.agen = mergedHeaders.findIndex((h) => /\bagen\b|agent|origin\s*branch|cabang/i.test(h));
 
@@ -321,14 +343,16 @@ function extractRecordsFromMatrix(
     let deskripsi = '';
     let layanan = DEFAULT_JNE_SERVICE;
     let namaTujuan = '';
+    let alamatPenerima = '';
     let alamatTujuan = '';
-    let namaPengirim = DEFAULT_SHIPPER_NAME;
+    let namaPengirim = defaultShipper;
     let nominal = 0;
+    let asuransi = 0;
+    let statusPembayaran = '';
     let tanggal = '';
-    let agen = DEFAULT_AGEN_NAME;
+    let agen = defaultAgen;
 
     if (colMap.resi !== -1) {
-      // Gunakan display cell terlebih dahulu agar leading zero '01379...' terjaga 100%
       noResi = cleanResi(dRow[colMap.resi] || rRow[colMap.resi]);
       if (!noResi || /^(CNOTENO|NORESI|TOTALTAGIHAN|TANGGALPEMBAYARAN)$/i.test(noResi)) continue;
 
@@ -336,21 +360,27 @@ function extractRecordsFromMatrix(
       deskripsi = colMap.deskripsi !== -1 ? String(dRow[colMap.deskripsi] ?? rRow[colMap.deskripsi] ?? '').trim() : '';
       layanan = colMap.layanan !== -1 ? normalizeJneService(dRow[colMap.layanan] || rRow[colMap.layanan]) : DEFAULT_JNE_SERVICE;
       namaTujuan = colMap.nama !== -1 ? String(dRow[colMap.nama] || rRow[colMap.nama] || '').trim() : '';
+      alamatPenerima = colMap.alamatPenerima !== -1 ? String(dRow[colMap.alamatPenerima] || rRow[colMap.alamatPenerima] || '').trim() : '';
       alamatTujuan = colMap.alamat !== -1 ? String(dRow[colMap.alamat] || rRow[colMap.alamat] || '').trim() : '';
       namaPengirim = colMap.pengirim !== -1
-        ? String(dRow[colMap.pengirim] || rRow[colMap.pengirim] || DEFAULT_SHIPPER_NAME).trim()
-        : DEFAULT_SHIPPER_NAME;
+        ? String(dRow[colMap.pengirim] || rRow[colMap.pengirim] || defaultShipper).trim()
+        : defaultShipper;
       nominal = colMap.nominal !== -1
         ? normalizeNominal(typeof rRow[colMap.nominal] === 'number' ? rRow[colMap.nominal] : (dRow[colMap.nominal] || rRow[colMap.nominal]))
         : 0;
+      asuransi = colMap.asuransi !== -1
+        ? normalizeNominal(typeof rRow[colMap.asuransi] === 'number' ? rRow[colMap.asuransi] : (dRow[colMap.asuransi] || rRow[colMap.asuransi]))
+        : 0;
+      statusPembayaran = colMap.statusPembayaran !== -1
+        ? String(dRow[colMap.statusPembayaran] || rRow[colMap.statusPembayaran] || '').trim()
+        : '';
       tanggal = colMap.tanggal !== -1
         ? normalizeDate(rRow[colMap.tanggal] instanceof Date ? rRow[colMap.tanggal] : (dRow[colMap.tanggal] || rRow[colMap.tanggal]))
         : '';
       agen = colMap.agen !== -1
-        ? String(dRow[colMap.agen] || rRow[colMap.agen] || DEFAULT_AGEN_NAME).trim()
-        : DEFAULT_AGEN_NAME;
+        ? String(dRow[colMap.agen] || rRow[colMap.agen] || defaultAgen).trim()
+        : defaultAgen;
     } else {
-      // Fallback heuristik baris tanpa header (misal CSV polos / export mentah)
       for (let c = 0; c < Math.max(dRow.length, rRow.length); c++) {
         const dVal = String(dRow[c] ?? '').trim();
         const rVal = rRow[c];
@@ -359,7 +389,7 @@ function extractRecordsFromMatrix(
         const candidateResi = cleanResi(dVal || rVal);
         if (
           !noResi &&
-          (/(?:JNE|TJNE|CGK|01)\d{9,17}/i.test(candidateResi) || /^\d{12,18}$/.test(candidateResi))
+          (/(?:JNE|TJNE|CGK[A-Z0-9]*|01)\d{8,17}/i.test(candidateResi) || /^\d{12,18}$/.test(candidateResi))
         ) {
           noResi = candidateResi;
           continue;
@@ -374,7 +404,7 @@ function extractRecordsFromMatrix(
           tanggal = normalizeDate(rVal instanceof Date ? rVal : dVal);
           continue;
         }
-        if (/^(CTC\d*|CTCYES\d*|REG\d*|YES\d*|JTR\d*|OKE\d*|SPS\d*)$/i.test(dVal)) {
+        if (/^(CTC\d*|CTCYES\d*|REG\d*|YES\*?\d*|JTR\d*|OKE\d*|SPS\d*)$/i.test(dVal)) {
           layanan = normalizeJneService(dVal);
           continue;
         }
@@ -382,7 +412,7 @@ function extractRecordsFromMatrix(
           namaPengirim = dVal;
           continue;
         }
-        if (/^JNE\s*Member$/i.test(dVal)) {
+        if (/^JNE\s*(?:Member|Corporate|Corporated)$/i.test(dVal)) {
           agen = dVal;
           continue;
         }
@@ -401,17 +431,20 @@ function extractRecordsFromMatrix(
 
     if (noResi && noResi.length >= 8 && /[0-9]{6,}/.test(noResi)) {
       records.push({
-        id: `JNE-${noResi}-${r}`,
+        id: `JNE-${sheetTab}-${noResi}-${r}`,
         no: noVal,
         no_resi: noResi,
-        deskripsi: deskripsi,
+        deskripsi,
         layanan: layanan || DEFAULT_JNE_SERVICE,
         nama_tujuan: namaTujuan || '-',
+        ...(alamatPenerima ? { alamat_penerima: alamatPenerima } : {}),
         alamat_tujuan: alamatTujuan || '-',
-        nama_pengirim: namaPengirim || DEFAULT_SHIPPER_NAME,
-        nominal: nominal,
+        nama_pengirim: namaPengirim || defaultShipper,
+        nominal,
+        ...(sheetTab === 'corporate' || asuransi > 0 ? { asuransi } : {}),
+        ...(statusPembayaran ? { status_pembayaran: statusPembayaran } : {}),
         tanggal: tanggal || normalizeDate(new Date()),
-        agen: agen || DEFAULT_AGEN_NAME,
+        agen: agen || defaultAgen,
         source_file: fileName + (sheetName && sheetName !== 'Sheet1' ? ` (${sheetName})` : ''),
       });
     }
@@ -425,7 +458,10 @@ function extractRecordsFromMatrix(
  * 1. PARSER EXCEL & CSV (.xlsx, .xls, .csv)
  * =========================================================================
  */
-export async function parseExcelJneFile(file: File): Promise<ParseResult> {
+export async function parseExcelJneFile(
+  file: File,
+  sheetTab: JneSheetTab = 'member'
+): Promise<ParseResult> {
   const isCsv = file.name.toLowerCase().endsWith('.csv');
   try {
     const buffer = await file.arrayBuffer();
@@ -452,7 +488,7 @@ export async function parseExcelJneFile(file: File): Promise<ParseResult> {
         raw: true,
       });
 
-      const sheetRecords = extractRecordsFromMatrix(displayRows, rawRows, file.name, sheetName);
+      const sheetRecords = extractRecordsFromMatrix(displayRows, rawRows, file.name, sheetName, sheetTab);
       if (sheetRecords.length > 0) {
         allRecords = allRecords.concat(sheetRecords);
       }
@@ -466,7 +502,7 @@ export async function parseExcelJneFile(file: File): Promise<ParseResult> {
         fileName: file.name,
         fileType: isCsv ? 'csv' : 'excel',
         engine: 'xlsx',
-        error: 'Tidak ditemukan baris Cnote / Nomor Resi JNE yang valid di dalam file ini.',
+        error: 'Tidak ditemukan nomor resi JNE yang valid di file ini.',
       };
     }
 
@@ -559,11 +595,14 @@ async function convertImageFileToBase64(file: File | Blob): Promise<{ mimeType: 
 /**
  * Ekstrak JSON array records dari respons teks Gemini Vision
  */
-function parseGeminiVisionJsonOutput(rawText: string, fileName: string): JneDetectedRecord[] {
+function parseGeminiVisionJsonOutput(
+  rawText: string,
+  fileName: string,
+  sheetTab: JneSheetTab = 'member'
+): JneDetectedRecord[] {
   let cleaned = String(rawText || '').trim();
   if (!cleaned) return [];
 
-  // Buang markdown code fence jika ada
   cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 
   let parsed: any = null;
@@ -592,6 +631,8 @@ function parseGeminiVisionJsonOutput(rawText: string, fileName: string): JneDete
   const records: JneDetectedRecord[] = [];
   const seen = new Set<string>();
   const todayIso = normalizeDate(new Date());
+  const defaultAgen = sheetTab === 'corporate' ? DEFAULT_AGEN_CORPORATE : DEFAULT_AGEN_NAME;
+  const defaultShipper = sheetTab === 'corporate' ? '' : DEFAULT_SHIPPER_NAME;
 
   rawItems.forEach((it, idx) => {
     const noResi = cleanResi(it?.no_resi || it?.cnote_no || it?.cnote || it?.resi || it?.awb);
@@ -601,21 +642,25 @@ function parseGeminiVisionJsonOutput(rawText: string, fileName: string): JneDete
     const deskripsi = String(it?.deskripsi || it?.deskripsi_pengiriman || it?.keterangan || '').trim();
     const layanan = normalizeJneService(it?.layanan || it?.services || it?.service || DEFAULT_JNE_SERVICE);
     const namaTujuan = String(it?.nama_tujuan || it?.receiver_name || it?.penerima || '-').trim() || '-';
-    const alamatTujuan = String(it?.alamat_tujuan || it?.destination || it?.tujuan || '-').trim() || '-';
-    const namaPengirim = String(it?.nama_pengirim || it?.shipper_name || DEFAULT_SHIPPER_NAME).trim() || DEFAULT_SHIPPER_NAME;
-    const nominal = normalizeNominal(it?.nominal ?? it?.amount ?? it?.ongkir ?? 0);
+    const alamatPenerima = String(it?.alamat_penerima || it?.full_address || '').trim();
+    const alamatTujuan = String(it?.alamat_tujuan || it?.destination || it?.kota_tujuan || it?.tujuan || '-').trim() || '-';
+    const namaPengirim = String(it?.nama_pengirim || it?.shipper_name || defaultShipper).trim() || defaultShipper;
+    const nominal = normalizeNominal(it?.nominal ?? it?.ongkir ?? it?.amount ?? 0);
+    const asuransi = normalizeNominal(it?.asuransi ?? it?.nominal_asuransi ?? 0);
     const tanggal = normalizeDate(it?.tanggal || it?.date) || todayIso;
-    const agen = String(it?.agen || DEFAULT_AGEN_NAME).trim() || DEFAULT_AGEN_NAME;
+    const agen = String(it?.agen || defaultAgen).trim() || defaultAgen;
 
     records.push({
-      id: `JNE-${noResi}-AI-${idx + 1}`,
+      id: `JNE-${sheetTab}-${noResi}-AI-${idx + 1}`,
       no_resi: noResi,
       deskripsi,
       layanan,
       nama_tujuan: namaTujuan,
+      ...(alamatPenerima ? { alamat_penerima: alamatPenerima } : {}),
       alamat_tujuan: alamatTujuan,
       nama_pengirim: namaPengirim,
       nominal,
+      ...(sheetTab === 'corporate' || asuransi > 0 ? { asuransi } : {}),
       tanggal,
       agen,
       source_file: fileName,
@@ -630,23 +675,27 @@ function parseGeminiVisionJsonOutput(rawText: string, fileName: string): JneDete
  */
 async function extractJneFromBase64ViaAi(
   images: Array<{ mimeType: string; data: string }>,
-  fileName: string
+  fileName: string,
+  sheetTab: JneSheetTab = 'member'
 ): Promise<JneDetectedRecord[]> {
+  const defaultAgen = sheetTab === 'corporate' ? DEFAULT_AGEN_CORPORATE : DEFAULT_AGEN_NAME;
   const systemInstruction = [
     'Anda adalah mesin ekstraksi dokumen tagihan & resi ekspedisi JNE tingkat presisi tinggi.',
     'Tugas Anda membaca gambar screenshot tabel tagihan JNE, spreadsheet, portal MyJNE, chat WA, atau foto struk fisik resi JNE, lalu mengekstrak SELURUH baris resi yang terlihat ke dalam JSON murni.',
     'ATURAN KETAT:',
-    '1. Pertahankan seluruh digit Cnote No / Nomor Resi JNE apa adanya termasuk angka 0 di paling depan (contoh: "013790032629726"). JANGAN menebak digit yang tidak ada.',
+    '1. Pertahankan seluruh digit & huruf Nomor Resi / Cnote No apa adanya termasuk angka 0 di paling depan (contoh: "013790032629726", "0148192500000060", "CGKEC79399447826"). JANGAN menebak karakter yang tidak ada.',
     '2. Kolom yang diekstrak per item:',
-    '   - "no_resi": string Cnote No / Nomor Resi JNE',
-    '   - "deskripsi": string Deskripsi pengiriman / catatan / referensi order jika tertulis di gambar (jika tidak ada isi "")',
-    '   - "layanan": string kode layanan JNE seperti "CTC23", "REG23", "CTCYES23", "YES23", "JTR23", "REG", "YES" (default "REG23" jika tidak terlihat)',
-    '   - "nama_tujuan": string nama penerima (Receiver Name)',
-    '   - "alamat_tujuan": string kota/kecamatan/alamat tujuan (Destination)',
-    '   - "nama_pengirim": string nama pengirim (Shipper Name, default "CCH-CHOCOCHIPS" jika tidak tertulis)',
+    '   - "no_resi": string Nomor Resi / Cnote No JNE',
+    '   - "deskripsi": string Deskripsi pengiriman / referensi order jika tertulis di gambar (jika tidak ada isi "")',
+    '   - "layanan": string kode layanan JNE seperti "CTC23", "REG23", "CTCYES23", "YES23", "YES", "JTR23" (default "REG23" jika tidak terlihat)',
+    '   - "nama_tujuan": string nama penerima',
+    '   - "alamat_penerima": string alamat jalan lengkap penerima jika ada (opsional, jika tidak ada isi "")',
+    '   - "alamat_tujuan": string kota/kecamatan tujuan',
+    '   - "nama_pengirim": string nama pengirim (kosongkan jika tidak tertulis)',
     '   - "nominal": integer angka murni biaya ongkir/amount dalam Rupiah tanpa titik/Rp (contoh: "Rp 18.000" -> 18000)',
+    '   - "asuransi": integer angka murni nominal asuransi dalam Rupiah (default 0)',
     '   - "tanggal": string tanggal pengiriman dalam format "YYYY-MM-DD" (contoh: "23/11/2026" -> "2026-11-23")',
-    '   - "agen": string nama agen (default "JNE Member" jika tidak tertulis)',
+    `   - "agen": string nama agen (default "${defaultAgen}" jika tidak tertulis)`,
     '3. Kembalikan HANYA objek JSON dengan format: {"records": [ ... ]} tanpa teks penjelasan lain.',
   ].join('\n');
 
@@ -657,7 +706,7 @@ async function extractJneFromBase64ViaAi(
     },
   }));
   parts.push({
-    text: 'Ekstrak semua baris data resi / tagihan JNE pada gambar ini ke JSON {"records": [...]}. Pastikan angka Cnote No (termasuk angka 0 di depan), layanan, nama penerima, tujuan, nominal ongkir, dan tanggal terbaca akurat.',
+    text: 'Ekstrak semua baris data resi / tagihan JNE pada gambar ini ke JSON {"records": [...]}. Pastikan nomor resi (termasuk angka 0 di depan), layanan, nama penerima, tujuan, ongkir, dan tanggal terbaca akurat.',
   });
 
   const res = await fetch('/api/ai', {
@@ -687,7 +736,7 @@ async function extractJneFromBase64ViaAi(
       .join('') ||
     '';
 
-  return parseGeminiVisionJsonOutput(text, fileName);
+  return parseGeminiVisionJsonOutput(text, fileName, sheetTab);
 }
 
 /**
@@ -698,7 +747,8 @@ async function extractJneFromBase64ViaAi(
  */
 export async function parseImageJneFile(
   file: File,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  sheetTab: JneSheetTab = 'member'
 ): Promise<ParseResult> {
   try {
     onProgress?.(15);
@@ -706,7 +756,7 @@ export async function parseImageJneFile(
     onProgress?.(40);
 
     try {
-      const aiRecords = await extractJneFromBase64ViaAi([base64Img], file.name);
+      const aiRecords = await extractJneFromBase64ViaAi([base64Img], file.name, sheetTab);
       onProgress?.(100);
       if (aiRecords.length > 0) {
         return {
@@ -719,10 +769,9 @@ export async function parseImageJneFile(
         };
       }
     } catch (aiErr) {
-      console.warn('[JNE Parser] Gemini Vision tidak tersedia/gagal, beralih ke OCR lokal:', aiErr);
+      console.warn('[JNE Parser] Gemini Vision gagal, beralih ke OCR lokal:', aiErr);
     }
 
-    // Fallback OCR lokal via Tesseract.js jika server AI offline / tidak terkonfigurasi
     onProgress?.(50);
     const tesseractCdnUrl = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.esm.min.js';
     const Tesseract: any = await import(/* @vite-ignore */ tesseractCdnUrl);
@@ -740,7 +789,7 @@ export async function parseImageJneFile(
 
     const rawText = ret.data.text || '';
     const lines = rawText.split('\n').map((l: string) => l.trim()).filter(Boolean);
-    const records = extractJneRecordsFromTextLines(lines, file.name);
+    const records = extractJneRecordsFromTextLines(lines, file.name, sheetTab);
 
     return {
       success: records.length > 0,
@@ -749,7 +798,7 @@ export async function parseImageJneFile(
       fileName: file.name,
       fileType: 'image',
       engine: 'ocr-fallback',
-      error: records.length === 0 ? 'Tidak ditemukan nomor resi/Cnote JNE yang terbaca jelas pada gambar ini.' : undefined,
+      error: records.length === 0 ? 'Tidak ada nomor resi JNE yang terbaca jelas pada gambar ini.' : undefined,
     };
   } catch (err: any) {
     return {
@@ -758,7 +807,7 @@ export async function parseImageJneFile(
       totalDetected: 0,
       fileName: file.name,
       fileType: 'image',
-      error: `Gagal memproses gambar/screenshot: ${err?.message || String(err)}`,
+      error: `Gagal membaca gambar/screenshot: ${err?.message || String(err)}`,
     };
   }
 }
@@ -770,7 +819,8 @@ export async function parseImageJneFile(
  */
 export async function parsePdfJneFile(
   file: File,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  sheetTab: JneSheetTab = 'member'
 ): Promise<ParseResult> {
   try {
     onProgress?.(10);
@@ -812,7 +862,7 @@ export async function parsePdfJneFile(
       onProgress?.(10 + Math.round((pageNum / numPages) * 45));
     }
 
-    const textRecords = extractJneRecordsFromTextLines(fullLines, file.name);
+    const textRecords = extractJneRecordsFromTextLines(fullLines, file.name, sheetTab);
     if (textRecords.length > 0) {
       onProgress?.(100);
       return {
@@ -825,7 +875,6 @@ export async function parsePdfJneFile(
       };
     }
 
-    // Jika PDF hasil scan gambar (tidak ada teks digital), render maks 4 halaman pertama ke Gemini Vision
     const renderedImages: Array<{ mimeType: string; data: string }> = [];
     const maxVisionPages = Math.min(numPages, 4);
     for (let p = 1; p <= maxVisionPages; p++) {
@@ -847,7 +896,7 @@ export async function parsePdfJneFile(
     }
 
     if (renderedImages.length > 0) {
-      const visionRecords = await extractJneFromBase64ViaAi(renderedImages, file.name);
+      const visionRecords = await extractJneFromBase64ViaAi(renderedImages, file.name, sheetTab);
       onProgress?.(100);
       return {
         success: visionRecords.length > 0,
@@ -856,7 +905,7 @@ export async function parsePdfJneFile(
         fileName: file.name,
         fileType: 'pdf',
         engine: 'gemini-vision',
-        error: visionRecords.length === 0 ? 'Tidak ada Cnote JNE yang terdeteksi pada dokumen PDF ini.' : undefined,
+        error: visionRecords.length === 0 ? 'Tidak ada nomor resi JNE yang terbaca di file PDF ini.' : undefined,
       };
     }
 
@@ -875,17 +924,21 @@ export async function parsePdfJneFile(
       totalDetected: 0,
       fileName: file.name,
       fileType: 'pdf',
-      error: `Gagal memproses file PDF: ${err?.message || String(err)}`,
+      error: `Gagal membaca file PDF: ${err?.message || String(err)}`,
     };
   }
 }
 
 /**
  * =========================================================================
- * 4. PARSER TEMPEL TEKS / BARIS SPREADSHEET (Copy-Paste dari Excel/GSheet/WA)
+ * 4. TEMPEL TEKS / BARIS SPREADSHEET (Copy-Paste dari Excel/GSheet/WA)
  * =========================================================================
  */
-export function parsePastedJneText(rawText: string, sourceLabel: string = 'Tempel Teks'): ParseResult {
+export function parsePastedJneText(
+  rawText: string,
+  sourceLabel: string = 'Tempel Teks',
+  sheetTab: JneSheetTab = 'member'
+): ParseResult {
   const trimmed = String(rawText || '').trim();
   if (!trimmed) {
     return {
@@ -899,12 +952,11 @@ export function parsePastedJneText(rawText: string, sourceLabel: string = 'Tempe
     };
   }
 
-  // Jika berformat TSV/CSV (mengandung tab atau beberapa kolom koma)
   const rawLines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
   const hasTabs = rawLines.some((l) => l.includes('\t'));
   if (hasTabs) {
     const matrix = rawLines.map((l) => l.split('\t').map((c) => c.trim()));
-    const fromMatrix = extractRecordsFromMatrix(matrix, matrix, sourceLabel, '');
+    const fromMatrix = extractRecordsFromMatrix(matrix, matrix, sourceLabel, '', sheetTab);
     if (fromMatrix.length > 0) {
       return {
         success: true,
@@ -917,7 +969,7 @@ export function parsePastedJneText(rawText: string, sourceLabel: string = 'Tempe
     }
   }
 
-  const fromLines = extractJneRecordsFromTextLines(rawLines, sourceLabel);
+  const fromLines = extractJneRecordsFromTextLines(rawLines, sourceLabel, sheetTab);
   return {
     success: fromLines.length > 0,
     records: fromLines,
@@ -925,7 +977,7 @@ export function parsePastedJneText(rawText: string, sourceLabel: string = 'Tempe
     fileName: sourceLabel,
     fileType: 'text',
     engine: 'text-paste',
-    error: fromLines.length === 0 ? 'Tidak ditemukan nomor Cnote / Resi JNE yang valid dari teks yang ditempel.' : undefined,
+    error: fromLines.length === 0 ? 'Tidak ditemukan nomor resi JNE yang valid dari teks ini.' : undefined,
   };
 }
 
@@ -934,15 +986,21 @@ export function parsePastedJneText(rawText: string, sourceLabel: string = 'Tempe
  * 5. REGEX EXTRACTOR DARI BARIS TEKS (Untuk PDF Digital, Paste Teks & OCR)
  * =========================================================================
  */
-export function extractJneRecordsFromTextLines(lines: string[], fileName: string): JneDetectedRecord[] {
+export function extractJneRecordsFromTextLines(
+  lines: string[],
+  fileName: string,
+  sheetTab: JneSheetTab = 'member'
+): JneDetectedRecord[] {
   const records: JneDetectedRecord[] = [];
   const seenResi = new Set<string>();
+  const defaultAgen = sheetTab === 'corporate' ? DEFAULT_AGEN_CORPORATE : DEFAULT_AGEN_NAME;
+  const defaultShipper = sheetTab === 'corporate' ? '' : DEFAULT_SHIPPER_NAME;
 
   for (let idx = 0; idx < lines.length; idx++) {
     const line = lines[idx];
 
     const resiMatch =
-      line.match(/\b((?:JNE|TJNE|CGK|01)[A-Z0-9]{10,18})\b/i) ||
+      line.match(/\b((?:JNE|TJNE|CGK[A-Z0-9]*|01)[A-Z0-9]{8,18})\b/i) ||
       line.match(/\b([0-9]{12,18})\b/);
 
     if (resiMatch) {
@@ -961,7 +1019,7 @@ export function extractJneRecordsFromTextLines(lines: string[], fileName: string
       ) || line.replace(resiMatch[1], ' ').match(/\b([0-9]{1,3}(?:[\.,][0-9]{3})+)\b/);
       const nominal = nominalMatch ? normalizeNominal(nominalMatch[1]) : 0;
 
-      const serviceMatch = contextLines.match(/\b(CTCYES\d*|CTC\d*|REG\d*|YES\d*|JTR\d*|OKE\d*|SPS\d*)\b/i);
+      const serviceMatch = contextLines.match(/\b(CTCYES\d*|CTC\d*|REG\d*|YES\*?\d*|JTR\d*|OKE\d*|SPS\d*)\b/i);
       const layanan = serviceMatch ? normalizeJneService(serviceMatch[1]) : DEFAULT_JNE_SERVICE;
 
       let namaTujuan = '-';
@@ -978,16 +1036,17 @@ export function extractJneRecordsFromTextLines(lines: string[], fileName: string
       }
 
       records.push({
-        id: `JNE-${resi}-${records.length + 1}`,
+        id: `JNE-${sheetTab}-${resi}-${records.length + 1}`,
         no_resi: resi,
         deskripsi: '',
         layanan,
         nama_tujuan: namaTujuan,
         alamat_tujuan: alamatTujuan,
-        nama_pengirim: DEFAULT_SHIPPER_NAME,
+        nama_pengirim: defaultShipper,
         nominal,
+        ...(sheetTab === 'corporate' ? { asuransi: 0 } : {}),
         tanggal,
-        agen: DEFAULT_AGEN_NAME,
+        agen: defaultAgen,
         source_file: fileName,
         raw_line: line,
       });
@@ -1002,20 +1061,21 @@ export function extractJneRecordsFromTextLines(lines: string[], fileName: string
  */
 export async function parseJneImportFile(
   file: File,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  sheetTab: JneSheetTab = 'member'
 ): Promise<ParseResult> {
   const ext = file.name.split('.').pop()?.toLowerCase() || '';
   const mime = (file.type || '').toLowerCase();
 
   if (ext === 'xlsx' || ext === 'xls' || ext === 'csv' || mime.includes('spreadsheet') || mime.includes('csv')) {
     onProgress?.(40);
-    const res = await parseExcelJneFile(file);
+    const res = await parseExcelJneFile(file, sheetTab);
     onProgress?.(100);
     return res;
   }
 
   if (ext === 'pdf' || mime === 'application/pdf') {
-    return parsePdfJneFile(file, onProgress);
+    return parsePdfJneFile(file, onProgress, sheetTab);
   }
 
   if (
@@ -1025,7 +1085,7 @@ export async function parseJneImportFile(
     ext === 'webp' ||
     mime.startsWith('image/')
   ) {
-    return parseImageJneFile(file, onProgress);
+    return parseImageJneFile(file, onProgress, sheetTab);
   }
 
   return {

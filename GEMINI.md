@@ -81,6 +81,7 @@ Setelah modifikasi selesai, jalankan siklus rilis penuh:
 
 ## 10. UI/UX, Responsive Desktop & Mobile Native, 2-Mode & Print Standards
 Patuhi skills di `.agents/skills/`:
+- **Anti-Slop Copywriting (`.agents/skills/wms-antislop-copy/SKILL.md`)**: Gunakan bahasa operasional Indonesia yang natural dan ringkas; dilarang menampilkan huruf kolom mentah (`Kolom D Kosong`, `Kolom C`) atau jargon AI/dev (`memparsing`, `staging`, `upsert`, `total baris GSheet`) di teks UI.
 - **Theme & Anti-Pelangi Tombol**: Maksimal **1 tombol solid primary** (`bg-indigo-600 text-white`) per baris/toolbar; tombol sekunder berupa outline netral. Gunakan `font-mono` untuk SKU, Order ID, Resi, SJ, DealPOS.
 - **Fluid Desktop & Native Mobile**:
   - Desktop (`>= 768px`): Web-based, fluid elastis (`w-full max-w-full`, anti dead-zone saat zoom-out), default mode `Tabel`.
