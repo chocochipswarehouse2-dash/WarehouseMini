@@ -4,121 +4,18 @@
 
 ---
 
-## v2.39.1 — 27 November 2026
-**Modul**: Rekap Tagihan JNE — IndexedDB + 200-Row Block Delta Sync (`gas/jne_tagihan_backend.js`, `src/services/jneRekapService.ts`, `src/components/JneRekapView.tsx`, `src/storage-override.ts`)
-- **Penyimpanan IndexedDB Permanen (`WMS_LOCAL_DB` `meta` store)**:
-  - Memindahkan cache `JNEmember` dan `JNECorporated` dari `localStorage` (limit 5 MB) ke **IndexedDB** (`jne_rekap_idb_member_v1` & `jne_rekap_idb_corporate_v1`) dengan migrasi otomatis satu kali dari key `localStorage` lama, sehingga layar langsung terisi instan (`< 20 ms`) saat dibuka atau pindah tab tanpa memakan kuota `localStorage`.
-- **Protokol Delta Update Per Blok 200 Baris**:
-  - `doGet` di `gas/jne_tagihan_backend.js` kini menghitung hash FNV-1a per blok 200 baris (`block_sigs`) dan hash menyeluruh (`signature`).
-  - Saat data tidak berubah, server membalas `mode: "unchanged"` (hanya metadata ringan tanpa mengirim ribuan baris); saat hanya sebagian baris/tagihan berubah atau resi baru masuk, server membalas `mode: "delta"` berisi **hanya blok 200 baris yang berubah**, lalu klien menggabungkannya ke IndexedDB (*self-healing fallback* otomatis ke `full` jika jumlah total tidak cocok).
-  - Menambahkan aksi **"Muat Ulang Penuh"** pada menu `⋯` di header `JneRekapView.tsx`.
-
----
-
-## v2.39.0 — 27 November 2026
-**Modul**: Rekap Tagihan JNE Dual-Tab (`JNEmember` & `JNECorporated`) + Skill Anti-Slop Copy (`.agents/skills/wms-antislop-copy/SKILL.md`, `src/components/JneRekapView.tsx`, `src/services/jneRekapService.ts`, `src/services/jneRekapParser.ts`, `gas/jne_tagihan_backend.js`)
-- **Penambahan Tab `JNECorporated` (Sheet `JNECorporate`, `gid = 843586287`)**:
-  - Menambahkan 2 tab terpisah pada halaman **Rekap Tagihan JNE** (**`JNEmember`** | **`JNECorporated`**) dengan cache lokal terpisah, badge jumlah resi masing-masing, link Google Sheets dinamis, serta form & kolom import/export/edit yang menyesuaikan struktur `A..K` (`JNEmember`) dan `A..L` (`JNECorporate`).
-  - Tab **`JNECorporated`** menampilkan **Alamat Lengkap Penerima**, **Nominal Asuransi**, serta badge & filter **Status Pembayaran** (`Belum Ada Tagihan` / `TAGIHAN ...`).
-  - Mengupgrade backend GAS ([gas/jne_tagihan_backend.js](gas/jne_tagihan_backend.js)) dengan parameter `sheet=member|corporate`, deteksi baris terakhir berbasis kolom resi (`findLastDataRowByResiCol`) agar tidak melompati 265 baris formula VLOOKUP kosong di bawah baris `2696`, **proteksi penuh rumus VLOOKUP Kolom K `Status Pembayaran`** (`hanya tulis B..J & L`), format teks `@` Kolom B sebelum penulisan, dan dukungan format resi `CGKEC...` / `014819...`.
-- **Skill Anti-Slop Copy & Perbaikan Bahasa UI (`wms-antislop-copy`)**:
-  - Memasang skill permanen `.agents/skills/wms-antislop-copy/SKILL.md` dan mendaftarkannya di `GEMINI.md` agar seluruh agen coding memakai bahasa Indonesia operasional yang natural (dilarang memakai huruf kolom mentah seperti `Kolom D Kosong` atau jargon `memparsing` / `total baris GSheet`).
-  - Mengubah seluruh label UI `JneRekapView.tsx` (`Perlu Isi Deskripsi`, `Deskripsi Lengkap`, `Total Resi`, `Ubah` / `Isi Deskripsi`, `Isi Deskripsi Massal`, dsb.) menjadi lebih natural.
-
----
-
-## v2.38.3 — 27 November 2026
-**Modul**: Inventory & Scanner Barcode Header (`src/components/InventoryView.tsx`)
-- **Fix Tab `Scanner Barcode` Terpotong & `Log Produk` Tertutup Toolbar di Desktop**:
-  - Memisahkan baris bar 5 tab navigasi utama (`Kapasitas`, `3D Visual`, `Data Inventory`, `Scanner Barcode`, `Log Produk`) dari sub-toolbar aksi Scanner (`Panel Rapi | Tabel | Ringkas`, `Impor Excel`, `Popup Luas`) pada viewport standar (`< 1720px`) serta memindahkan ringkasan statistik SKU kanan ke `2xl+`, sehingga tab **`Scanner Barcode`** tampil utuh tanpa terpotong (`Scanner`) dan tab **`Log Produk`** tidak terdorong keluar kontainer.
-  - Menambahkan label responsif bertingkat untuk 3 tab awal pada ukuran `sm–xl` dan pembatas sub-bar rapi dengan wrapping untuk layar zoom-in (`110%–150%`) & mobile (`< 640px`, tetap 1 baris swipe horizontal).
-
----
-
-## v2.38.2 — 27 November 2026
-**Modul**: Pesanan Saya / Manual Shipment & Cetak Label A6 (`src/services/gasManualShipment.ts`, `src/components/PesananSaya/ManualShipmentTab.tsx`, `.agents/skills/wms-supabase-egress-guardrails/SKILL.md`)
-- **Fix Bug Alamat Pesanan Hasil Edit Tidak Muncul di Print Label A6 & Tertimpa Data Lama**:
-  - **Root Cause**: `editManualShipment()`, `submitManualShipment()`, `deleteManualShipment()`, `updateShipmentStatus()`, `updateShipmentResi()`, dan `bulkUpdateShipmentResi()` tidak memanggil `invalidateManualShipmentsCache()`, sehingga `loadOrders()` dalam jendela SWR 2 menit mengembalikan cache lama (mis. pada `#MSBTS-261127-LCXH` tetap menampilkan `PIK WALET INDAH 4 / X10 26` setelah diedit). Saat user menekan **Cetak Label A6**, `updateOrderPrintStatus()` juga membaca cache basi tersebut dan mengirim full-row `PATCH` via `editManualShipment()`, menimpa `alamat_tujuan` baru di Supabase kembali menjadi alamat lama.
-  - **Perbaikan Cache & Surgical PATCH (`gasManualShipment.ts`)**:
-    - Seluruh mutasi `manual_shipment` kini memanggil `invalidateManualShipmentsCache()` dan menyertakan `updated_at`.
-    - `updateOrderPrintStatus()`, `updateItemSjDealpos()`, `bulkUpdateOrderSjDealpos()`, `updateJadwalKirimStore()`, `markItemSoldAndProcess()`, dan `restoreSoldItem()` kini mengambil baris live tunggal via `fetchManualShipmentByOrderId()` (~1 KB), dan mutasi status cetak / SJ DealPOS mengirim surgical column `PATCH` (`{ status, notes_paket, updated_at }` / `{ items, updated_at }`) tanpa menimpa alamat maupun kolom lain.
-  - **Optimistic State & Live Hydrate Sebelum Cetak (`ManualShipmentTab.tsx`)**:
-    - `handleSubmit` setelah edit berhasil langsung memperbarui `orders`, `selectedOrderDetails`, `actionSheetOrder`, membersihkan `printPayload` lama bila perlu, dan memanggil `loadOrders(true)` (begitu pula pada Realtime listener, simpan resi, hapus, & batal).
-    - `handlePrintLabel` & `handlePrintPickingList` kini menyegarkan baris target langsung dari Supabase via `refreshOrdersLiveBeforePrint` (`fetchManualShipmentByOrderId`, max 25 order) sebelum merender Label A6 / Picking List agar alamat, penerima, dan catatan selalu 100% terbaru.
-  - **Verifikasi Data Live `#MSBTS-261127-LCXH`**: Dicek di Supabase — alamat saat ini sudah tersimpan sebagai `"Pik walet indah 4 / No 26 jakarta utara"`.
-
----
-
-## v2.38.1 — 27 November 2026
-**Modul**: Scanner Gudang & Offline Outbox (`src/storage-override.ts`, `src/services/scannerOutboxService.ts`, `src/App.tsx`)
-- **Fix Bug Kritis Hilangnya Data Scan saat `localStorage` Penuh (`QuotaExceededError`)**:
-  - Memperbaiki `src/storage-override.ts` dengan daftar eviction cache modern yang menyeluruh serta pembersihan dinamis berurutan dari key cache terbesar (**melindungi ketat** sesi login, konfigurasi, draft aktif, dan seluruh antrean outbox) saat kuota browser hampir habis — mencegah gagal tulis diam-diam pada batch scan `> 5` item.
-- **Perlindungan 3-Lapis & Anti-Race-Condition pada Seluruh Outbox (`scannerOutboxService.ts`)**:
-  - Menambahkan cermin **In-Memory** + **IndexedDB (`outbox_*_v1`)** + `commitBatchUpdateToLiveQueue` untuk ke-4 antrean outbox (`Scanner`, `Recount`, `Picking`, `Putaway`) serta *awaitable sync drain* (`active*SyncPromise`), sehingga simpan cepat beruntun atau kuota `localStorage` penuh tidak pernah menghilangkan batch scan.
-- **Verifikasi Sinkronisasi Nyata (`syncedBatchIds`) & Dukungan Ganti Lokasi Tag (`App.tsx`)**:
-  - `handleSaveData` & `handleProcessImport` kini wajib memverifikasi `syncRes.syncedBatchIds.includes(batchId)` sebelum menampilkan notifikasi `✅ Data Scan Tersimpan` & konfeti (nol *false-positive* jika batch belum mendarat di Supabase), dan menahan `scannedData` jika penulisan lokal gagal.
-  - Scan tag `#IN X002`, `#OUT X002`, maupun tag langsung `#X002` (`getAreaFromLokasi !== 'Anomali'`) kini langsung memperbarui lokasi rak aktif meski lokasi sebelumnya sudah terisi.
-
----
-
-## v2.38.0 — 27 November 2026
-**Modul**: Inventory, Kapasitas Rak, Putaway, Scanner & GAS Webhook — Penambahan Lokasi E Warehouse (`E001–E050`) (`src/services/supabase.ts`, `src/services/rackCapacityService.ts`, `src/services/putawayService.ts`, `src/components/inventory/RackCapacityDashboard.tsx`, `src/components/inventory/RackCapacityMobileView.tsx`, `src/components/CetakLabel/CetakLokasiRakTab.tsx`, `src/utils/locationPurgeUtils.ts`, `src/utils/anomalyUtils.ts`, `src/utils/stockTakeRecommendationUtils.ts`, `gas/Code.js`, `gas/fonnte_handler.js`)
-- **Lokasi Baru Warehouse — Lokasi E (`zone_wh_e`)**:
-  - Menambahkan zona **`Lokasi E`** ke **`Area: Warehouse`** (Priority 1) dengan setup awal **`E001 – E050`**, kapasitas maksimal default **`75 pcs / rak`**, dan kategori **`Umum`** (fleksibel; tetap mempertahankan aturan auto-putaway A=Dress, B=Bottom, C=Top, D=Sale, dan seluruh parameter rentang/kapasitas/kategori dapat diubah langsung lewat **Setup Kapasitas**).
-  - Menambahkan auto-migrasi aman (`normalizeAndMigrateRackConfig` v8) agar konfigurasi kapasitas tersimpan di Supabase/`localStorage` otomatis menyisipkan `zone_wh_e` tepat setelah `zone_wh_d` tanpa menimpa pengaturan kustom user lainnya.
-- **Sinkronisasi Lintas Modul & GAS WhatsApp Bot**:
-  - Memperbarui `normalizeLokasi` & `getAreaFromLokasi` (`src/services/supabase.ts`), `getArea` (`gas/Code.js`, `gas/fonnte_handler.js`), dan `tools/run_so_sync.cjs` agar kode rak `E...` dikenali sebagai `Warehouse` (termasuk normalisasi typo huruf `O` menjadi `0`).
-  - Memperbarui mesin Refill Koli, Konsolidasi SKU Terpencar, Evakuasi ke Koli, Putaway (`putawayService.ts`, `PutawayWorkspaceModal.tsx`), `DashboardView.tsx`, `RackCapacityDashboard.tsx`, `RackCapacityMobileView.tsx`, preset Cetak Label `#LOK` (`E001 – E050`), `Kosongkan Rak` (`KNOWN_BLOCKS` Blok E), `stockTakeRecommendationUtils.ts`, `anomalyUtils.ts`, & SOP Asisten AI (`wmsAiExtendedTools.ts`).
-
----
-
-## v2.37.0 — 27 November 2026
-**Modul**: HR & Admin — Pemisahan Tabel Roster 2 Mode (`Jadwal Shift` & `Hasil Absensi`) (`src/components/hr/RosterShiftView.tsx`)
-- **2 Opsi Tampilan Terpisah di Roster (`rosterMode: 'jadwal' | 'absensi'`)**:
-  - **Mode `Jadwal Shift`**: Kini murni menampilkan dan mengedit jadwal kerja (`Shift 1`, `Shift 2`, `Shift 3a`, `Shift 3b`, `Libur`) pada tabel `roster_shift` tanpa lagi ditumpuki/ditimpa oleh status hasil absensi (`Bolos`, `Cuti`, `Izin`, `Sakit`). Generator massal bulanan & Kuas Shift tetap mengisi jadwal dasar secara utuh.
-  - **Mode `Hasil Absensi`**: Menampilkan status hasil absensi aktual per tanggal (**`HADIR` (Tepat Waktu)**, **`TELAT` (Terlambat)**, **`NO-OUT` (Tak Absen Pulang)**, **`CT` / `SKT` / `IZN` (Cuti / Sakit / Izin)**, **`BOLOS`**, **`OFF` (Libur)**, dan **`PRA` (Pra-Join)**) yang dihitung dari `presensi` + cuti disetujui terhadap jadwal `roster_shift`, lengkap dengan filter status & tile ringkasan bulanan di tampilan **Matriks Sebulan (`Kalender Staf` & `Tabel Geser`)**, **Mingguan**, **Tabel Harian**, dan **Kartu**.
-- **Edit Independen Tanpa Saling Mengganggu**:
-  - Menambahkan modal **Edit Hasil Absensi** saat Admin mengklik sel/baris di mode `Hasil Absensi` yang menulis langsung ke `presensi` (`updatePresensiRecord` / `submitPresensiRecord` / `deletePresensiRecord`) tanpa mengubah `roster_shift`, sehingga perbaikan hasil absensi dan pengaturan jadwal shift sepenuhnya terpisah.
-
----
-
-## v2.36.1 — 27 November 2026
-**Modul**: HR & Admin — Akurasi Ranking KPI Absensi & Roster-First Lateness (`src/utils/kpiCalculator.ts`, `src/utils/hrPayrollUtils.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`)
-- **Evaluasi Keterlambatan Roster-First (`kpiCalculator.ts`, `hrPayrollUtils.ts`)**:
-  - Membandingkan `jam_masuk` aktual terhadap `jam_masuk` jadwal **Roster** aktif terlebih dahulu (toleransi 15 menit), sehingga karyawan Shift 3a/3b yang hadir tepat waktu tidak lagi terkena penalti *false late* akibat log `presensi.shift` / `catatan` lama yang masih tertulis `Shift 1` (contoh: `11:56` pada Roster `Shift 3a` atau `10:53` pada Roster `Shift 3b`).
-- **Durasi Kerja Penuh Tukar Shift (`kpiCalculator.ts`) & Shift 3b Checkout (`PresensiView.tsx`)**:
-  - Karyawan yang bekerja memenuhi durasi shift penuh (`>= 530` menit / 8 jam 50 menit, mis. `07:54–17:01` saat tukar shift) kini dinilai pulang normal tanpa penalti `Pulang Awal Tanpa Izin`.
-  - `PresensiView.tsx` (`shiftStandarPulang`) kini mengenali fallback `Shift 3b = 20:00`.
-- **Rebalance Bobot KPI & Tie-Breaker Kehadiran Penuh (`kpiCalculator.ts`, `HrRekapView.tsx`)**:
-  - Bobot KPI diseimbangkan menjadi **Rasio Kehadiran 40% + Kedisiplinan Jam Datang 35% + Jam Pulang 25%** (`-8` per Alpha, `-5` per Pulang Awal Tanpa Izin), disertai tie-breaker urutan leaderboard untuk `% Kehadiran` tertinggi dan `0` izin/sakit/alpha serta tampilan `% Kehadiran` pada kartu Top 3 Podium.
-
----
-
-## v2.36.0 — 27 November 2026
-**Modul**: HR & Admin — Prorata Gaji Karyawan Baru (`Pra-Join`), Input Tanggal Join, & Pemilih Periode Bulan/Tahun Terpisah (`src/components/hr/KaryawanView.tsx`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`, `src/utils/hrPayrollUtils.ts`, `src/utils/kpiCalculator.ts`, `src/utils/hrExportUtils.ts`, `src/services/hrPayslipService.ts`)
-- **Input Tanggal Bergabung (`tgl_bergabung`) & Tanggal Lahir di Master Karyawan (`KaryawanView.tsx`)**:
-  - Menambahkan input tanggal `Tanggal Bergabung (Join Date)` dan `Tanggal Lahir` di modal Tambah/Edit Karyawan serta menampilkannya di modal Detail Karyawan agar tanggal masuk tercatat akurat di Supabase (`karyawan.tgl_bergabung`).
-- **Status `Belum Bergabung (Pra-Join)` & Prorata Gaji Karyawan Baru (`hrPayrollUtils.ts`, `kpiCalculator.ts`, `hrExportUtils.ts`, `hrPayslipService.ts`)**:
-  - Jika karyawan masuk di tengah siklus 26–25 (mis. join `11 Nov` pada periode `26 Okt – 25 Nov`), tanggal sebelum `tgl_bergabung` (`26 Okt – 10 Nov`) ditandai sebagai **`Belum Bergabung (Pra-Join)`** — **tidak pernah dihitung Alpha/Bolos**, tidak memotong KPI (`effectiveStartDate`), dan tidak masuk daftar ketidakhadiran.
-  - `gajiPokok` dan `tunjangan` diprorata proporsional terhadap hari kerja aktif (`totalJadwalKerja / totalHariKerjaPeriodePenuh`), sementara `upahHarian` tetap mengacu pada pembagi periode penuh; badge `Prorata · Join ...` dan banner informasi Pra-Join tampil jelas di tabel gaji, modal Slip Gaji HR, tab `Slip Gaji` karyawan (`PresensiView.tsx`), cetak PDF, serta kolom `Status Masuk / Prorata` pada ekspor Excel.
-- **Pemilih Periode Bulan & Tahun Terpisah (`HrRekapView.tsx`)**:
-  - Mengganti `<input type="month">` (`2026-12`) dengan dropdown yang hanya menampilkan **nama bulan** (`Januari` – `Desember`) disertai tombol navigasi `‹` / `›` dan field **Tahun** terpisah yang otomatis terisi tahun berjalan serta dapat diubah manual ke tahun tertentu.
-
----
-
 ## v2.35.0 — 27 November 2026
-**Modul**: HR & Admin — Aturan Potongan Gaji Lengkap, Edit Absensi Ketidakhadiran, & Publish Slip Gaji (`src/utils/hrPayrollUtils.ts`, `src/services/hrPayslipService.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`, `src/services/supabase.ts`)
-- **Aturan Kalkulasi Gaji Akurat (`hrPayrollUtils.ts`)**:
-  - **Absen Datang Tapi Tidak Absen Pulang**: Denda tetap **`Rp 10.000`/kejadian** (`potonganTidakAbsenPulangNominal`), namun **gaji harian tetap dibayar** (`totalHariDibayar++`, tidak dipotong upah harian).
-  - **Tidak Hadir Tanpa Absen (Kecuali Libur)**: Dipotong upah harian (`potonganTidakHadir`) beserta rincian per tanggal (`detailTidakHadirItems`); tanggal **Libur/Off** serta hari kerja masa depan/hari ini yang masih berlangsung tidak pernah dipotong.
-  - **Cuti / Izin / Sakit Unpaid**: Tidak dibayar gaji harian (`potongGajiCutiIzinSakit = true` -> `potonganCutiIzinSakit`).
-  - **Toleransi Keterlambatan 30 Menit/Bulan**: Akumulasi keterlambatan hingga 30 menit gratis toleransi; keterlambatan setelah akumulasi `> 30 menit` otomatis dipotong **`Rp 5.000`/hari** (`detailTerlambatItems`).
-  - **Ekspor Excel 2 Sheet**: Sheet 1 rekap gaji terperinci + Sheet 2 `Rincian Ketidakhadiran`.
-- **Rincian Ketidakhadiran & Edit Absensi Inline (`HrRekapView.tsx` & `supabase.ts`)**:
-  - Modal Slip Gaji menampilkan rincian tanggal ketidakhadiran/tak absen pulang & rincian keterlambatan kronologis, dilengkapi tombol **`Edit`** inline per tanggal (ubah ke `Hadir` + jam masuk/pulang, `Libur`, `Sakit`, `Izin`, `Cuti`, atau `Alpha`) yang langsung menyinkronkan `presensi` + `roster_shift` dan menghitung ulang gaji seketika. Memperbaiki `submitPresensiRecord` agar status `Sakit` tidak tertimpa menjadi `Izin` dan mendukung jam masuk `Shift 3b` (`11:00`).
-- **Publish & Kontrol Visibilitas Slip Gaji (`hrPayslipService.ts`, `HrRekapView.tsx`, `PresensiView.tsx`)**:
-  - Menambahkan tombol **`Publish Slip Gaji`** & **`Tarik Slip`** (per periode maupun per karyawan) di `HrRekapView.tsx` yang menyimpan snapshot slip ke `wms_system_docs` (`hr_published_payslips_*`).
-  - Menambahkan tab **`Slip Gaji`** di `PresensiView.tsx` bagi karyawan: periode yang **belum di-publish HR tidak dapat dilihat** (terkunci), dan periode yang sudah di-publish dapat dilihat lengkap beserta tombol **Cetak Slip**.
+**Modul**: Asisten AI Pintar WMS (`src/services/wmsAiKnowledgeBase.ts`, `src/services/wmsAiService.ts`, `src/services/wmsAiExtendedTools.ts`, `api/ai.js`, `src/components/ai/WmsAiModal.tsx`, `src/App.tsx`)
+- **Basis Pengetahuan Workflow & SOP Menyeluruh (`wmsAiKnowledgeBase.ts`)**:
+  - Menanamkan 8 playbook alur kerja end-to-end seluruh 25+ modul WMS (Inbound Produksi & Batch Susulan, Picking & Priority Areas, Pengecekan SJ & Share Kekurangan anti-double `#OUT`, Manual Shipment / Split Fulfil / Alteration peran Store vs Admin + Live Chat Reminder, Retur Barang `RTR-...`, Stock Opname 0-Scan & `log_produk` append-only, Loading Dock / Trip / Handover / JNE, serta HR Roster 1–akhir bulan vs Payroll & KPI 26–25 + Shift 3b), protokol analisis 3 langkah, dan **kesadaran halaman aktif (`activePage`)**.
+- **Auto-Intelligence Routing (`Auto` / `Cepat` / `Mendalam`)**:
+  - Menambahkan pengklasifikasi kompleksitas pertanyaan deterministik (`classifyPromptComplexity`) dan mode default **`Auto`** di `WmsAiModal` & `api/ai.js` yang otomatis menggunakan **Gemini 4 Hydrogen** (`ThinkingLevel.MEDIUM`/`LOW`) untuk pertanyaan analitis, investigasi lintas modul, lampiran, dan sintesis pasca-tool, sementara menjaga **Gemini 3.1 Flash Lite** untuk lookup cepat & failover otomatis.
+- **3 Tool Analisis Baru & Perbaikan Akurasi Data Lintas Modul (Hemat Egress)**:
+  - Menambahkan **`query_pengecekan_sj`** (via `fetchPengecekanSJList` ber-watermark ~150B), **`trace_wms_entity`** (pelacakan 360° lintas 8 modul dari 1 nomor SJ/invoice_picking/MS/AR/RTR/resi/kode produksi/rak/produk), dan **`analyze_hr_kpi_and_payroll`** (khusus HR & Superadmin: kalkulasi live `calculateMonthlyPayroll` periode 26–25 + `calculateKpiAbsensiBatch` Shift 3b aware).
+  - Memperbaiki skema kolom query `search_manual_shipment` & `query_all_order_channels` (kini memakai watermark-gated `fetchManualShipments(false)` sesuai kolom nyata), memperbaiki filter status Bahasa Indonesia pada `picking_list` (`SELESAI`/`BATAL`), status approval HR (`Diajukan`), dan kolom tanggal/qty `penerimaan_produksi`, serta menambah dukungan `payroll_month` pada `query_hr_operations`.
+
+- **Eksekusi Langsung Perintah Navigasi & Popup Aplikasi (`open_wms_module_shortcut` + `tryMatchDirectNavigationCommand`)**:
+  - Asisten AI kini langsung mengeksekusi perintah pengguna untuk membuka menu/halaman/popup WMS (seperti `Buka menu scanner`, `Buka form input produksi`, `Buka hitung ulang [kode]`, `Buka keranjang order`, `Buka pengecekan SJ`, `Buka kalkulasi gaji`, `Buka pengaturan`, dll.) dengan validasi hak akses RBAC (`canAccessPage`), otomatis meminimalkan jendela chat ke gelembung AI, dan memblokir penolakan palsu dari LLM.
 
 ---
 

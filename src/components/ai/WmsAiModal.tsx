@@ -71,6 +71,7 @@ import {
   AiChatSession,
   AiSpeedMode,
   AiUserRole,
+  AiNavigationTargetPage,
   TrelloCandidatePreview,
   sendChatMessageToGemini,
   fetchAiConfig,
@@ -88,13 +89,14 @@ interface WmsAiModalProps {
   isOpen: boolean;
   onClose: () => void;
   session: UserSession | null;
+  activePage?: ActivePage;
   onNotify?: (message: string, type: 'success' | 'error' | 'info') => void;
   onNavigateToInventoryCart?: () => void;
   onNavigateToProduksiInput?: () => void;
   onNavigateToManualShipmentForm?: () => void;
   onNavigateToReturForm?: () => void;
   onNavigateToAgendaDraft?: () => void;
-  onNavigateToPage?: (page: ActivePage) => void;
+  onNavigateToPage?: (page: AiNavigationTargetPage, subTab?: string) => void;
 }
 
 function getSuggestedPrompts(role: AiUserRole) {
@@ -102,21 +104,21 @@ function getSuggestedPrompts(role: AiUserRole) {
     return [
       {
         icon: FileSpreadsheet,
+        label: 'Analisa KPI & Kalkulasi Gaji (26–25)',
+        prompt: 'Analisa KPI absensi dan estimasi kalkulasi gaji karyawan periode bulan ini (siklus tgl 26–25), soroti keterlambatan, alpha, atau izin',
+        desc: 'Hitung langsung KPI Shift 3b aware & payroll periode 26–25'
+      },
+      {
+        icon: ClipboardList,
         label: 'Cek Pengajuan & Presensi HR',
-        prompt: 'Cek pengajuan cuti, lembur, dan izin pulang awal yang masih pending hari ini',
-        desc: 'Pantau roster shift, presensi, dan approval HR'
+        prompt: 'Cek pengajuan cuti, lembur, dan izin pulang awal yang masih Diajukan hari ini beserta rekap presensi',
+        desc: 'Pantau roster shift (1–akhir bulan), presensi, & approval HR'
       },
       {
         icon: Calendar,
         label: 'Cek Agenda & Project HR',
         prompt: 'Tampilkan agenda minggu ini dan project yang deadline-nya dekat atau overdue',
         desc: 'Sinkron langsung dengan Kalender Agenda & Project'
-      },
-      {
-        icon: FileText,
-        label: 'Draft Agenda / Catatan Tim',
-        prompt: 'Buatkan draft agenda review tim dan catatan checklist tugas untuk besok jam 10:00',
-        desc: 'AI siapkan draft ke modul Agenda & Project untuk Anda review'
       },
       {
         icon: Boxes,
@@ -148,10 +150,10 @@ function getSuggestedPrompts(role: AiUserRole) {
         desc: 'Prefill produk asal & pengganti sesuai Master Produk'
       },
       {
-        icon: Calendar,
-        label: 'Cek Agenda & Project',
-        prompt: 'Tampilkan agenda minggu ini dan checklist catatan penting yang masih aktif',
-        desc: 'Lihat jadwal agenda, deadline project, dan catatan kerja'
+        icon: Search,
+        label: 'Lacak Status Pesanan / Resi',
+        prompt: 'Cek status pesanan Manual Shipment dan Retur Barang terbaru beserta nomor resinya',
+        desc: 'Lacak pesanan & panduan SOP khusus Store'
       }
     ];
   }
@@ -160,32 +162,38 @@ function getSuggestedPrompts(role: AiUserRole) {
     return [
       {
         icon: Database,
-        label: 'Audit Stok, Selisih & Rak',
-        prompt: 'Lakukan audit stok minus, selisih stok fisik vs DealPOS, dan rak yang overload hari ini',
-        desc: 'Audit log mutasi, selisih sistem, dan kapasitas rak gudang'
+        label: 'Ringkasan & Audit Lintas Modul',
+        prompt: 'Berikan ringkasan eksekutif hari ini: pengecekan SJ selisih, antrean picking belum selesai, manual shipment aktif, dan anomali stok fisik vs DealPOS',
+        desc: 'Analisa 360° gudang, pengiriman, order & stok'
+      },
+      {
+        icon: Search,
+        label: 'Lacak 360° SJ / Resi / Order',
+        prompt: 'Cek Pengecekan SJ terbaru yang masih SELISIH dan hubungkan dengan status Tugas Picking-nya',
+        desc: 'Telusuri kronologi lintas modul Pengecekan SJ, Picking & Mutasi'
+      },
+      {
+        icon: FileSpreadsheet,
+        label: 'Analisa KPI & Gaji HR (26–25)',
+        prompt: 'Analisa rekap KPI absensi dan estimasi kalkulasi gaji karyawan untuk periode payroll bulan ini (26–25)',
+        desc: 'Kalkulasi live KPI absensi, lembur, potongan & take home pay'
       },
       {
         icon: Calendar,
         label: 'Cek Agenda & Project Aktif',
         prompt: 'Tampilkan agenda minggu ini, deadline project terdekat, dan project yang overdue',
         desc: 'Pantau jadwal operasional, progres task, dan catatan tim'
-      },
-      {
-        icon: FileText,
-        label: 'Buat Draft Agenda / Project',
-        prompt: 'Buatkan draft agenda Stock Opname gudang besok jam 09:00 beserta checklist persiapannya',
-        desc: 'Prefill draft ke modul Agenda & Project untuk Anda konfirmasi'
-      },
-      {
-        icon: FileSpreadsheet,
-        label: 'Cek Kedatangan Kargo / CMT',
-        prompt: 'Kemarin ada masuk kargo apa aja dan berapa aja?',
-        desc: 'Baca rincian penerimaan barang CMT & Kargo per tanggal'
       }
     ];
   }
 
   return [
+    {
+      icon: Search,
+      label: 'Cek Pengecekan SJ & Picking',
+      prompt: 'Cek Pengecekan SJ yang statusnya masih SELISIH beserta antrean Tugas Picking yang belum selesai',
+      desc: 'Analisa kekurangan SJ, sisa picking & mutasi rak'
+    },
     {
       icon: FileSpreadsheet,
       label: 'Cek Kedatangan Kargo / CMT',
@@ -193,22 +201,16 @@ function getSuggestedPrompts(role: AiUserRole) {
       desc: 'Baca rincian penerimaan barang CMT & Kargo per tanggal'
     },
     {
+      icon: Boxes,
+      label: 'Audit Stok, QC & Perbaikan',
+      prompt: 'Cek tiket perbaikan aktif, peminjaman yang belum kembali, dan stok fisik sailor top',
+      desc: 'Pantau QC, perbaikan, pinjaman SPS, dan posisi rak gudang'
+    },
+    {
       icon: FileText,
       label: 'Bantu Input Form Produksi',
       prompt: 'Tolong bantu input penerimaan kargo hari ini ke form input',
       desc: 'AI tanya jawab & isikan ke draft form, Anda tinggal cek & submit'
-    },
-    {
-      icon: Boxes,
-      label: 'Cek Picking, QC & Stok',
-      prompt: 'Cek tugas picking yang masih kurang, tiket perbaikan aktif, dan stok sailor top',
-      desc: 'Pantau picking queue, perbaikan, pinjaman, dan rak gudang'
-    },
-    {
-      icon: Calendar,
-      label: 'Agenda & Project Gudang',
-      prompt: 'Tampilkan agenda gudang minggu ini dan project yang deadline-nya paling dekat',
-      desc: 'Cek jadwal operasional, deadline project, & catatan tim'
     }
   ];
 }
@@ -217,6 +219,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   isOpen,
   onClose,
   session,
+  activePage,
   onNotify,
   onNavigateToInventoryCart,
   onNavigateToProduksiInput,
@@ -573,11 +576,17 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     onNotify?.(`Laporan ${gapId} dihapus dari backlog`, 'info');
   };
 
-  const handleNavigateShortcut = (page: ActivePage, label: string) => {
-    if (onNavigateToPage) {
-      onNavigateToPage(page);
+  const handleNavigateShortcut = (page: AiNavigationTargetPage, label: string, subTab?: string) => {
+    if (page === 'inventory_cart' && onNavigateToInventoryCart) {
+      onNavigateToInventoryCart();
       setIsMinimized(true);
-      onNotify?.(`Membuka modul ${label}...`, 'info');
+      onNotify?.(`Membuka ${label}...`, 'info');
+      return;
+    }
+    if (onNavigateToPage) {
+      onNavigateToPage(page, subTab);
+      setIsMinimized(true);
+      onNotify?.(`Membuka ${label}...`, 'info');
     }
   };
 
@@ -591,13 +600,14 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
   const [speedMode, setSpeedMode] = useState<AiSpeedMode>(() => {
     try {
       const saved = localStorage.getItem('wms_ai_speed_mode');
-      return saved === 'deep' ? 'deep' : 'fast';
+      if (saved === 'fast' || saved === 'deep' || saved === 'auto') return saved;
+      return 'auto';
     } catch {
-      return 'fast';
+      return 'auto';
     }
   });
   const [lastModelUsed, setLastModelUsed] = useState<string>(() =>
-    speedMode === 'deep' ? 'Gemini 4 Hydrogen' : 'Gemini 3.1 Flash Lite'
+    speedMode === 'fast' ? 'Gemini 3.1 Flash Lite' : 'Gemini 4 Hydrogen'
   );
   const [serverAiHealth, setServerAiHealth] = useState<{
     checked: boolean;
@@ -608,7 +618,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
     checked: false,
     ok: true,
     configured: true,
-    models: ['gemini-3.1-flash-lite', 'gemini-4-hydrogen']
+    models: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']
   });
   const [cloudSyncStatus, setCloudSyncStatus] = useState<'idle' | 'syncing' | 'synced' | 'error'>('idle');
   const cloudHydratedUserRef = useRef<string | null>(null);
@@ -625,7 +635,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
 
   const handleChangeSpeedMode = (nextMode: AiSpeedMode) => {
     setSpeedMode(nextMode);
-    setLastModelUsed(nextMode === 'deep' ? 'Gemini 4 Hydrogen' : 'Gemini 3.1 Flash Lite');
+    setLastModelUsed(nextMode === 'fast' ? 'Gemini 3.1 Flash Lite' : 'Gemini 4 Hydrogen');
     try {
       localStorage.setItem('wms_ai_speed_mode', nextMode);
     } catch {}
@@ -970,7 +980,10 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
           else if (toolName === 'query_store_help_tickets') toolLabel = 'Membaca tiket kendala dari tim Store...';
           else if (toolName === 'get_executive_daily_summary') toolLabel = 'Menghitung ringkasan KPI operasional harian WMS...';
           else if (toolName === 'validate_items_against_master') toolLabel = 'Memvalidasi daftar item terhadap Master Produk & stok live...';
-          else if (toolName === 'open_wms_module_shortcut') toolLabel = 'Menyiapkan tombol pintasan modul WMS...';
+          else if (toolName === 'query_pengecekan_sj') toolLabel = 'Menganalisis data Pengecekan SJ & status COCOK/SELISIH...';
+          else if (toolName === 'trace_wms_entity') toolLabel = 'Melacak jejak 360° entitas lintas modul WMS...';
+          else if (toolName === 'analyze_hr_kpi_and_payroll') toolLabel = 'Menghitung KPI absensi & kalkulasi gaji periode 26–25...';
+          else if (toolName === 'open_wms_module_shortcut') toolLabel = 'Mengeksekusi navigasi & membuka modul WMS...';
           else if (toolName === 'report_ai_capability_gap') toolLabel = 'Mencatat laporan kebutuhan fitur ke Backlog Dev Agen...';
           setActiveToolName(toolLabel);
           // Bersihkan placeholder streaming sementara jika AI memutuskan memanggil tool
@@ -980,6 +993,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         session,
         {
           speedMode,
+          activePage,
           signal: controller.signal,
           onModelResolved: (resolvedModel) => {
             setLastModelUsed(formatPrettyModelName(resolvedModel));
@@ -1042,6 +1056,14 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
         }
         return [...prev, botMsg];
       });
+
+      // Eksekusi otomatis perintah navigasi / buka menu di layar pengguna
+      if (result.navigationShortcut && result.navigationShortcut.autoExecute !== false) {
+        const navTarget = result.navigationShortcut;
+        window.setTimeout(() => {
+          handleNavigateShortcut(navTarget.page, navTarget.label, navTarget.subTab);
+        }, 180);
+      }
     } catch (err: any) {
       if (err?.name === 'AbortError' || controller.signal.aborted) {
         setMessages((prev) =>
@@ -2285,7 +2307,8 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                           onClick={() =>
                             handleNavigateShortcut(
                               msg.navigationShortcut!.page,
-                              msg.navigationShortcut!.label
+                              msg.navigationShortcut!.label,
+                              msg.navigationShortcut!.subTab
                             )
                           }
                           className="px-3 py-2 rounded-xl text-xs font-black bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer shrink-0"
@@ -2614,6 +2637,20 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
               <button
                 type="button"
                 disabled={isLoading}
+                onClick={() => handleChangeSpeedMode('auto')}
+                title="Mode Auto Cerdas (Otomatis pilih Gemini 4 Hydrogen untuk analisis/lintas modul & Flash Lite untuk lookup ringan)"
+                className={`px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
+                  speedMode === 'auto'
+                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                }`}
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>Auto</span>
+              </button>
+              <button
+                type="button"
+                disabled={isLoading}
                 onClick={() => handleChangeSpeedMode('fast')}
                 title="Mode Cepat (Gemini 3.1 Flash Lite + Streaming instan)"
                 className={`px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
@@ -2629,7 +2666,7 @@ export const WmsAiModal: React.FC<WmsAiModalProps> = ({
                 type="button"
                 disabled={isLoading}
                 onClick={() => handleChangeSpeedMode('deep')}
-                title="Mode Analisis Mendalam (Gemini 4 Hydrogen)"
+                title="Mode Analisis Mendalam (Gemini 4 Hydrogen dengan reasoning tinggi)"
                 className={`px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50 ${
                   speedMode === 'deep'
                     ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-2xs border border-slate-200/80 dark:border-slate-700'

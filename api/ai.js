@@ -4,8 +4,8 @@ const FAST_MODEL = 'gemini-3.1-flash-lite';
 const STANDARD_MODEL = 'gemini-4-hydrogen';
 const DEFAULT_USER_AGENT = 'aistudio-build';
 const MODEL_COOLDOWN_MS = 2 * 60 * 1000; // 2 menit cooldown jika model timeout/503/429/404
-const FAILOVER_TIMEOUT_MS = 12_000; // Failover cepat bila masih ada model cadangan
-const FINAL_TIMEOUT_MS = 35_000;
+const FAILOVER_TIMEOUT_MS = 18_000; // Cukup waktu bagi Gemini 4 Hydrogen berpikir & tetap cepat failover
+const FINAL_TIMEOUT_MS = 45_000;
 
 const aiClientCache = new Map();
 const modelCooldownUntil = new Map();
@@ -109,14 +109,23 @@ async function resolveServerGeminiKey() {
   return '';
 }
 
-function resolveModelsToTry(requestedModel, speedMode) {
-  const mode = String(speedMode || 'fast').toLowerCase();
+function resolveModelsToTry(requestedModel, speedMode, analysisHint) {
+  const mode = String(speedMode || 'auto').toLowerCase();
+  const hint = String(analysisHint || 'simple').toLowerCase();
   const allowedValid = new Set([FAST_MODEL, STANDARD_MODEL]);
 
-  const preferredOrder =
-    mode === 'deep'
-      ? [STANDARD_MODEL, FAST_MODEL]
-      : [FAST_MODEL, STANDARD_MODEL];
+  // Auto-Intelligence Routing:
+  // - 'deep' -> selalu utamakan Gemini 4 Hydrogen (penalaran & analisa sistem lebih tajam)
+  // - 'auto' -> utamakan Gemini 4 Hydrogen untuk pertanyaan analitis/investigasi/kalkulasi/sintesis, Flash Lite untuk lookup ringan
+  // - 'fast' -> utamakan Flash Lite untuk kecepatan maksimal (kecuali deep_analysis tetap naik ke Hydrogen)
+  const shouldPreferStandard =
+    mode === 'deep' ||
+    (mode === 'auto' && (hint === 'analytical' || hint === 'deep_analysis' || hint === 'synthesis')) ||
+    (mode === 'fast' && hint === 'deep_analysis');
+
+  const preferredOrder = shouldPreferStandard
+    ? [STANDARD_MODEL, FAST_MODEL]
+    : [FAST_MODEL, STANDARD_MODEL];
 
   const ordered = [];
   if (requestedModel && typeof requestedModel === 'string' && allowedValid.has(requestedModel)) {
@@ -132,10 +141,11 @@ function resolveModelsToTry(requestedModel, speedMode) {
   return [...healthy, ...cooling];
 }
 
-function buildModelConfig(model, { systemInstruction, tools, generationConfig, speedMode, abortSignal }) {
+function buildModelConfig(model, { systemInstruction, tools, generationConfig, speedMode, analysisHint, abortSignal }) {
   const isGemini4 = model.startsWith('gemini-4');
   const hasTools = Array.isArray(tools) && tools.length > 0;
-  const mode = String(speedMode || 'fast').toLowerCase();
+  const mode = String(speedMode || 'auto').toLowerCase();
+  const hint = String(analysisHint || 'simple').toLowerCase();
 
   const rawExtra = generationConfig && typeof generationConfig === 'object' ? { ...generationConfig } : {};
   const requestedThinking = rawExtra.thinkingConfig && typeof rawExtra.thinkingConfig === 'object'
@@ -160,11 +170,15 @@ function buildModelConfig(model, { systemInstruction, tools, generationConfig, s
       thinkingLevel = ThinkingLevel[reqLvl] || ThinkingLevel.MINIMAL;
     }
   } else if (isGemini4) {
-    // Gemini 4 default = HIGH (lambat). Turunkan ke LOW untuk respons cepat, MEDIUM saat mode deep tanpa tool
-    thinkingLevel = mode === 'deep' && !hasTools ? ThinkingLevel.MEDIUM : ThinkingLevel.LOW;
+    // Gemini 4 Hydrogen: MEDIUM untuk analisis mendalam / sintesis pasca-tool, LOW untuk tool-calling & pertanyaan cepat
+    const needsMediumReasoning =
+      mode === 'deep' ||
+      hint === 'deep_analysis' ||
+      (hint === 'synthesis' && !hasTools);
+    thinkingLevel = needsMediumReasoning ? ThinkingLevel.MEDIUM : ThinkingLevel.LOW;
   } else {
-    // Gemini 3.1 Flash Lite: MINIMAL untuk chat/jawaban akhir tercepat, LOW saat memanggil tools agar akurat
-    thinkingLevel = hasTools || mode === 'deep' ? ThinkingLevel.LOW : ThinkingLevel.MINIMAL;
+    // Gemini 3.1 Flash Lite: LOW saat memanggil tools atau analitis agar pemilihan tool tepat; MINIMAL untuk sapaan/jawaban ringkas
+    thinkingLevel = hasTools || mode === 'deep' || hint !== 'simple' ? ThinkingLevel.LOW : ThinkingLevel.MINIMAL;
   }
 
   return {
@@ -296,7 +310,8 @@ export default async function handler(req, res) {
       tools,
       generationConfig,
       requestedModel,
-      speedMode = 'fast',
+      speedMode = 'auto',
+      analysisHint = 'simple',
       stream = false,
     } = body;
 
@@ -305,7 +320,7 @@ export default async function handler(req, res) {
     }
 
     const ai = getAiClient(apiKey);
-    const modelsToTry = resolveModelsToTry(requestedModel, speedMode);
+    const modelsToTry = resolveModelsToTry(requestedModel, speedMode, analysisHint);
 
     // =========================================================================
     // MODE STREAMING SSE (TTFT super cepat, teks tampil langsung per potongan)
@@ -348,6 +363,7 @@ export default async function handler(req, res) {
             tools,
             generationConfig,
             speedMode,
+            analysisHint,
             abortSignal: attemptController.signal,
           });
 
@@ -465,6 +481,7 @@ export default async function handler(req, res) {
               tools,
               generationConfig,
               speedMode,
+              analysisHint,
               abortSignal: signal,
             });
             return ai.models.generateContent({

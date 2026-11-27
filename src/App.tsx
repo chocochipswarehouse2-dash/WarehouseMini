@@ -5641,6 +5641,7 @@ export default function App() {
         isOpen={isAiModalOpen}
         onClose={() => setIsAiModalOpen(false)}
         session={session}
+        activePage={activePage}
         onNotify={showToast}
         onNavigateToInventoryCart={() => {
           handleSelectPage('inventory');
@@ -5671,8 +5672,15 @@ export default function App() {
         onNavigateToAgendaDraft={() => {
           handleSelectPage('agenda');
         }}
-        onNavigateToPage={(page) => {
-          handleSelectPage(page);
+        onNavigateToPage={(page, subTab) => {
+          if (page === 'inventory_cart') {
+            handleSelectPage('inventory');
+            if (typeof window !== 'undefined') {
+              (window as any).__wms_open_inventory_cart = true;
+            }
+            return;
+          }
+          handleSelectPage(page as any, subTab);
         }}
       />
 
