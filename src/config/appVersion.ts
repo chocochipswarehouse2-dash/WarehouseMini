@@ -15,11 +15,11 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.38.1",
-  "versionCode": 581,
+  "version": "v2.38.2",
+  "versionCode": 582,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v581-1614",
-  "releaseTitle": "WMS v2.38.1 — Perbaikan Kritis Outbox Scan & Anti-QuotaExceeded",
+  "buildHash": "wms-261127-v582-1700",
+  "releaseTitle": "WMS v2.38.2 — Pembaruan Sistem & Optimasi Operasional",
   "releaseNotes": [
     "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
     "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
@@ -29,6 +29,19 @@ export const CURRENT_APP_VERSION_INFO: VersionInfo = {
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.38.1",
+    "versionCode": 581,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v581-1614",
+    "releaseTitle": "WMS v2.38.1 — Perbaikan Kritis Outbox Scan & Anti-QuotaExceeded",
+    "releaseNotes": [
+      "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
+      "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
+      "Notifikasi Data Scan Tersimpan kini wajib terverifikasi masuk ke Supabase terlebih dahulu (anti false-positive) & dukungan ganti lokasi tag #IN X002 / #X002"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.38.0",
     "versionCode": 580,
@@ -119,18 +132,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",
       "Jadwal Shift (RosterShiftView) tetap ketat tanggal 1 s/d akhir bulan kalender",
       "Perbaikan off-by-one zona waktu WIB pada getDatesInRange"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.33.2",
-    "versionCode": 532,
-    "buildDate": "27 November 2026",
-    "buildHash": "wms-261127-v532-0050",
-    "releaseTitle": "WMS v2.33.2 — Catatan Rilis Khusus Owner Warehouse",
-    "releaseNotes": [
-      "Catatan Rilis Terbaru dan Riwayat Pembaruan Sebelumnya di modal pembaruan kini hanya tampil untuk akun owner @warehouse",
-      "Tooltip floating widget pembaruan menyesuaikan peran akun non-owner"
     ],
     "minSupportedVersion": "v2.0.0"
   }

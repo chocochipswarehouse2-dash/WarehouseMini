@@ -31,6 +31,8 @@ import { isRealAlterItem, hasRealAlterItems, getRealAlterItems, hasValidArData, 
 import {
   fetchOutlets,
   fetchManualShipments,
+  fetchManualShipmentByOrderId,
+  invalidateManualShipmentsCache,
   submitManualShipment,
   updateShipmentStatus,
   updateShipmentResi,
@@ -995,7 +997,8 @@ _WMS Warehouse System_`;
     const unsubscribe = globalRealtimeStore.subscribe('manual_shipment', () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
-        loadOrders();
+        invalidateManualShipmentsCache();
+        loadOrders(true);
       }, 600);
     });
 
@@ -1136,10 +1139,10 @@ _WMS Warehouse System_`;
     setOutlets(data);
   };
 
-  const loadOrders = async () => {
+  const loadOrders = async (forceRefresh = false) => {
     setLoading(true);
     try {
-      const data = await fetchManualShipments();
+      const data = await fetchManualShipments(forceRefresh);
       // Sanitize jika ada sisa data lama di mana string JSON masuk ke kolom no_transaksi_customer
       const cleaned = data.map(o => {
         const cleanOrder = { ...o };
@@ -1486,6 +1489,28 @@ _WMS Warehouse System_`;
     if (result.success) {
       onShowToast(editingOrder ? 'Pesanan berhasil diupdate' : 'Pesanan berhasil disubmit', 'success');
 
+      if (editingOrder) {
+        const savedKey = orderData.no_pesanan || (orderData as any).id;
+        setOrders((prev) =>
+          prev.map((o) =>
+            o.no_pesanan === savedKey || (o as any).id === savedKey ? { ...o, ...orderData } : o
+          )
+        );
+        setSelectedOrderDetails((prev) =>
+          prev && (prev.no_pesanan === savedKey || (prev as any).id === savedKey)
+            ? { ...prev, ...orderData }
+            : prev
+        );
+        setActionSheetOrder((prev) =>
+          prev && (prev.no_pesanan === savedKey || (prev as any).id === savedKey)
+            ? { ...prev, ...orderData }
+            : prev
+        );
+        setPrintPayload((prev) =>
+          prev && prev.orders.some((o) => (o.no_pesanan || (o as any).id) === savedKey) ? null : prev
+        );
+      }
+
       // OTOMATIS TUGAS PICKING (Kategori Manual shipment/alter) untuk item fulfillment Marketplace / Gudang
       try {
         const pickRes = await syncAutoPickingTaskForManualOrder(orderData, {
@@ -1568,7 +1593,7 @@ _WMS Warehouse System_`;
       }
 
       resetForm();
-      loadOrders();
+      loadOrders(true);
       setActiveTab('rekap');
     } else {
       onShowToast(result.message || (editingOrder ? 'Gagal update pesanan' : 'Gagal submit pesanan'), 'error');
@@ -2602,6 +2627,60 @@ _WMS Warehouse System_`;
     }
   };
 
+  const refreshOrdersLiveBeforePrint = async (targets: ManualShipmentOrder[]): Promise<ManualShipmentOrder[]> => {
+    if (!Array.isArray(targets) || targets.length === 0 || targets.length > 25) {
+      return targets;
+    }
+    try {
+      const refreshedByKey = new Map<string, ManualShipmentOrder>();
+      const chunkSize = 5;
+      for (let i = 0; i < targets.length; i += chunkSize) {
+        const chunk = targets.slice(i, i + chunkSize);
+        await Promise.all(
+          chunk.map(async (ord) => {
+            const lookupKey = ord.no_pesanan || (ord as any).id;
+            if (!lookupKey) return;
+            try {
+              const liveRow = await fetchManualShipmentByOrderId(lookupKey);
+              if (liveRow) {
+                refreshedByKey.set(String(liveRow.no_pesanan || ''), liveRow);
+                if (liveRow.id) refreshedByKey.set(String(liveRow.id), liveRow);
+              }
+            } catch {}
+          })
+        );
+      }
+
+      if (refreshedByKey.size === 0) return targets;
+
+      const merged = targets.map((ord) => {
+        const k1 = ord.no_pesanan ? refreshedByKey.get(String(ord.no_pesanan)) : undefined;
+        const k2 = (ord as any).id ? refreshedByKey.get(String((ord as any).id)) : undefined;
+        return k1 || k2 || ord;
+      });
+
+      setOrders((prev) =>
+        prev.map((o) => {
+          const hit =
+            (o.no_pesanan && refreshedByKey.get(String(o.no_pesanan))) ||
+            ((o as any).id && refreshedByKey.get(String((o as any).id)));
+          return hit ? { ...o, ...hit } : o;
+        })
+      );
+      setSelectedOrderDetails((prev) => {
+        if (!prev) return null;
+        const hit =
+          (prev.no_pesanan && refreshedByKey.get(String(prev.no_pesanan))) ||
+          ((prev as any).id && refreshedByKey.get(String((prev as any).id)));
+        return hit ? { ...prev, ...hit } : prev;
+      });
+
+      return merged;
+    } catch {
+      return targets;
+    }
+  };
+
   const handlePrintPickingList = async (singleOrBatchOrder?: ManualShipmentOrder | ManualShipmentOrder[] | any) => {
     const isOrderArray = Array.isArray(singleOrBatchOrder);
     // Robust check: Pastikan singleOrder benar-benar objek ManualShipmentOrder dan bukan MouseEvent dari onClick
@@ -2636,7 +2715,8 @@ _WMS Warehouse System_`;
     }
 
     setLoading(true);
-    const enrichedOrders = await enrichOrdersWithLocations(validOrdersToPrint);
+    const liveOrdersToPrint = await refreshOrdersLiveBeforePrint(validOrdersToPrint);
+    const enrichedOrders = await enrichOrdersWithLocations(liveOrdersToPrint);
     
     // Tandai picking list sudah dicetak; hanya pindah ke 'diproses' jika Label Paket JUGA sudah dicetak
     const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
@@ -3713,7 +3793,8 @@ _WMS Warehouse System_`;
     }
 
     setLoading(true);
-    const enrichedOrders = await enrichOrdersWithLocations(itemsToPrint);
+    const liveItemsToPrint = await refreshOrdersLiveBeforePrint(itemsToPrint);
+    const enrichedOrders = await enrichOrdersWithLocations(liveItemsToPrint);
 
     const orderIds = enrichedOrders.map(o => o.no_pesanan || (o as any).id).filter(Boolean);
     const nowIso = new Date().toISOString();
@@ -3859,7 +3940,7 @@ _WMS Warehouse System_`;
         ).catch((err) => console.warn('Resi email trigger error:', err));
 
         setResiModalOrder(null);
-        loadOrders();
+        loadOrders(true);
       } else {
         onShowToast('Gagal memperbarui nomor resi di database', 'error');
       }
@@ -3920,7 +4001,7 @@ _WMS Warehouse System_`;
     if (success) {
       void removePendingAutoPickingTask(no_pesanan).catch(() => {});
       onShowToast('Pesanan berhasil dihapus', 'success');
-      loadOrders();
+      loadOrders(true);
     } else {
       onShowToast('Gagal hapus pesanan', 'error');
     }
@@ -4003,7 +4084,7 @@ _WMS Warehouse System_`;
         if (selectedOrderDetails?.no_pesanan === order.no_pesanan) {
           setSelectedOrderDetails(updatedOrder);
         }
-        await loadOrders();
+        await loadOrders(true);
       } else {
         onShowToast(`Gagal membatalkan pesanan: ${res.message}`, 'error');
       }

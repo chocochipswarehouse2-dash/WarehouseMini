@@ -939,6 +939,7 @@ export async function submitManualShipment(payload: ManualShipmentOrder): Promis
     globalRealtimeStore.markOrderSubmittedLocally(submitPayload.no_transaksi_customer);
 
     await supabaseFetch('manual_shipment', 'POST', [submitPayload]);
+    invalidateManualShipmentsCache();
 
     // Broadcast instan ke Laptop & HP Admin yang sedang aktif (< 100ms)
     globalRealtimeStore.broadcastEvent('new_manual_shipment', submitPayload).catch(() => {});
@@ -1307,7 +1308,8 @@ export async function updateShipmentStatus(idOrNoPesanan: string, status: string
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNoPesanan);
     const filter = isUuid ? `id=eq.${idOrNoPesanan}` : `no_pesanan=eq.${encodeURIComponent(idOrNoPesanan)}`;
     const dbStatus = status === 'selesai' ? 'dikirim' : (status === 'pending' ? 'diterima' : status);
-    await supabaseFetch('manual_shipment', 'PATCH', { status: dbStatus }, filter);
+    await supabaseFetch('manual_shipment', 'PATCH', { status: dbStatus, updated_at: new Date().toISOString() }, filter);
+    invalidateManualShipmentsCache();
     return true;
   } catch (err) {
     console.warn('Error updateShipmentStatus', err);
@@ -1320,7 +1322,8 @@ export async function updateShipmentResi(idOrNoPesanan: string, resi: string, ti
     const cleanResi = (resi || '').trim();
     const payload: any = { 
       no_resi: cleanResi,
-      status: cleanResi ? 'dikirim' : 'diproses' // Hanya 'dikirim' apabila resi benar-benar terisi
+      status: cleanResi ? 'dikirim' : 'diproses', // Hanya 'dikirim' apabila resi benar-benar terisi
+      updated_at: new Date().toISOString(),
     };
     if (timestamp) {
       payload.tanggal_scan = timestamp;
@@ -1337,6 +1340,7 @@ export async function updateShipmentResi(idOrNoPesanan: string, resi: string, ti
         throw patchErr;
       }
     }
+    invalidateManualShipmentsCache();
     return true;
   } catch (err) {
     console.warn('Error updateShipmentResi', err);
@@ -1373,6 +1377,7 @@ export async function bulkUpdateShipmentResi(
           const payload: any = {
             no_resi: cleanResi,
             tanggal_scan: nowIso,
+            updated_at: nowIso,
           };
 
           if (item.update_status_to_dikirim) {
@@ -1409,17 +1414,94 @@ export async function bulkUpdateShipmentResi(
     );
   }
 
+  if (successCount > 0) {
+    invalidateManualShipmentsCache();
+  }
+
   return { successCount, failCount, errors };
 }
 
 export async function deleteManualShipment(no_pesanan: string): Promise<boolean> {
   try {
     await supabaseFetch('manual_shipment', 'DELETE', null, `no_pesanan=eq.${no_pesanan}`);
+    invalidateManualShipmentsCache();
     return true;
   } catch (err) {
     console.warn('Error deleteManualShipment', err);
     return false;
   }
+}
+
+export function serializeNotesPaketWithMetadata(payload: ManualShipmentOrder): string {
+  const { history_logs, alteration_repair_data, notes_paket } = payload as any;
+  let notes = (notes_paket || '')
+    .replace(/\n?\[ALTERATION_REPAIR\]:[\s\S]*?(?=\n\[(HISTORI_LOGS|STORE_METADATA)\]:|$)/, '')
+    .replace(/\n?\[HISTORI_LOGS\]:[\s\S]*?(?=\n\[STORE_METADATA\]:|$)/, '')
+    .replace(/\n?\[STORE_METADATA\]:[\s\S]*$/, '')
+    .trim();
+
+  const arData = alteration_repair_data || (payload.order_type === 'alteration_repair' ? {
+    layanan_type: payload.layanan_type || 'both',
+    sumber_barang: (payload as any).sumber_barang || 'store',
+    nama_asal: (payload as any).nama_asal || payload.nama_pengirim,
+    pic_pemohon: (payload as any).pic_pemohon || payload.pic_store || payload.submitted_by || '',
+    lokasi_rak: (payload as any).lokasi_rak || '',
+    nama_customer: payload.nama_tujuan || '',
+    nama_sa: payload.pic_store || payload.submitted_by || '',
+    no_hp: payload.no_telp_tujuan || '',
+    toko: payload.nama_pengirim,
+    nama_produk: payload.items?.[0]?.nama_produk || '',
+    sku: payload.items?.[0]?.sku || '',
+    size: payload.items?.[0]?.size || '-',
+    qty: Number(payload.items?.[0]?.qty) || 1,
+    kondisi: payload.kondisi || '',
+    perkiraan_selesai: payload.perkiraan_selesai || '',
+    alteration_detail: payload.alteration_detail || '',
+    repair_detail: payload.repair_detail || '',
+    pic_warehouse: (payload as any).pic_warehouse || '',
+    status_flow: (payload as any).status_flow || 'diajukan',
+    flow_logs: (payload as any).flow_logs || [],
+    is_agreed_terms: payload.is_agreed_terms ?? true,
+    is_condition_confirmed: payload.is_condition_confirmed ?? true,
+    foto_urls: payload.foto_urls || [],
+  } : null);
+
+  if (arData) {
+    try {
+      const arTag = `\n[ALTERATION_REPAIR]:${JSON.stringify(arData)}`;
+      notes = notes ? `${notes}${arTag}` : arTag.trim();
+    } catch {}
+  }
+
+  if (history_logs && history_logs.length > 0) {
+    try {
+      const histTag = `\n[HISTORI_LOGS]:${JSON.stringify(history_logs)}`;
+      notes = notes ? `${notes}${histTag}` : histTag.trim();
+    } catch {}
+  }
+
+  // 3. Format JSON notes_paket jika ada store_metadata (jadwal kirim store & status cetak)
+  const storeMeta: any = {};
+  if (payload.tgl_jadwal_kirim_store) storeMeta.tgl_jadwal_kirim_store = payload.tgl_jadwal_kirim_store;
+  if (payload.catatan_jadwal_store) storeMeta.catatan_jadwal_store = payload.catatan_jadwal_store;
+  if (payload.tujuan_pengiriman) storeMeta.tujuan_pengiriman = payload.tujuan_pengiriman;
+  if (payload.is_picking_printed !== undefined) storeMeta.is_picking_printed = payload.is_picking_printed;
+  if (payload.is_label_printed !== undefined) storeMeta.is_label_printed = payload.is_label_printed;
+  if (payload.tgl_cetak_picking) storeMeta.tgl_cetak_picking = payload.tgl_cetak_picking;
+  if (payload.tgl_cetak_label) storeMeta.tgl_cetak_label = payload.tgl_cetak_label;
+
+  if (Object.keys(storeMeta).length > 0) {
+    try {
+      const metaTag = `\n[STORE_METADATA]:${JSON.stringify(storeMeta)}`;
+      if (notes.includes('[STORE_METADATA]:')) {
+        const p = notes.split('[STORE_METADATA]:');
+        notes = p[0].trim();
+      }
+      notes = notes ? `${notes}${metaTag}` : metaTag.trim();
+    } catch {}
+  }
+
+  return notes;
 }
 
 export async function editManualShipment(payload: ManualShipmentOrder): Promise<{ success: boolean; message: string }> {
@@ -1428,75 +1510,7 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
       return { success: false, message: 'ID atau No Pesanan tidak ditemukan untuk diupdate' };
     }
     const { id, history_logs, alteration_repair_data, ...rest } = payload as any;
-    
-    // Simpan metadata ke notes_paket
-    let notes = (rest.notes_paket || '')
-      .replace(/\n?\[ALTERATION_REPAIR\]:[\s\S]*?(?=\n\[(HISTORI_LOGS|STORE_METADATA)\]:|$)/, '')
-      .replace(/\n?\[HISTORI_LOGS\]:[\s\S]*?(?=\n\[STORE_METADATA\]:|$)/, '')
-      .replace(/\n?\[STORE_METADATA\]:[\s\S]*$/, '')
-      .trim();
-
-    const arData = alteration_repair_data || (payload.order_type === 'alteration_repair' ? {
-      layanan_type: payload.layanan_type || 'both',
-      sumber_barang: (payload as any).sumber_barang || 'store',
-      nama_asal: (payload as any).nama_asal || payload.nama_pengirim,
-      pic_pemohon: (payload as any).pic_pemohon || payload.pic_store || payload.submitted_by || '',
-      lokasi_rak: (payload as any).lokasi_rak || '',
-      nama_customer: payload.nama_tujuan || '',
-      nama_sa: payload.pic_store || payload.submitted_by || '',
-      no_hp: payload.no_telp_tujuan || '',
-      toko: payload.nama_pengirim,
-      nama_produk: payload.items?.[0]?.nama_produk || '',
-      sku: payload.items?.[0]?.sku || '',
-      size: payload.items?.[0]?.size || '-',
-      qty: Number(payload.items?.[0]?.qty) || 1,
-      kondisi: payload.kondisi || '',
-      perkiraan_selesai: payload.perkiraan_selesai || '',
-      alteration_detail: payload.alteration_detail || '',
-      repair_detail: payload.repair_detail || '',
-      pic_warehouse: (payload as any).pic_warehouse || '',
-      status_flow: (payload as any).status_flow || 'diajukan',
-      flow_logs: (payload as any).flow_logs || [],
-      is_agreed_terms: payload.is_agreed_terms ?? true,
-      is_condition_confirmed: payload.is_condition_confirmed ?? true,
-      foto_urls: payload.foto_urls || [],
-    } : null);
-
-    if (arData) {
-      try {
-        const arTag = `\n[ALTERATION_REPAIR]:${JSON.stringify(arData)}`;
-        notes = notes ? `${notes}${arTag}` : arTag.trim();
-      } catch {}
-    }
-
-    if (history_logs && history_logs.length > 0) {
-      try {
-        const histTag = `\n[HISTORI_LOGS]:${JSON.stringify(history_logs)}`;
-        notes = notes ? `${notes}${histTag}` : histTag.trim();
-      } catch {}
-    }
-
-    // 3. Format JSON notes_paket jika ada store_metadata (jadwal kirim store & status cetak)
-    const storeMeta: any = {};
-    if (payload.tgl_jadwal_kirim_store) storeMeta.tgl_jadwal_kirim_store = payload.tgl_jadwal_kirim_store;
-    if (payload.catatan_jadwal_store) storeMeta.catatan_jadwal_store = payload.catatan_jadwal_store;
-    if (payload.tujuan_pengiriman) storeMeta.tujuan_pengiriman = payload.tujuan_pengiriman;
-    if (payload.is_picking_printed !== undefined) storeMeta.is_picking_printed = payload.is_picking_printed;
-    if (payload.is_label_printed !== undefined) storeMeta.is_label_printed = payload.is_label_printed;
-    if (payload.tgl_cetak_picking) storeMeta.tgl_cetak_picking = payload.tgl_cetak_picking;
-    if (payload.tgl_cetak_label) storeMeta.tgl_cetak_label = payload.tgl_cetak_label;
-
-    if (Object.keys(storeMeta).length > 0) {
-      try {
-        const metaTag = `\n[STORE_METADATA]:${JSON.stringify(storeMeta)}`;
-        // Hapus tag lama jika ada agar tidak duplikat
-        if (notes.includes('[STORE_METADATA]:')) {
-          const p = notes.split('[STORE_METADATA]:');
-          notes = p[0].trim();
-        }
-        notes = notes ? `${notes}${metaTag}` : metaTag.trim();
-      } catch {}
-    }
+    const notes = serializeNotesPaketWithMetadata(payload);
 
     const patchPayload: any = {
       ...rest,
@@ -1557,6 +1571,7 @@ export async function editManualShipment(payload: ManualShipmentOrder): Promise<
     const filter = isUuid ? `id=eq.${idOrNo}` : `no_pesanan=eq.${encodeURIComponent(idOrNo || '')}`;
 
     await supabaseFetch('manual_shipment', 'PATCH', patchPayload, filter);
+    invalidateManualShipmentsCache();
     return { success: true, message: 'Berhasil mengupdate data' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal mengupdate data' };
@@ -1573,8 +1588,7 @@ export async function updateJadwalKirimStore(
   actor?: string
 ): Promise<{ success: boolean; message: string; updatedOrder?: ManualShipmentOrder }> {
   try {
-    const orders = await fetchManualShipments();
-    const order = orders.find(o => o.id === orderId || o.no_pesanan === orderId);
+    const order = await fetchManualShipmentByOrderId(orderId);
     if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
 
     const now = new Date().toISOString();
@@ -1625,54 +1639,74 @@ export async function updateOrderPrintStatus(
     }
 
     const now = new Date().toISOString();
-    const allOrders = await fetchManualShipments();
 
     await Promise.all(
       orderIds.map(async (idOrNo) => {
         try {
-          const targetOrder = allOrders.find(
-            (o) => o.id === idOrNo || o.no_pesanan === idOrNo
-          );
+          const targetOrder = await fetchManualShipmentByOrderId(idOrNo);
+          if (!targetOrder) return;
 
-          if (targetOrder) {
-            const nextPickingPrinted = type === 'picking' ? true : !!targetOrder.is_picking_printed;
-            const nextLabelPrinted = type === 'label' ? true : !!targetOrder.is_label_printed;
-            const bothPrinted = nextPickingPrinted && nextLabelPrinted;
+          const nextPickingPrinted = type === 'picking' ? true : !!targetOrder.is_picking_printed;
+          const nextLabelPrinted = type === 'label' ? true : !!targetOrder.is_label_printed;
+          const bothPrinted = nextPickingPrinted && nextLabelPrinted;
 
-            const currentStatus = (targetOrder.status || 'diterima').toLowerCase().trim();
-            const flowStr = (targetOrder.alteration_repair_data?.status_flow || '').toLowerCase();
-            const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
-            const needsResi = orderNeedsResi(targetOrder);
-            const isAlreadyShipped = needsResi
-              ? !!(targetOrder.no_resi && targetOrder.no_resi.trim())
-              : !!(targetOrder.tgl_jadwal_kirim_store && targetOrder.tgl_jadwal_kirim_store.trim()) ||
-                currentStatus === 'dikirim' ||
-                currentStatus === 'selesai';
-            let nextStatus = targetOrder.status;
-            if (currentStatus !== 'batal' && !isAlreadyShipped) {
-              if (bothPrinted || isFlowAktif) {
-                nextStatus = 'diproses';
-              } else {
-                nextStatus = 'diterima';
-              }
+          const currentStatus = (targetOrder.status || 'diterima').toLowerCase().trim();
+          const flowStr = (targetOrder.alteration_repair_data?.status_flow || '').toLowerCase();
+          const isFlowAktif = ['dalam_pengerjaan', 'selesai_qc', 'diterima_warehouse', 'siap_dikirim'].includes(flowStr);
+          const needsResi = orderNeedsResi(targetOrder);
+          const isAlreadyShipped = needsResi
+            ? !!(targetOrder.no_resi && targetOrder.no_resi.trim())
+            : !!(targetOrder.tgl_jadwal_kirim_store && targetOrder.tgl_jadwal_kirim_store.trim()) ||
+              currentStatus === 'dikirim' ||
+              currentStatus === 'selesai';
+          let nextStatus: ManualShipmentOrder['status'] = targetOrder.status;
+          if (currentStatus !== 'batal' && !isAlreadyShipped) {
+            if (bothPrinted || isFlowAktif) {
+              nextStatus = 'diproses';
+            } else {
+              nextStatus = 'diterima';
             }
-
-            const updatedOrder: ManualShipmentOrder = {
-              ...targetOrder,
-              status: nextStatus,
-              is_picking_printed: nextPickingPrinted,
-              is_label_printed: nextLabelPrinted,
-              tgl_cetak_picking: type === 'picking' ? now : (targetOrder.tgl_cetak_picking || ''),
-              tgl_cetak_label: type === 'label' ? now : (targetOrder.tgl_cetak_label || ''),
-            };
-
-            await editManualShipment(updatedOrder);
           }
+          if (nextStatus === 'selesai') {
+            nextStatus = 'dikirim';
+          } else if ((nextStatus as string) === 'pending') {
+            nextStatus = 'diterima';
+          }
+
+          const updatedOrder: ManualShipmentOrder = {
+            ...targetOrder,
+            status: nextStatus,
+            is_picking_printed: nextPickingPrinted,
+            is_label_printed: nextLabelPrinted,
+            tgl_cetak_picking: type === 'picking' ? now : (targetOrder.tgl_cetak_picking || ''),
+            tgl_cetak_label: type === 'label' ? now : (targetOrder.tgl_cetak_label || ''),
+          };
+
+          const nextNotes = serializeNotesPaketWithMetadata(updatedOrder);
+          const targetIdOrNo = targetOrder.id || targetOrder.no_pesanan || idOrNo;
+          const isUuid =
+            targetIdOrNo &&
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(targetIdOrNo);
+          const filter = isUuid
+            ? `id=eq.${targetIdOrNo}`
+            : `no_pesanan=eq.${encodeURIComponent(targetIdOrNo)}`;
+
+          await supabaseFetch(
+            'manual_shipment',
+            'PATCH',
+            {
+              status: nextStatus,
+              notes_paket: nextNotes,
+              updated_at: now,
+            },
+            filter
+          );
         } catch (e) {
           console.warn('Silent skip order print status patch for', idOrNo, e);
         }
       })
     );
+    invalidateManualShipmentsCache();
     return { success: true, message: 'Status cetak berhasil diperbarui' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal memperbarui status cetak' };
@@ -1736,24 +1770,29 @@ export async function updateAlterationFlowStage(
 
 export async function updateItemSjDealpos(orderId: string, itemId: string, noSj: string, updatedBy?: string): Promise<{ success: boolean; message: string }> {
   try {
-    const orders = await fetchManualShipments();
-    const order = orders.find(o => o.id === orderId || o.no_pesanan === orderId);
+    const order = await fetchManualShipmentByOrderId(orderId);
     if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
 
+    const nowIso = new Date().toISOString();
     const updatedItems = (order.items || []).map(it => {
       if (it.id === itemId) {
         return {
           ...it,
           no_sj_dealpos: noSj.trim(),
-          sj_updated_at: new Date().toISOString(),
+          sj_updated_at: nowIso,
           sj_updated_by: updatedBy || 'Admin'
         };
       }
       return it;
     });
 
-    const res = await editManualShipment({ ...order, items: updatedItems });
-    return res;
+    const idOrNo = order.id || order.no_pesanan || orderId;
+    const isUuid = idOrNo && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNo);
+    const filter = isUuid ? `id=eq.${idOrNo}` : `no_pesanan=eq.${encodeURIComponent(idOrNo)}`;
+
+    await supabaseFetch('manual_shipment', 'PATCH', { items: updatedItems, updated_at: nowIso }, filter);
+    invalidateManualShipmentsCache();
+    return { success: true, message: 'Berhasil mengupdate No SJ DealPOS' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal update No SJ DealPOS' };
   }
@@ -1761,10 +1800,10 @@ export async function updateItemSjDealpos(orderId: string, itemId: string, noSj:
 
 export async function bulkUpdateOrderSjDealpos(orderId: string, noSj: string, updatedBy?: string): Promise<{ success: boolean; message: string }> {
   try {
-    const orders = await fetchManualShipments();
-    const order = orders.find(o => o.id === orderId || o.no_pesanan === orderId);
+    const order = await fetchManualShipmentByOrderId(orderId);
     if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
 
+    const nowIso = new Date().toISOString();
     const updatedItems = (order.items || []).map(it => {
       const ful = (it.fulfillment || '').toLowerCase();
       const isTarget = ful.includes('marketplace') || ful.includes('gudang') || ful.includes('warehouse') || order.no_pesanan?.startsWith('AR-') || !ful;
@@ -1772,15 +1811,20 @@ export async function bulkUpdateOrderSjDealpos(orderId: string, noSj: string, up
         return {
           ...it,
           no_sj_dealpos: noSj.trim(),
-          sj_updated_at: new Date().toISOString(),
+          sj_updated_at: nowIso,
           sj_updated_by: updatedBy || 'Admin'
         };
       }
       return it;
     });
 
-    const res = await editManualShipment({ ...order, items: updatedItems });
-    return res;
+    const idOrNo = order.id || order.no_pesanan || orderId;
+    const isUuid = idOrNo && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(idOrNo);
+    const filter = isUuid ? `id=eq.${idOrNo}` : `no_pesanan=eq.${encodeURIComponent(idOrNo)}`;
+
+    await supabaseFetch('manual_shipment', 'PATCH', { items: updatedItems, updated_at: nowIso }, filter);
+    invalidateManualShipmentsCache();
+    return { success: true, message: 'Berhasil bulk update No SJ DealPOS' };
   } catch (err: any) {
     return { success: false, message: err.message || 'Gagal bulk update No SJ DealPOS' };
   }
@@ -1842,7 +1886,7 @@ export async function bulkUpdateOrdersSjDealpos(
             throw new Error('ID / No. Pesanan tidak valid');
           }
 
-          await supabaseFetch('manual_shipment', 'PATCH', { items: updatedItems }, filter);
+          await supabaseFetch('manual_shipment', 'PATCH', { items: updatedItems, updated_at: nowIso }, filter);
           successCount++;
           updatedOrders.push({ ...order, items: updatedItems });
         } catch (err: any) {
@@ -1868,8 +1912,7 @@ export async function markItemSoldAndProcess(
   actor: string
 ): Promise<{ success: boolean; message: string; updatedOrder?: ManualShipmentOrder }> {
   try {
-    const orders = await fetchManualShipments();
-    const order = orders.find(o => o.id === orderId || o.no_pesanan === orderId);
+    const order = await fetchManualShipmentByOrderId(orderId);
     if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
 
     const targetItem = (order.items || []).find(it => it.id === itemId);
@@ -1991,8 +2034,7 @@ export async function restoreSoldItem(
   actor: string
 ): Promise<{ success: boolean; message: string; updatedOrder?: ManualShipmentOrder }> {
   try {
-    const orders = await fetchManualShipments();
-    const order = orders.find(o => o.id === orderId || o.no_pesanan === orderId);
+    const order = await fetchManualShipmentByOrderId(orderId);
     if (!order) return { success: false, message: 'Pesanan tidak ditemukan' };
 
     const targetItem = (order.items || []).find(it => it.id === itemId);

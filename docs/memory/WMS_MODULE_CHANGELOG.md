@@ -4,6 +4,20 @@
 
 ---
 
+## v2.38.2 — 27 November 2026
+**Modul**: Pesanan Saya / Manual Shipment & Cetak Label A6 (`src/services/gasManualShipment.ts`, `src/components/PesananSaya/ManualShipmentTab.tsx`, `.agents/skills/wms-supabase-egress-guardrails/SKILL.md`)
+- **Fix Bug Alamat Pesanan Hasil Edit Tidak Muncul di Print Label A6 & Tertimpa Data Lama**:
+  - **Root Cause**: `editManualShipment()`, `submitManualShipment()`, `deleteManualShipment()`, `updateShipmentStatus()`, `updateShipmentResi()`, dan `bulkUpdateShipmentResi()` tidak memanggil `invalidateManualShipmentsCache()`, sehingga `loadOrders()` dalam jendela SWR 2 menit mengembalikan cache lama (mis. pada `#MSBTS-261127-LCXH` tetap menampilkan `PIK WALET INDAH 4 / X10 26` setelah diedit). Saat user menekan **Cetak Label A6**, `updateOrderPrintStatus()` juga membaca cache basi tersebut dan mengirim full-row `PATCH` via `editManualShipment()`, menimpa `alamat_tujuan` baru di Supabase kembali menjadi alamat lama.
+  - **Perbaikan Cache & Surgical PATCH (`gasManualShipment.ts`)**:
+    - Seluruh mutasi `manual_shipment` kini memanggil `invalidateManualShipmentsCache()` dan menyertakan `updated_at`.
+    - `updateOrderPrintStatus()`, `updateItemSjDealpos()`, `bulkUpdateOrderSjDealpos()`, `updateJadwalKirimStore()`, `markItemSoldAndProcess()`, dan `restoreSoldItem()` kini mengambil baris live tunggal via `fetchManualShipmentByOrderId()` (~1 KB), dan mutasi status cetak / SJ DealPOS mengirim surgical column `PATCH` (`{ status, notes_paket, updated_at }` / `{ items, updated_at }`) tanpa menimpa alamat maupun kolom lain.
+  - **Optimistic State & Live Hydrate Sebelum Cetak (`ManualShipmentTab.tsx`)**:
+    - `handleSubmit` setelah edit berhasil langsung memperbarui `orders`, `selectedOrderDetails`, `actionSheetOrder`, membersihkan `printPayload` lama bila perlu, dan memanggil `loadOrders(true)` (begitu pula pada Realtime listener, simpan resi, hapus, & batal).
+    - `handlePrintLabel` & `handlePrintPickingList` kini menyegarkan baris target langsung dari Supabase via `refreshOrdersLiveBeforePrint` (`fetchManualShipmentByOrderId`, max 25 order) sebelum merender Label A6 / Picking List agar alamat, penerima, dan catatan selalu 100% terbaru.
+  - **Verifikasi Data Live `#MSBTS-261127-LCXH`**: Dicek di Supabase — alamat saat ini sudah tersimpan sebagai `"Pik walet indah 4 / No 26 jakarta utara"`.
+
+---
+
 ## v2.38.1 — 27 November 2026
 **Modul**: Scanner Gudang & Offline Outbox (`src/storage-override.ts`, `src/services/scannerOutboxService.ts`, `src/App.tsx`)
 - **Fix Bug Kritis Hilangnya Data Scan saat `localStorage` Penuh (`QuotaExceededError`)**:
