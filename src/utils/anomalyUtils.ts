@@ -187,7 +187,7 @@ export function scanAnomalies(
       categories.push('INVALID_LOCATION');
       const locStr = anomalousLocs.map((l) => `${l.lokasi} (${l.qty} pcs)`).join(', ');
       reasons.push(
-        `Lokasi "${locStr}" bukan kode rak valid di denah gudang (Area: Anomali — misal scan WA tanpa menyertakan kode rak A001-D100)`
+        `Lokasi "${locStr}" bukan kode rak valid di denah gudang (Area: Anomali — misal scan WA tanpa menyertakan kode rak A001-E100)`
       );
       recommendations.push(
         'Audit fisik di lapangan dan perbaiki kode rak pada Invoice di Log Mutasi (Sesuai Standar Rule 7C: tidak di-nolkan otomatis tanpa verifikasi)'

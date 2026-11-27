@@ -15,19 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.37.0",
-  "versionCode": 570,
+  "version": "v2.38.0",
+  "versionCode": 580,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v570-1252",
-  "releaseTitle": "WMS v2.37.0 — Pemisahan Roster 2 Mode: Jadwal Shift & Hasil Absensi",
+  "buildHash": "wms-261127-v580-1344",
+  "releaseTitle": "WMS v2.38.0 — Tambah Lokasi E Warehouse (E001–E050)",
   "releaseNotes": [
-    "Tabel Roster kini memiliki 2 opsi tampilan terpisah: Jadwal Shift (murni S1/S2/S3/OFF) dan Hasil Absensi (Tepat Waktu, Terlambat, Tak Pulang, Cuti/Izin/Sakit, Bolos, Pra-Join)",
-    "Edit Hasil Absensi langsung dari matriks/kalender/mingguan/harian hanya mengubah tabel presensi tanpa mengganggu Jadwal Shift, dan sebaliknya"
+    "Menambahkan Lokasi E (E001–E050, kapasitas default 75 pcs, kategori Umum, dapat diubah di Setup Kapasitas) ke Area Warehouse Priority 1",
+    "Sinkronisasi pengenalan kode rak E di Scanner, Picking, Putaway, Kapasitas Rak, Kosongkan Rak, Cetak Label, Anomali/SO, & Bot WA GAS",
+    "Auto-migrasi konfigurasi kapasitas rak tersimpan tanpa menimpa pengaturan kustom"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.37.0",
+    "versionCode": 570,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v570-1252",
+    "releaseTitle": "WMS v2.37.0 — Pemisahan Roster 2 Mode: Jadwal Shift & Hasil Absensi",
+    "releaseNotes": [
+      "Tabel Roster kini memiliki 2 opsi tampilan terpisah: Jadwal Shift (murni S1/S2/S3/OFF) dan Hasil Absensi (Tepat Waktu, Terlambat, Tak Pulang, Cuti/Izin/Sakit, Bolos, Pra-Join)",
+      "Edit Hasil Absensi langsung dari matriks/kalender/mingguan/harian hanya mengubah tabel presensi tanpa mengganggu Jadwal Shift, dan sebaliknya"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.36.1",
     "versionCode": 561,
@@ -117,18 +130,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Hapus tombol Reset 0 Pcs di sebelah Lanjutkan Picking pada kartu antrean agar tidak kepencet tidak sengaja",
       "Wajib ketik RESET untuk konfirmasi reset progres + backup Undo Reset otomatis 24 jam ke Supabase & draft lokal"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.33.0",
-    "versionCode": 530,
-    "buildDate": "26 November 2026",
-    "buildHash": "wms-261126-v530-0623",
-    "releaseTitle": "WMS v2.33.0 — Share Kekurangan Pengecekan SJ ke Tugas Picking",
-    "releaseNotes": [
-      "Tombol Share ke Tugas Picking pada item selisih kurang di Pengecekan SJ Pengiriman",
-      "Rekonsiliasi SJ eksisting vs baru di picking_list, tampil hanya sisa kurang, dan anti-double #OUT via baseline persisten"
     ],
     "minSupportedVersion": "v2.0.0"
   }

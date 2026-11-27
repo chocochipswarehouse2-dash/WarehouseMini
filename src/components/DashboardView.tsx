@@ -931,7 +931,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       const a = (s.area || '').toUpperCase();
       const l = (s.lokasi || '').toUpperCase();
 
-      const isRak = a === 'WAREHOUSE' || /^[ABCD]-?\d+/i.test(l);
+      const isRak = a === 'WAREHOUSE' || /^[ABCDE]-?\d+/i.test(l);
       const isKoli =
         !isRak &&
         (a === 'KOLIAN' ||
@@ -1308,7 +1308,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 Kapasitas Penyimpanan Gudang &amp; Channel
               </h2>
               <p className="text-[10px] sm:text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Tingkat keterisian area gudang utama (Rak ABCD + Koli) dan area channel
+                Tingkat keterisian area gudang utama (Rak A–E + Koli) dan area channel
               </p>
             </div>
           </div>
@@ -1355,7 +1355,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               )}
             </div>
             <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight">
-              Rak ABCD: <b className="font-mono">{capacitySummary.warehouse.rakFilled.toLocaleString('id-ID')}</b> · Koli: <b className="font-mono">{capacitySummary.warehouse.koliFilled.toLocaleString('id-ID')}</b>
+              Rak A–E: <b className="font-mono">{capacitySummary.warehouse.rakFilled.toLocaleString('id-ID')}</b> · Koli: <b className="font-mono">{capacitySummary.warehouse.koliFilled.toLocaleString('id-ID')}</b>
             </p>
           </div>
 

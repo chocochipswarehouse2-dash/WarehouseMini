@@ -246,7 +246,7 @@ export const RackCapacityMobileView: React.FC<RackCapacityMobileViewProps> = ({
 
   const shortScopeTitle =
     selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse'
-      ? 'Rak Utama A–D'
+      ? 'Rak Utama A–E'
       : selectedArea === 'KOLI_ALL' ||
         selectedArea === 'Kolian' ||
         selectedArea === 'Transit' ||
@@ -267,7 +267,7 @@ export const RackCapacityMobileView: React.FC<RackCapacityMobileViewProps> = ({
     },
     {
       key: 'RAK_ABCD',
-      label: 'Rak A–D',
+      label: 'Rak A–E',
       active: selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse',
       pct: summaryStats.rak.overallPercent,
       overload: summaryStats.rak.overloadCount,

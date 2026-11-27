@@ -285,10 +285,10 @@ export function normalizeLokasi(lokasi: string): string {
   }
 
   // 2. Kasus tertentu: typo pasti huruf 'O' vs angka '0' pada kode rak standar (misal: CO43 -> C043, ROO5 -> R005)
-  // Format ketat: 1 huruf prefix rak baku (A-D, R, V, Z, X) diikuti kombinasi huruf O dan angka
+  // Format ketat: 1 huruf prefix rak baku (A-E, R, V, Z, X) diikuti kombinasi huruf O dan angka
   // Kasus ambigu lainnya (kata umum, singkatan acak, tanda baca non-standar) TIDAK dinormalisasi agar tetap Anomali
-  if (/^[ABCDRVZX]-?[O0-9]+$/.test(trimmed)) {
-    const match = trimmed.match(/^([ABCDRVZX]-?)([O0-9]+)$/);
+  if (/^[ABCDERVZX]-?[O0-9]+$/.test(trimmed)) {
+    const match = trimmed.match(/^([ABCDERVZX]-?)([O0-9]+)$/);
     if (match) {
       return match[1] + match[2].replace(/O/g, '0');
     }
@@ -306,9 +306,9 @@ export function getAreaFromLokasi(lokasi: string, _area?: string): string {
   const l = normalizeLokasi(raw);
   if (!l || /[,;\n|]/.test(l)) return 'Anomali';
   
-  // 1. Warehouse: A001-A100, B001-B100, C001-C100, D001-D100 (supports 1-4 digits or dash e.g. A01, A-01, B005)
+  // 1. Warehouse: A001-A100, B001-B100, C001-C100, D001-D100, E001-E100 (supports 1-4 digits or dash e.g. A01, A-01, B005, E001)
   // HARD CONSTRAINT (Rule 7A & 7C): Literal "WAREHOUSE" is NOT a valid rack code on the floor plan -> MUST be Anomali!
-  if (/^[ABCD]-?\d{1,4}$/.test(l)) return 'Warehouse';
+  if (/^[ABCDE]-?\d{1,4}$/.test(l)) return 'Warehouse';
 
   // 2. Aksesoris: BELT..., CARD..., GIFT..., BOX... (e.g. BELT, BELT001, CARD002, BOX01)
   if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
@@ -4794,7 +4794,7 @@ export async function fetchMasterProductsFromSupabase(maxRowsPerTable = 50000, f
         }
       }
 
-      // Sort each item's locList strictly by Picking Priority (P1: A-D/Aksesoris/Transit -> P2: Kolian R/V/Z -> P3: Blok F), then qty desc
+      // Sort each item's locList strictly by Picking Priority (P1: A-E/Aksesoris/Transit -> P2: Kolian R/V/Z -> P3: Blok F), then qty desc
       for (const item of productsMap.values()) {
         if (Array.isArray(item.locList) && item.locList.length > 0) {
           const normalizedLocs = item.locList

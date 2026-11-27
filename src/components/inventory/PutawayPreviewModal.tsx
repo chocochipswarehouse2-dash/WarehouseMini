@@ -310,7 +310,7 @@ export const PutawayPreviewModal: React.FC<PutawayPreviewModalProps> = ({
                       onChange={(e) => setEnableKoliSplit(e.target.checked)}
                       className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                     />
-                    <span>Auto-Split Qty Besar ke Kolian (Maks {maxPerSkuAbcd} pcs/SKU di ABCD)</span>
+                    <span>Auto-Split Qty Besar ke Kolian (Maks {maxPerSkuAbcd} pcs/SKU di Rak A–E)</span>
                   </label>
                 )}
               </div>

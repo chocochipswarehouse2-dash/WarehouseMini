@@ -1,12 +1,13 @@
 {
-  "version": "v2.37.0",
-  "versionCode": 570,
+  "version": "v2.38.0",
+  "versionCode": 580,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v570-1252",
-  "releaseTitle": "WMS v2.37.0 — Pemisahan Roster 2 Mode: Jadwal Shift & Hasil Absensi",
+  "buildHash": "wms-261127-v580-1344",
+  "releaseTitle": "WMS v2.38.0 — Tambah Lokasi E Warehouse (E001–E050)",
   "releaseNotes": [
-    "Tabel Roster kini memiliki 2 opsi tampilan terpisah: Jadwal Shift (murni S1/S2/S3/OFF) dan Hasil Absensi (Tepat Waktu, Terlambat, Tak Pulang, Cuti/Izin/Sakit, Bolos, Pra-Join)",
-    "Edit Hasil Absensi langsung dari matriks/kalender/mingguan/harian hanya mengubah tabel presensi tanpa mengganggu Jadwal Shift, dan sebaliknya"
+    "Menambahkan Lokasi E (E001–E050, kapasitas default 75 pcs, kategori Umum, dapat diubah di Setup Kapasitas) ke Area Warehouse Priority 1",
+    "Sinkronisasi pengenalan kode rak E di Scanner, Picking, Putaway, Kapasitas Rak, Kosongkan Rak, Cetak Label, Anomali/SO, & Bot WA GAS",
+    "Auto-migrasi konfigurasi kapasitas rak tersimpan tanpa menimpa pengaturan kustom"
   ],
   "minSupportedVersion": "v2.0.0"
 }

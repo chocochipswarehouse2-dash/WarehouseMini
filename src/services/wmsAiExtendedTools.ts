@@ -242,7 +242,7 @@ const WMS_CORE_SOP_RULES = [
   {
     topic: 'Prioritas Area Picking',
     summary:
-      'Priority 1: Warehouse (A/B/C/D001-100), Aksesoris (BELT/CARD/GIFT/BOX), Transit (X/TRANSIT). Priority 2: Kolian (R0/V0/Z0). Priority 3: Blok F (TIKTOK/SHOPEE/STUDIO/IGLIVE). Area Perbaikan (CC/PMK/DF/SORTIR) & Anomali dilarang untuk picking otomatis.'
+      'Priority 1: Warehouse (A/B/C/D/E001-100), Aksesoris (BELT/CARD/GIFT/BOX), Transit (X/TRANSIT). Priority 2: Kolian (R0/V0/Z0). Priority 3: Blok F (TIKTOK/SHOPEE/STUDIO/IGLIVE). Area Perbaikan (CC/PMK/DF/SORTIR) & Anomali dilarang untuk picking otomatis.'
   },
   {
     topic: 'Sinkronisasi Picking & WhatsApp',

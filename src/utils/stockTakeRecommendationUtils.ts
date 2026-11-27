@@ -81,8 +81,8 @@ export function inferCanonicalRackFromTypo(rawLok: string): string | null {
   const clean = String(rawLok || '').trim().toUpperCase().replace(/[\s\-_]+/g, '');
   if (!clean || clean === '-') return null;
 
-  // Pola 1 huruf + 1-3 digit (misal A5, A05, B12, R5, V12, Z3)
-  const m1 = clean.match(/^([ABCDRVZ])0*(\d{1,3})$/);
+  // Pola 1 huruf + 1-3 digit (misal A5, A05, B12, E5, R5, V12, Z3)
+  const m1 = clean.match(/^([ABCDERVZ])0*(\d{1,3})$/);
   if (m1) {
     const candidate = `${m1[1]}${m1[2].padStart(3, '0')}`;
     if (candidate !== String(rawLok || '').trim().toUpperCase() && getAreaFromLokasi(candidate) !== 'Anomali') {

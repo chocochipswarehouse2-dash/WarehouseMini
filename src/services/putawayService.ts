@@ -859,8 +859,8 @@ export function generateLivePutawayRoute(
       if (base) existingBaseNames.add(base);
     }
 
-    if (areaUpper === 'WAREHOUSE' && /^[ABCD]\d+$/i.test(loc)) {
-      const prefixMatch = loc.match(/^([ABCD])/i);
+    if (areaUpper === 'WAREHOUSE' && /^[ABCDE]\d+$/i.test(loc)) {
+      const prefixMatch = loc.match(/^([ABCDE])/i);
       const prefix = prefixMatch ? prefixMatch[1].toUpperCase() : '';
       const safeCap = Math.max(1, Math.floor(s.maxCapacity * (safeCapPercent / 100)));
       const remainingSafeSpace = Math.max(0, safeCap - effectiveQty);
@@ -922,7 +922,7 @@ export function generateLivePutawayRoute(
     if (t.status !== 'AKTIF') continue;
     for (const item of t.items || []) {
       const recLoc = String(item.recommended_lokasi || '').toUpperCase();
-      if (/^[ABCD]\d+$/i.test(recLoc)) {
+      if (/^[ABCDE]\d+$/i.test(recLoc)) {
         const rem = Math.max(0, (item.qty_target || 0) - (item.qty_placed || 0));
         if (rem > 0) {
           const skuUp = item.sku.toUpperCase();

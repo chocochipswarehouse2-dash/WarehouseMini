@@ -235,6 +235,18 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
     color: 'amber',
   },
   {
+    id: 'zone_wh_e',
+    area: 'Warehouse',
+    zoneName: 'Lokasi E',
+    prefix: 'E',
+    startNum: 1,
+    endNum: 50,
+    padLength: 3,
+    category: 'Umum',
+    defaultMaxCapacity: 75,
+    color: 'purple',
+  },
+  {
     id: 'zone_transit',
     area: 'Transit',
     zoneName: 'Area Transit X',
@@ -400,7 +412,7 @@ export const DEFAULT_RACK_ZONES: RackZoneRule[] = [
 
 export function getDefaultRackCapacityConfig(): RackCapacityConfig {
   return {
-    version: 7,
+    version: 8,
     updatedAt: new Date().toISOString(),
     zones: DEFAULT_RACK_ZONES,
     overrides: {},
@@ -514,9 +526,10 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     upgradedZones.push(z);
   }
 
-  // Ensure Koli R, V, Z, Transit X, Aksesoris, separate Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO), and Perbaikan (CC, PMK, DF, SORTIR) exist
+  // Ensure Warehouse E, Koli R, V, Z, Transit X, Aksesoris, separate Blok F (SHOPEE, TIKTOK, IGLIVE, STUDIO), and Perbaikan (CC, PMK, DF, SORTIR) exist
   const requiredZones = DEFAULT_RACK_ZONES.filter((dz) =>
     [
+      'zone_wh_e',
       'zone_transit',
       'zone_aksesoris',
       'zone_koli_r',
@@ -544,6 +557,13 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
         (!req.staticLocations && z.prefix && z.prefix.toUpperCase() === req.prefix)
     );
     if (!exists) {
+      if (req.id === 'zone_wh_e') {
+        const dIdx = upgradedZones.findIndex((z) => z.id === 'zone_wh_d');
+        if (dIdx !== -1) {
+          upgradedZones.splice(dIdx + 1, 0, { ...req });
+          continue;
+        }
+      }
       if (req.id === 'zone_blok_f_iglive') {
         const ttIdx = upgradedZones.findIndex((z) => z.id === 'zone_blok_f_tiktok');
         if (ttIdx !== -1) {
@@ -574,7 +594,7 @@ export function normalizeAndMigrateRackConfig(raw: RackCapacityConfig): RackCapa
     : { ...DEFAULT_ABCD_TO_KOLI_RULE };
 
   return {
-    version: Math.max(7, raw.version || 7),
+    version: Math.max(8, raw.version || 8),
     updatedAt: raw.updatedAt || new Date().toISOString(),
     updatedBy: raw.updatedBy,
     zones: upgradedZones,
@@ -854,6 +874,17 @@ function inferZoneForUnmappedLocation(lokasi: string): {
       category: 'Transit',
       defaultMaxCapacity: 100,
       color: 'cyan',
+    };
+  }
+
+  if (area === 'Warehouse' && loc.startsWith('E')) {
+    return {
+      area: 'Warehouse',
+      zoneId: 'zone_wh_e',
+      zoneName: 'Lokasi E',
+      category: 'Umum',
+      defaultMaxCapacity: 75,
+      color: 'purple',
     };
   }
 
@@ -1296,7 +1327,7 @@ export function getKoliToAbcdRefillSummary(
   // 1. Calculate current total qty per SKU in ABCD Warehouse (including simulated incoming moves)
   const skuAbcdQty = new Map<string, number>();
   for (const s of allSlots) {
-    if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCD]\d+$/i.test(s.lokasi)) {
+    if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCDE]\d+$/i.test(s.lokasi)) {
       for (const it of s.items) {
         if (it.qty > 0) {
           const skuUp = it.sku.toUpperCase();
@@ -1306,7 +1337,7 @@ export function getKoliToAbcdRefillSummary(
     }
   }
   for (const m of existingMoves) {
-    if (m.sku && /^[ABCD]\d+$/i.test(m.toLokasi)) {
+    if (m.sku && /^[ABCDE]\d+$/i.test(m.toLokasi)) {
       const skuUp = m.sku.toUpperCase();
       skuAbcdQty.set(skuUp, (skuAbcdQty.get(skuUp) || 0) + m.qty);
     }
@@ -1366,7 +1397,7 @@ export function generateConsolidatedKoliRefillMoves(
   const skuExistingRacks = new Map<string, string[]>();
 
   for (const s of allSlots) {
-    if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCD]\d+$/i.test(s.lokasi)) {
+    if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCDE]\d+$/i.test(s.lokasi)) {
       for (const it of s.items) {
         if (it.qty > 0) {
           const skuUp = it.sku.toUpperCase();
@@ -1379,7 +1410,7 @@ export function generateConsolidatedKoliRefillMoves(
     }
   }
   for (const m of existingMoves) {
-    if (m.sku && /^[ABCD]\d+$/i.test(m.toLokasi)) {
+    if (m.sku && /^[ABCDE]\d+$/i.test(m.toLokasi)) {
       const skuUp = m.sku.toUpperCase();
       skuAbcdQty.set(skuUp, (skuAbcdQty.get(skuUp) || 0) + m.qty);
       const list = skuExistingRacks.get(skuUp) || [];
@@ -1461,28 +1492,29 @@ export function generateConsolidatedKoliRefillMoves(
     if (pickedSkus.size >= maxSkusToRecommend) break;
   }
 
-  // 3. Prepare mutable safe remaining space tracker for ABCD target racks
+  // 3. Prepare mutable safe remaining space tracker for ABCD(E) target racks
   interface TargetBinTracker {
     lokasi: string;
-    prefix: 'A' | 'B' | 'C' | 'D';
+    prefix: 'A' | 'B' | 'C' | 'D' | 'E';
     remainingSpace: number;
     maxCapacity: number;
     currentSimulated: number;
   }
 
   const abcdTargetBinsMap = new Map<string, TargetBinTracker>();
-  const abcdRacksByPrefix: Record<'A' | 'B' | 'C' | 'D', TargetBinTracker[]> = {
+  const abcdRacksByPrefix: Record<'A' | 'B' | 'C' | 'D' | 'E', TargetBinTracker[]> = {
     A: [],
     B: [],
     C: [],
     D: [],
+    E: [],
   };
 
   for (const s of allSlots) {
     if (s.area.toUpperCase() !== 'WAREHOUSE') continue;
-    const m = s.lokasi.match(/^([ABCD])(\d+)$/i);
+    const m = s.lokasi.match(/^([ABCDE])(\d+)$/i);
     if (!m) continue;
-    const p = m[1].toUpperCase() as 'A' | 'B' | 'C' | 'D';
+    const p = m[1].toUpperCase() as 'A' | 'B' | 'C' | 'D' | 'E';
     const safeCap = getSafeTargetCapacity(s.maxCapacity, safeOccupancyPercent);
     const rem = Math.max(0, safeCap - s.simulatedQty);
     const bin: TargetBinTracker = {
@@ -1501,7 +1533,7 @@ export function generateConsolidatedKoliRefillMoves(
   }
 
   // Sort general pool: empty racks first, then lowest occupancy, sequential
-  (['A', 'B', 'C', 'D'] as const).forEach((p) => {
+  (['A', 'B', 'C', 'D', 'E'] as const).forEach((p) => {
     abcdRacksByPrefix[p].sort((a, b) => {
       const aEmpty = a.currentSimulated === 0 ? 0 : 1;
       const bEmpty = b.currentSimulated === 0 ? 0 : 1;
@@ -1601,7 +1633,7 @@ export function getScatteredSkuSummary(
     if (
       isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
       s.area.toUpperCase() !== 'WAREHOUSE' ||
-      !/^[ABCD]\d+$/i.test(s.lokasi)
+      !/^[ABCDE]\d+$/i.test(s.lokasi)
     ) {
       continue;
     }
@@ -1690,10 +1722,10 @@ export function generateConsolidatedSkuScatteredMoves(
     existingMoves.map((m) => `${m.fromLokasi}__${m.sku}`.toUpperCase())
   );
 
-  // Group ABCD slots by location for fast lookup
+  // Group ABCD(E) slots by location for fast lookup
   const slotMap = new Map<string, ComputedRackSlot>();
   for (const s of allSlots) {
-    if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCD]\d+$/i.test(s.lokasi)) {
+    if (s.area.toUpperCase() === 'WAREHOUSE' && /^[ABCDE]\d+$/i.test(s.lokasi)) {
       slotMap.set(s.lokasi, s);
     }
   }
@@ -1718,7 +1750,7 @@ export function generateConsolidatedSkuScatteredMoves(
     if (
       isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
       s.area.toUpperCase() !== 'WAREHOUSE' ||
-      !/^[ABCD]\d+$/i.test(s.lokasi)
+      !/^[ABCDE]\d+$/i.test(s.lokasi)
     ) {
       continue;
     }
@@ -2020,7 +2052,7 @@ export function getAbcdToKoliEvacuationSummary(
     if (
       isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
       s.area.toUpperCase() !== 'WAREHOUSE' ||
-      !/^[ABCD]\d+$/i.test(s.lokasi)
+      !/^[ABCDE]\d+$/i.test(s.lokasi)
     ) {
       continue;
     }
@@ -2118,7 +2150,7 @@ export function generateConsolidatedAbcdToKoliMoves(
     if (
       isExcludedFromWarehouseRelocation(s.area, s.lokasi) ||
       s.area.toUpperCase() !== 'WAREHOUSE' ||
-      !/^[ABCD]\d+$/i.test(s.lokasi)
+      !/^[ABCDE]\d+$/i.test(s.lokasi)
     ) {
       continue;
     }

@@ -68,7 +68,7 @@ export interface InventoryPickingCartDrawerProps {
 
 const SOURCE_AREA_OPTIONS = [
   { id: 'ALL', label: 'Semua Area Normal', shortLabel: 'Semua Area', desc: 'Warehouse, Kolian, Aksesoris, Transit & Blok F' },
-  { id: 'Warehouse', label: 'Warehouse', shortLabel: 'Warehouse', desc: 'Hanya rak A/B/C/D' },
+  { id: 'Warehouse', label: 'Warehouse', shortLabel: 'Warehouse', desc: 'Hanya rak A/B/C/D/E' },
   { id: 'Blok F', label: 'Blok F', shortLabel: 'Blok F', desc: 'TIKTOK, SHOPEE, STUDIO, IGLIVE' },
   { id: 'Kolian', label: 'Kolian / Koli', shortLabel: 'Kolian', desc: 'Rak R0, V0, Z0 & KOLI' },
   { id: 'Aksesoris', label: 'Aksesoris', shortLabel: 'Aksesoris', desc: 'BELT, CARD, GIFT, BOX' },

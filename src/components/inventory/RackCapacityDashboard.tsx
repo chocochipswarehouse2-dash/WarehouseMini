@@ -603,12 +603,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     };
   }, [selectedSlot?.lokasi]);
 
-  // 1. Kapasitas Penyimpanan Rak = ABCD
+  // 1. Kapasitas Penyimpanan Rak = A-E
   const isRakSlot = useCallback((s: ComputedRackSlot) => {
     const a = (s.area || '').toUpperCase();
     const l = (s.lokasi || '').toUpperCase();
     if (a === 'WAREHOUSE') return true;
-    if (/^[ABCD]-?\d+/i.test(l)) return true;
+    if (/^[ABCDE]-?\d+/i.test(l)) return true;
     return false;
   }, []);
 
@@ -825,7 +825,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       overloadCount: whOverload,
     };
     let kpiTitle = 'KAPASITAS WAREHOUSE (TOTAL)';
-    let kpiSubtitle = `Rak ABCD (${rakStats.totalFilled.toLocaleString('id-ID')} pcs) + Koli (${koliStats.totalFilled.toLocaleString('id-ID')} pcs)`;
+    let kpiSubtitle = `Rak A–E (${rakStats.totalFilled.toLocaleString('id-ID')} pcs) + Koli (${koliStats.totalFilled.toLocaleString('id-ID')} pcs)`;
 
     const selAreaUp = (selectedArea || '').toUpperCase();
     if (selAreaUp === 'RAK_ABCD' || selAreaUp === 'WAREHOUSE') {
@@ -840,8 +840,8 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         warningFullCount: rakStats.warningFullCount,
         overloadCount: rakStats.overloadCount,
       };
-      kpiTitle = 'KAPASITAS PENYIMPANAN RAK (ABCD)';
-      kpiSubtitle = 'Rak Penyimpanan Utama A, B, C, D';
+      kpiTitle = 'KAPASITAS PENYIMPANAN RAK (A–E)';
+      kpiSubtitle = 'Rak Penyimpanan Utama A, B, C, D, E';
     } else if (
       selAreaUp === 'KOLI_ALL' ||
       selAreaUp === 'KOLIAN' ||
@@ -1390,7 +1390,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       session?.name || session?.username || 'Admin'
     );
     setConfig(saved);
-    onNotify?.('Pengaturan kapasitas dikembalikan ke standar default (A001-D100).', 'info');
+    onNotify?.('Pengaturan kapasitas dikembalikan ke standar default (A001-E050).', 'info');
   };
 
   // Summary of SKUs in Koli (R, V, Z) qualifying for refill to ABCD (stock in ABCD <= refillTriggerThreshold)
@@ -1499,7 +1499,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     const dstExcluded = isExcludedFromWarehouseRelocation(dstSlot?.area || '', to);
     if (srcExcluded !== dstExcluded) {
       onNotify?.(
-        `Perhatian: Lokasi ${from} dan ${to} berbeda fungsi operasional (Blok F / Perbaikan tidak boleh disamakan dengan Gudang ABCD / Koli / Transit).`,
+        `Perhatian: Lokasi ${from} dan ${to} berbeda fungsi operasional (Blok F / Perbaikan tidak boleh disamakan dengan Gudang A–E / Koli / Transit).`,
         'warning'
       );
       return;
@@ -1563,7 +1563,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     );
     if (generated.length === 0) {
       onNotify?.(
-        `Tidak ditemukan SKU di Rak Koli (R/V/Z) dengan stok di ABCD ≤ ${triggerThreshold} pcs, atau seluruh rekomendasi sudah masuk antrean.`,
+        `Tidak ditemukan SKU di Rak Koli (R/V/Z) dengan stok di Rak A–E ≤ ${triggerThreshold} pcs, atau seluruh rekomendasi sudah masuk antrean.`,
         'info'
       );
       return;
@@ -1574,7 +1574,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     setSimulationMoves((prev) => [...prev, ...generated]);
     setIsSimPanelOpen(true);
     onNotify?.(
-      `Berhasil menyusun ${generated.length} SKU (${totalPcs} pcs) Refill dari ${fromRacks} Rak Koli → dialokasikan ke ${toRacks} Rak ABCD (Plafon Aman ${safePercent}%)!`,
+      `Berhasil menyusun ${generated.length} SKU (${totalPcs} pcs) Refill dari ${fromRacks} Rak Koli → dialokasikan ke ${toRacks} Rak A–E (Plafon Aman ${safePercent}%)!`,
       'success'
     );
   };
@@ -1589,7 +1589,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     );
     if (generated.length === 0) {
       onNotify?.(
-        'Tidak ada Rak ABCD yang sedang Overload (>100%) atau seluruh kelebihan sudah masuk rekomendasi.',
+        'Tidak ada Rak A–E yang sedang Overload (>100%) atau seluruh kelebihan sudah masuk rekomendasi.',
         'info'
       );
       return;
@@ -1619,7 +1619,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     );
     if (generated.length === 0) {
       onNotify?.(
-        `Tidak ditemukan SKU di Rak ABCD yang tersebar berjauhan (> ${distanceThreshold} rak), atau seluruhnya sudah masuk daftar rekomendasi.`,
+        `Tidak ditemukan SKU di Rak A–E yang tersebar berjauhan (> ${distanceThreshold} rak), atau seluruhnya sudah masuk daftar rekomendasi.`,
         'info'
       );
       return;
@@ -1644,7 +1644,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     );
     if (generated.length === 0) {
       onNotify?.(
-        `Tidak ada SKU di Rak ABCD yang memenuhi syarat (Stok ≥ ${evacRule.minStockThreshold} pcs), atau seluruhnya sudah masuk daftar rekomendasi.`,
+        `Tidak ada SKU di Rak A–E yang memenuhi syarat (Stok ≥ ${evacRule.minStockThreshold} pcs), atau seluruhnya sudah masuk daftar rekomendasi.`,
         'info'
       );
       return;
@@ -1655,7 +1655,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
     setSimulationMoves((prev) => [...prev, ...generated]);
     setIsSimPanelOpen(true);
     onNotify?.(
-      `Berhasil menyusun rekomendasi evakuasi ${generated.length} SKU (${totalPcs} pcs) ke Koli! Buffer picking disisakan min ${evacRule.mandatoryPickingBuffer} pcs di rak ABCD agar picker tidak kesulitan.`,
+      `Berhasil menyusun rekomendasi evakuasi ${generated.length} SKU (${totalPcs} pcs) ke Koli! Buffer picking disisakan min ${evacRule.mandatoryPickingBuffer} pcs di rak A–E agar picker tidak kesulitan.`,
       'success'
     );
   };
@@ -1677,10 +1677,10 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
       const isToKoli = /^[RVZ]\d+$/i.test(route.toLokasi);
       const isFromKoli = /^[RVZ]\d+$/i.test(route.fromLokasi);
       const directionLabel = isFromKoli
-        ? ' [Refill Koli ➔ ABCD]'
+        ? ' [Refill Koli ➔ A–E]'
         : isToKoli
-        ? ' [Evakuasi ABCD ➔ Koli]'
-        : ' [Relokasi Rak ABCD]';
+        ? ' [Evakuasi A–E ➔ Koli]'
+        : ' [Relokasi Rak A–E]';
 
       lines.push(
         `\n*RUTE ${rIdx + 1}: RAK ASAL [${route.fromLokasi}] ➔ KE RAK TUJUAN [${route.toLokasi}]*${directionLabel} (${route.totalPcs} pcs)`
@@ -1691,7 +1691,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           m.moveType === 'EVAKUASI_KOLI'
             ? ' _(Simpan ke Koli)_'
             : m.moveType === 'REFILL_KOLI'
-            ? ' _(Refill ke ABCD)_'
+            ? ' _(Refill ke A–E)_'
             : '';
         lines.push(
           `  ${iIdx + 1}. *${m.nama_produk}* | Size: *${sizeLabel}*${typeBadge}\n     SKU: \`${m.sku}\` — Ambil: *${m.qty} pcs*`
@@ -1747,11 +1747,11 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
         const sizeStr = m.size && m.size !== '-' ? m.size : 'ALL';
         const typeLabel =
           m.moveType === 'REFILL_KOLI'
-            ? 'Refill Koli → ABCD'
+            ? 'Refill Koli → A–E'
             : m.moveType === 'RELOKASI_OVERLOAD'
             ? 'Rapikan Overload'
             : m.moveType === 'EVAKUASI_KOLI'
-            ? 'Evakuasi ABCD → Koli'
+            ? 'Evakuasi A–E → Koli'
             : 'Relokasi Rak';
         rowsHtml += `
           <tr>
@@ -1799,7 +1799,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
   <div class="header">
     <div>
       <div class="title">SURAT JALAN / FORM TUGAS PICKER (REFILL &amp; RELOKASI RAK)</div>
-      <div class="subtitle">Warehouse Management System — Konsolidasi Putaway Rak Koli (R/V/Z) &amp; Rak Utama (ABCD)</div>
+      <div class="subtitle">Warehouse Management System — Konsolidasi Putaway Rak Koli (R/V/Z) &amp; Rak Utama (A–E)</div>
     </div>
     <div class="meta-box">
       <div><strong>No. Dokumen:</strong> ${sjDocumentNumber}</div>
@@ -2028,7 +2028,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               {
                 key: 'RAK_ABCD',
                 active: selectedArea === 'RAK_ABCD' || selectedArea === 'Warehouse',
-                title: 'Rak Utama (A–D)',
+                title: 'Rak Utama (A–E)',
                 subtitle: `${summaryStats.rak.rackCount} rak penyimpanan`,
                 percent: summaryStats.rak.overallPercent,
                 filled: summaryStats.rak.totalFilled,
@@ -2349,7 +2349,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                   </span>
                 </div>
                 <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-                  Kelola suplai stok dari <strong>Rak Koli (R, V, Z) ke Rak Utama (ABCD)</strong>, penataan rak melebihi kapasitas, serta konsolidasi lokasi SKU.
+                  Kelola suplai stok dari <strong>Rak Koli (R, V, Z) ke Rak Utama (A–E)</strong>, penataan rak melebihi kapasitas, serta konsolidasi lokasi SKU.
                 </p>
               </div>
             </div>
@@ -2424,7 +2424,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               <div className="min-w-0">
                 <div className="text-xs font-extrabold text-slate-900 dark:text-white flex items-center gap-1.5">
                   <Boxes className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span className="truncate">Suplai Koli ➔ Rak ABCD</span>
+                  <span className="truncate">Suplai Koli ➔ Rak A–E</span>
                 </div>
                 <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
                   Refill stok menipis (&le; {config.refillTriggerThreshold ?? 3} pcs) dari Koli
@@ -2589,7 +2589,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <div className="flex items-center gap-2">
                   <Sliders className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                   <span className="text-xs font-black text-slate-900 dark:text-white">
-                    Pengaturan Syarat Evakuasi ABCD ➔ Koli (Perlindungan Buffer Picker)
+                    Pengaturan Syarat Evakuasi A–E ➔ Koli (Perlindungan Buffer Picker)
                   </span>
                 </div>
                 <button
@@ -2602,14 +2602,14 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
               </div>
 
               <p className="text-[11px] text-slate-600 dark:text-slate-400 leading-relaxed">
-                Pastikan stok minimum tetap tersedia di rak utama (ABCD) untuk kebutuhan pengambilan pesanan harian sebelum memindahkan kelebihan stok ke area Kolian.
+                Pastikan stok minimum tetap tersedia di rak utama (A–E) untuk kebutuhan pengambilan pesanan harian sebelum memindahkan kelebihan stok ke area Kolian.
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
                 {/* 1. Min Stock Threshold */}
                 <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-1.5">
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                    1. Minimal Stok di Rak ABCD
+                    1. Minimal Stok di Rak A–E
                   </label>
                   <div className="flex items-center gap-2">
                     <NumberInput
@@ -2637,7 +2637,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 {/* 2. Mandatory Picking Buffer */}
                 <div className="p-3 rounded-lg bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-1.5">
                   <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                    2. Sisa Wajib Tinggal di Rak ABCD
+                    2. Sisa Wajib Tinggal di Rak A–E
                   </label>
                   <div className="flex items-center gap-2">
                     <NumberInput
@@ -2658,7 +2658,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     <span className="text-xs text-slate-500 font-bold">pcs</span>
                   </div>
                   <p className="text-[10px] text-slate-400">
-                    Stok minimal yang <strong>WAJIB tertinggal</strong> di rak ABCD untuk kebutuhan pesanan picker harian.
+                    Stok minimal yang <strong>WAJIB tertinggal</strong> di rak A–E untuk kebutuhan pesanan picker harian.
                   </p>
                 </div>
 
@@ -2725,7 +2725,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end bg-white dark:bg-[#131d31] p-3 rounded-xl border border-purple-200/70 dark:border-slate-800">
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                Dari Rak Asal (Koli / ABCD)
+                Dari Rak Asal (Koli / A–E)
               </label>
               <input
                 type="text"
@@ -2737,7 +2737,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
             </div>
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                Ke Rak Tujuan (ABCD / X)
+                Ke Rak Tujuan (A–E / X)
               </label>
               <input
                 type="text"
@@ -2865,12 +2865,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                                 </span>
                                 {m.moveType === 'EVAKUASI_KOLI' && (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                                    Evakuasi ABCD ➔ Koli
+                                    Evakuasi A–E ➔ Koli
                                   </span>
                                 )}
                                 {m.moveType === 'REFILL_KOLI' && (
                                   <span className="px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
-                                    Refill Koli ➔ ABCD
+                                    Refill Koli ➔ A–E
                                   </span>
                                 )}
                                 {m.moveType === 'RELOKASI_OVERLOAD' && (
@@ -4645,7 +4645,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs text-slate-500">
-                      Ubah kategori produk, prefix &amp; rentang nomor, serta kapasitas maksimal default untuk Warehouse (A–D), Transit (X), Kolian/Koli (R, V, Z), Blok F (Shopee, TikTok, IGlive, Studio), dan Perbaikan (Cuci CC, Permak PMK, Defect DF, Sortir SORTIR).
+                      Ubah kategori produk, prefix &amp; rentang nomor, serta kapasitas maksimal default untuk Warehouse (A–E), Transit (X), Kolian/Koli (R, V, Z), Blok F (Shopee, TikTok, IGlive, Studio), dan Perbaikan (Cuci CC, Permak PMK, Defect DF, Sortir SORTIR).
                     </span>
                     <button
                       type="button"
@@ -5103,7 +5103,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                         Setup Buffer Picking &amp; Aturan Evakuasi Gudang (Tersimpan di Database)
                       </h4>
                       <p className="text-xs text-slate-500 dark:text-slate-400">
-                        Atur ambang batas stok minimum, buffer wajib tinggal untuk picker di rak ABCD, dan persentase yang disimpan ke Koli (R, V, Z).
+                        Atur ambang batas stok minimum, buffer wajib tinggal untuk picker di rak A–E, dan persentase yang disimpan ke Koli (R, V, Z).
                       </p>
                     </div>
                     <button
@@ -5115,12 +5115,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     </button>
                   </div>
 
-                  {/* Section A: Evakuasi ABCD -> Koli */}
+                  {/* Section A: Evakuasi A–E -> Koli */}
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-3">
                     <div className="flex items-center gap-2">
                       <Archive className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                       <span className="text-xs font-black text-slate-900 dark:text-white">
-                        A. Aturan Evakuasi / Penyimpanan ke Koli (ABCD ➔ Koli)
+                        A. Aturan Evakuasi / Penyimpanan ke Koli (A–E ➔ Koli)
                       </span>
                     </div>
 
@@ -5128,7 +5128,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       {/* 1. Min Stock Threshold */}
                       <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 space-y-1.5">
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          1. Minimal Stok di Rak ABCD (Syarat Evaluasi)
+                          1. Minimal Stok di Rak A–E (Syarat Evaluasi)
                         </label>
                         <div className="flex items-center gap-2">
                           <NumberInput
@@ -5149,14 +5149,14 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           <span className="text-xs text-slate-500 font-bold">pcs</span>
                         </div>
                         <p className="text-[10px] text-slate-400">
-                          Hanya SKU dengan stok &ge; {evacRule.minStockThreshold} pcs di rak ABCD yang dievaluasi. SKU dengan kuantitas kecil (stok normal harian) dilewati.
+                          Hanya SKU dengan stok &ge; {evacRule.minStockThreshold} pcs di rak A–E yang dievaluasi. SKU dengan kuantitas kecil (stok normal harian) dilewati.
                         </p>
                       </div>
 
                       {/* 2. Mandatory Picking Buffer */}
                       <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 space-y-1.5">
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          2. Sisa Wajib Tinggal di Rak ABCD (Buffer Picker)
+                          2. Sisa Wajib Tinggal di Rak A–E (Buffer Picker)
                         </label>
                         <div className="flex items-center gap-2">
                           <NumberInput
@@ -5177,7 +5177,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           <span className="text-xs text-slate-500 font-bold">pcs</span>
                         </div>
                         <p className="text-[10px] text-slate-400">
-                          Kuantitas minimal yang <strong>WAJIB tertinggal</strong> di rak ABCD agar picker tidak perlu jalan jauh ke koli saat ada order harian.
+                          Kuantitas minimal yang <strong>WAJIB tertinggal</strong> di rak A–E agar picker tidak perlu jalan jauh ke koli saat ada order harian.
                         </p>
                       </div>
 
@@ -5219,12 +5219,12 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                     </div>
                   </div>
 
-                  {/* Section B: Refill Koli -> ABCD */}
+                  {/* Section B: Refill Koli -> A–E */}
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-800 space-y-3">
                     <div className="flex items-center gap-2">
                       <Boxes className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                       <span className="text-xs font-black text-slate-900 dark:text-white">
-                        B. Aturan Suplai / Refill dari Koli ke Rak ABCD (Koli ➔ ABCD)
+                        B. Aturan Suplai / Refill dari Koli ke Rak A–E (Koli ➔ A–E)
                       </span>
                     </div>
 
@@ -5232,7 +5232,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       {/* Ambang Batas Trigger Refill */}
                       <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 space-y-1.5">
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          Ambang Batas Trigger Refill (Sisa di Rak ABCD)
+                          Ambang Batas Trigger Refill (Sisa di Rak A–E)
                         </label>
                         <div className="flex items-center gap-2">
                           <NumberInput
@@ -5248,14 +5248,14 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                           <span className="text-xs text-slate-500 font-bold">pcs</span>
                         </div>
                         <p className="text-[10px] text-slate-400">
-                          Refill dari koli disiapkan jika total stok SKU di ABCD &le; batas ini (default 3 pcs). <strong>Tidak perlu menunggu rak 0 pcs</strong> untuk melakukan refill.
+                          Refill dari koli disiapkan jika total stok SKU di Rak A–E &le; batas ini (default 3 pcs). <strong>Tidak perlu menunggu rak 0 pcs</strong> untuk melakukan refill.
                         </p>
                       </div>
 
                       {/* Batas Maksimal Refill Per SKU */}
                       <div className="p-3 rounded-lg bg-white dark:bg-[#131d31] border border-slate-200 dark:border-slate-700 space-y-1.5">
                         <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          Batas Maksimal Refill Per SKU ke Rak ABCD
+                          Batas Maksimal Refill Per SKU ke Rak A–E
                         </label>
                         <div className="flex items-center gap-2">
                           <NumberInput
@@ -5448,7 +5448,7 @@ export const RackCapacityDashboard: React.FC<RackCapacityDashboardProps> = ({
                       SURAT JALAN / FORM TUGAS PICKER (REFILL &amp; RELOKASI RAK)
                     </div>
                     <div className="text-xs text-slate-600">
-                      Konsolidasi Putaway Rak Koli (R, V, Z) &amp; Rak Utama Picking (ABCD)
+                      Konsolidasi Putaway Rak Koli (R, V, Z) &amp; Rak Utama Picking (A–E)
                     </div>
                   </div>
                   <div className="text-xs font-mono sm:text-right space-y-0.5 text-slate-700">

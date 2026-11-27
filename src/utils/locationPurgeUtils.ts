@@ -14,6 +14,7 @@ export const KNOWN_BLOCKS: { key: string; label: string; prefix: string; area: s
   { key: 'B', label: 'Blok B (Warehouse)', prefix: 'B', area: 'Warehouse', description: 'Rak B001 - B100' },
   { key: 'C', label: 'Blok C (Warehouse)', prefix: 'C', area: 'Warehouse', description: 'Rak C001 - C100' },
   { key: 'D', label: 'Blok D (Warehouse)', prefix: 'D', area: 'Warehouse', description: 'Rak D001 - D100' },
+  { key: 'E', label: 'Blok E (Warehouse)', prefix: 'E', area: 'Warehouse', description: 'Rak E001 - E100' },
   { key: 'R', label: 'Kolian R (Kolian)', prefix: 'R', area: 'Kolian', description: 'Rak R001 - R100' },
   { key: 'V', label: 'Kolian V (Kolian)', prefix: 'V', area: 'Kolian', description: 'Rak V001 - V100' },
   { key: 'Z', label: 'Kolian Z (Kolian)', prefix: 'Z', area: 'Kolian', description: 'Rak Z001 - Z100' },
@@ -84,7 +85,7 @@ export function parseBlockLocations(
   const upperExisting = existingLocations.map((l) => (l || '').trim().toUpperCase()).filter(Boolean);
   const locSet = new Set<string>();
 
-  if (['A', 'B', 'C', 'D', 'R', 'V', 'Z'].includes(key)) {
+  if (['A', 'B', 'C', 'D', 'E', 'R', 'V', 'Z'].includes(key)) {
     // Generate standard racks 001 through 100
     for (let i = 1; i <= 100; i++) {
       locSet.add(`${key}${String(i).padStart(3, '0')}`);

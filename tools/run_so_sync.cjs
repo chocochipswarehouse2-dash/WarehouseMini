@@ -5,7 +5,7 @@ function getAreaFromLokasi(lokasi) {
   if (!lokasi) return 'Anomali';
   const l = String(lokasi).toUpperCase().trim();
   if (!l) return 'Anomali';
-  if (/^[ABCD]-?\d{1,4}$/.test(l)) return 'Warehouse';
+  if (/^[ABCDE]-?\d{1,4}$/.test(l)) return 'Warehouse';
   if (/^(BELT|CARD|GIFT|BOX)(\d*|-?\d+)$/.test(l) || l === 'BELT' || l === 'CARD' || l === 'GIFT' || l === 'BOX') return 'Aksesoris';
   if (l === 'X' || /^X-?\d*$/.test(l) || l === 'TRANSIT' || l.startsWith('TRANSIT')) return 'Transit';
   if (/^[RVZ]-?\d+$/.test(l) || l.startsWith('KOLI')) return 'Kolian';

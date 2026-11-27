@@ -4,6 +4,17 @@
 
 ---
 
+## v2.38.0 — 27 November 2026
+**Modul**: Inventory, Kapasitas Rak, Putaway, Scanner & GAS Webhook — Penambahan Lokasi E Warehouse (`E001–E050`) (`src/services/supabase.ts`, `src/services/rackCapacityService.ts`, `src/services/putawayService.ts`, `src/components/inventory/RackCapacityDashboard.tsx`, `src/components/inventory/RackCapacityMobileView.tsx`, `src/components/CetakLabel/CetakLokasiRakTab.tsx`, `src/utils/locationPurgeUtils.ts`, `src/utils/anomalyUtils.ts`, `src/utils/stockTakeRecommendationUtils.ts`, `gas/Code.js`, `gas/fonnte_handler.js`)
+- **Lokasi Baru Warehouse — Lokasi E (`zone_wh_e`)**:
+  - Menambahkan zona **`Lokasi E`** ke **`Area: Warehouse`** (Priority 1) dengan setup awal **`E001 – E050`**, kapasitas maksimal default **`75 pcs / rak`**, dan kategori **`Umum`** (fleksibel; tetap mempertahankan aturan auto-putaway A=Dress, B=Bottom, C=Top, D=Sale, dan seluruh parameter rentang/kapasitas/kategori dapat diubah langsung lewat **Setup Kapasitas**).
+  - Menambahkan auto-migrasi aman (`normalizeAndMigrateRackConfig` v8) agar konfigurasi kapasitas tersimpan di Supabase/`localStorage` otomatis menyisipkan `zone_wh_e` tepat setelah `zone_wh_d` tanpa menimpa pengaturan kustom user lainnya.
+- **Sinkronisasi Lintas Modul & GAS WhatsApp Bot**:
+  - Memperbarui `normalizeLokasi` & `getAreaFromLokasi` (`src/services/supabase.ts`), `getArea` (`gas/Code.js`, `gas/fonnte_handler.js`), dan `tools/run_so_sync.cjs` agar kode rak `E...` dikenali sebagai `Warehouse` (termasuk normalisasi typo huruf `O` menjadi `0`).
+  - Memperbarui mesin Refill Koli, Konsolidasi SKU Terpencar, Evakuasi ke Koli, Putaway (`putawayService.ts`, `PutawayWorkspaceModal.tsx`), `DashboardView.tsx`, `RackCapacityDashboard.tsx`, `RackCapacityMobileView.tsx`, preset Cetak Label `#LOK` (`E001 – E050`), `Kosongkan Rak` (`KNOWN_BLOCKS` Blok E), `stockTakeRecommendationUtils.ts`, `anomalyUtils.ts`, & SOP Asisten AI (`wmsAiExtendedTools.ts`).
+
+---
+
 ## v2.37.0 — 27 November 2026
 **Modul**: HR & Admin — Pemisahan Tabel Roster 2 Mode (`Jadwal Shift` & `Hasil Absensi`) (`src/components/hr/RosterShiftView.tsx`)
 - **2 Opsi Tampilan Terpisah di Roster (`rosterMode: 'jadwal' | 'absensi'`)**:

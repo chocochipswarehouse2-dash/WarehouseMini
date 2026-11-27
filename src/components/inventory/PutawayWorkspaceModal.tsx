@@ -390,8 +390,8 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
       const target = targetLoc.trim().toUpperCase();
       if (!rec || rec === target) return;
 
-      const recPrefix = rec.match(/^([ABCD])/i)?.[1]?.toUpperCase();
-      const targetPrefix = target.match(/^([ABCD])/i)?.[1]?.toUpperCase();
+      const recPrefix = rec.match(/^([ABCDE])/i)?.[1]?.toUpperCase();
+      const targetPrefix = target.match(/^([ABCDE])/i)?.[1]?.toUpperCase();
       const recArea = getAreaFromLokasi(rec);
       const targetArea = getAreaFromLokasi(target);
 
@@ -1921,7 +1921,7 @@ export const PutawayWorkspaceModal: React.FC<PutawayWorkspaceModalProps> = ({
                     rows={2}
                     value={rekapCatatan}
                     onChange={(e) => setRekapCatatan(e.target.value)}
-                    placeholder="Contoh: Semua barang X001 sudah masuk rak ABCD..."
+                    placeholder="Contoh: Semua barang X001 sudah masuk rak A–E..."
                     className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0E1420] border border-slate-200 dark:border-slate-700 rounded-xl text-slate-900 dark:text-white"
                   />
                 </div>

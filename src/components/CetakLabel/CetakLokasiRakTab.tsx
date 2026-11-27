@@ -1100,6 +1100,7 @@ export const CetakLokasiRakTab: React.FC<CetakLokasiRakTabProps> = ({ onShowToas
                           { block: 'B', start: 51, label: 'B051 – B100' },
                           { block: 'C', start: 1, label: 'C001 – C050' },
                           { block: 'D', start: 1, label: 'D001 – D050' },
+                          { block: 'E', start: 1, label: 'E001 – E050' },
                         ].map((item) => (
                           <button
                             key={item.label}
