@@ -4,6 +4,15 @@
 
 ---
 
+## v2.34.1 — 27 November 2026
+**Modul**: HR Rekap — KPI & Nilai Absensi (`src/utils/kpiCalculator.ts`)
+- **Perbaikan Akurasi Perhitungan KPI Absensi (Kasus Shift 3b / Hari Berjalan / SKT & BOLOS)**:
+  - **Fix `Shift 3b` (Sabtu `11:00–20:00`)**: `resolveStandardEndMinutes` kini membaca `jam_pulang` langsung dari jadwal Roster hari tersebut (dengan fallback akurat `Shift 3b = 20:00`, `Shift 3a = 21:00`, `Shift 2 = 18:00`, `Shift 1 = 17:00`), sehingga karyawan Shift 3b (seperti Vina) yang pulang normal jam 20:00 di hari Sabtu tidak lagi dituduh *Pulang Awal Tanpa Izin* (`-5 poin` + skor jatuh ke `40`).
+  - **Cutoff Tanggal Masa Depan & Hari Ini**: Tanggal roster `> hari ini` serta hari ini yang masih berlangsung (`jam_pulang` belum ada) tidak lagi dicap `BOLOS/ALPHA (-8 poin)` maupun memotong `% Kehadiran`.
+  - **Pengenalan Status Roster `SKT`/`CTI`/`IJN` vs `BOLOS`**: Status `Sakit`/`Cuti`/`Izin` di roster tidak lagi dihitung sebagai `Alpha/Bolos` (tetapi tetap memengaruhi `% Kehadiran` dibandingkan karyawan yang full hadir 100%), sementara status `BOLOS`/`ALPHA` di roster langsung dikenai penalti Alpha.
+
+---
+
 ## v2.34.0 — 26 November 2026
 **Modul**: HR & Admin — Rekap & Kalkulasi Gaji Bulanan (`src/utils/hrPayrollUtils.ts`, `src/utils/hrExportUtils.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/KaryawanView.tsx`, `src/components/hr/PresensiView.tsx`)
 - **Aturan Siklus Periode Administrasi & Penggajian Bulanan (26 Bulan Lalu – 25 Bulan Berjalan)**:

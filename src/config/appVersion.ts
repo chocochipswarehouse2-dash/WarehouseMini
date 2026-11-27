@@ -15,11 +15,11 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.34.0",
-  "versionCode": 540,
+  "version": "v2.34.1",
+  "versionCode": 541,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v540-0222",
-  "releaseTitle": "WMS v2.34.0 — Kalkulasi Gaji Bulanan Siklus 26–25",
+  "buildHash": "wms-261127-v541-0955",
+  "releaseTitle": "WMS v2.34.1 — Perbaikan Akurasi KPI Absensi (Shift 3b, Cutoff Hari Ini, & Status Roster)",
   "releaseNotes": [
     "Aturan siklus periode administrasi & kalkulasi gaji bulanan tanggal 26 bulan lalu s/d 25 bulan berjalan (contoh: 26 Okt - 25 Nov = November)",
     "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",
@@ -30,6 +30,20 @@ export const CURRENT_APP_VERSION_INFO: VersionInfo = {
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.34.0",
+    "versionCode": 540,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v540-0222",
+    "releaseTitle": "WMS v2.34.0 — Kalkulasi Gaji Bulanan Siklus 26–25",
+    "releaseNotes": [
+      "Aturan siklus periode administrasi & kalkulasi gaji bulanan tanggal 26 bulan lalu s/d 25 bulan berjalan (contoh: 26 Okt - 25 Nov = November)",
+      "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",
+      "Jadwal Shift (RosterShiftView) tetap ketat tanggal 1 s/d akhir bulan kalender",
+      "Perbaikan off-by-one zona waktu WIB pada getDatesInRange"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.33.2",
     "versionCode": 532,
@@ -105,17 +119,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "buildDate": "25 November 2026",
     "buildHash": "wms-261125-v510-1810",
     "releaseTitle": "WMS v2.31.0 — Scanner Batch Susulan Massal & Perbaikan Layout Panel Samping",
-    "releaseNotes": [
-      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.30.1",
-    "versionCode": 501,
-    "buildDate": "25 November 2026",
-    "buildHash": "wms-261125-v501-1703",
-    "releaseTitle": "WMS v2.30.1 — Audit Hitung Ulang Multi-Batch & Anti False-Alarm Sheet",
     "releaseNotes": [
       "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
     ],

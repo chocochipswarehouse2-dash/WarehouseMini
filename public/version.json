@@ -1,9 +1,9 @@
 {
-  "version": "v2.34.0",
-  "versionCode": 540,
+  "version": "v2.34.1",
+  "versionCode": 541,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v540-0222",
-  "releaseTitle": "WMS v2.34.0 — Kalkulasi Gaji Bulanan Siklus 26–25",
+  "buildHash": "wms-261127-v541-0955",
+  "releaseTitle": "WMS v2.34.1 — Perbaikan Akurasi KPI Absensi (Shift 3b, Cutoff Hari Ini, & Status Roster)",
   "releaseNotes": [
     "Aturan siklus periode administrasi & kalkulasi gaji bulanan tanggal 26 bulan lalu s/d 25 bulan berjalan (contoh: 26 Okt - 25 Nov = November)",
     "Fungsi calculateMonthlyPayroll + tab Kalkulasi Gaji, Slip Gaji, & Ekspor Excel di Rekap HR",

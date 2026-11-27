@@ -59,35 +59,68 @@ export function calculateKpiAbsensi({
 }: KpiCalculatorParams): KpiAbsensiSummary {
   const nikUpper = (karyawan.nik || '').trim().toUpperCase();
 
-  // Filter relevant records for this staff within date range
+  // Effective cutoff date: jangan pernah menghukum tanggal masa depan atau hari ini yang belum selesai shift-nya
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const effectiveEndDate = endDate > todayStr ? todayStr : endDate;
+
+  // Filter relevant records for this staff within effective date range (<= today)
   const myPresensi = presensiList.filter(
     (p) =>
       (p.nik || '').trim().toUpperCase() === nikUpper &&
       p.tanggal >= startDate &&
-      p.tanggal <= endDate
+      p.tanggal <= effectiveEndDate
   );
 
   const myRoster = rosterList.filter(
     (r) =>
       (r.nik || '').trim().toUpperCase() === nikUpper &&
       r.tanggal >= startDate &&
-      r.tanggal <= endDate
+      r.tanggal <= effectiveEndDate
   );
+
+  // Map roster by date untuk lookup jam_pulang aktual & status shift (termasuk Shift 3b 20:00, SKT, CTI, BOLOS)
+  const rosterByDate = new Map<string, RosterShiftRecord>();
+  myRoster.forEach((r) => {
+    rosterByDate.set(r.tanggal, r);
+  });
+
+  const isOffShift = (shiftVal?: string | null) => {
+    const s = (shiftVal || '').trim().toLowerCase();
+    return s.includes('libur') || s === 'off' || s.includes('(off)');
+  };
+
+  const isLeaveShift = (shiftVal?: string | null) => {
+    const s = (shiftVal || '').trim().toLowerCase();
+    return (
+      s.includes('sakit') ||
+      s === 'skt' ||
+      s.includes('cuti') ||
+      s === 'cti' ||
+      s.includes('izin') ||
+      s.includes('ijin') ||
+      s === 'ijn'
+    );
+  };
+
+  const isBolosShift = (shiftVal?: string | null) => {
+    const s = (shiftVal || '').trim().toLowerCase();
+    return s.includes('bolos') || s.includes('alpha');
+  };
 
   const myLembur = lemburList.filter(
     (l) =>
       (l.nik || '').trim().toUpperCase() === nikUpper &&
       l.status === 'Disetujui' &&
       l.tanggal >= startDate &&
-      l.tanggal <= endDate
+      l.tanggal <= effectiveEndDate
   );
 
   const myCuti = cutiList.filter(
     (c) =>
       (c.nik || '').trim().toUpperCase() === nikUpper &&
       c.status === 'Disetujui' &&
-      ((c.tgl_mulai >= startDate && c.tgl_mulai <= endDate) ||
-        (c.tgl_selesai >= startDate && c.tgl_selesai <= endDate))
+      !(c.tgl_selesai < startDate || c.tgl_mulai > effectiveEndDate)
   );
 
   const myIzinPulang = izinPulangAwalList.filter(
@@ -95,16 +128,32 @@ export function calculateKpiAbsensi({
       (i.nik || '').trim().toUpperCase() === nikUpper &&
       i.status === 'Disetujui' &&
       i.tanggal >= startDate &&
-      i.tanggal <= endDate
+      i.tanggal <= effectiveEndDate
   );
 
-  // Scheduled working days (excluding 'Libur' / 'Off')
-  const workingRoster = myRoster.filter((r) => {
-    const s = (r.shift || '').toLowerCase();
-    return !s.includes('libur') && !s.includes('off');
+  // Scheduled working days up to today (excluding 'Libur' / 'Off')
+  // Hari ini hanya dihitung sebagai hari kerja efektif jika sudah ada presensi lengkap (masuk & pulang)
+  // agar karyawan yang masih sedang bekerja hari ini tidak terpotong % kehadiran maupun dicap Bolos.
+  const presensiMap = new Map<string, PresensiRecord>();
+  myPresensi.forEach((p) => {
+    presensiMap.set(p.tanggal, p);
   });
 
-  const totalHariKerja = workingRoster.length > 0 ? workingRoster.length : Math.max(1, myPresensi.length);
+  const isTodayInProgress = (tanggal: string): boolean => {
+    if (tanggal !== todayStr) return false;
+    const pToday = presensiMap.get(tanggal);
+    const hasM = Boolean(pToday?.jam_masuk && pToday.jam_masuk.trim() !== '' && pToday.jam_masuk.trim() !== '-');
+    const hasP = Boolean(pToday?.jam_pulang && pToday.jam_pulang.trim() !== '' && pToday.jam_pulang.trim() !== '-');
+    return !(hasM && hasP);
+  };
+
+  const workingRoster = myRoster.filter((r) => {
+    if (isOffShift(r.shift)) return false;
+    if (isTodayInProgress(r.tanggal)) return false;
+    return true;
+  });
+
+  const totalHariKerja = workingRoster.length > 0 ? workingRoster.length : Math.max(1, myPresensi.filter((p) => !isTodayInProgress(p.tanggal)).length);
 
   let totalHadir = 0;
   let totalOnTime = 0;
@@ -117,30 +166,48 @@ export function calculateKpiAbsensi({
   let totalSkorBerangkatAccum = 0;
   let totalSkorPulangAccum = 0;
 
-  // Map presensi by date for fast lookup
-  const presensiMap = new Map<string, PresensiRecord>();
-  myPresensi.forEach((p) => {
-    presensiMap.set(p.tanggal, p);
-  });
-
   // Track dates counted as Alpha/Bolos due to incomplete attendance (e.g. tidak absen pulang)
   const bolosDates = new Set<string>();
+  const leaveDates = new Set<string>();
+
+  // Helper: resolve jam pulang standar berdasarkan jadwal Roster aktual (termasuk Shift 3b = 20:00, Shift 3a = 21:00)
+  const resolveStandardEndMinutes = (p: PresensiRecord): number => {
+    const rosterRec = rosterByDate.get(p.tanggal);
+    const rosterEndMins = parseTimeToMinutes(rosterRec?.jam_pulang);
+    if (rosterEndMins !== null && rosterEndMins > 0) {
+      return rosterEndMins;
+    }
+
+    const shiftRaw = `${rosterRec?.shift || ''} ${p.shift || ''}`.toLowerCase();
+    if (shiftRaw.includes('3b') || shiftRaw.includes('s3b')) return 20 * 60; // Shift 3b: 11:00 - 20:00
+    if (shiftRaw.includes('3a') || shiftRaw.includes('s3a') || shiftRaw.includes('shift 3') || shiftRaw.trim() === '3' || shiftRaw.includes('s3')) {
+      return 21 * 60; // Shift 3a: 12:00 - 21:00
+    }
+    if (shiftRaw.includes('shift 2') || shiftRaw.trim() === '2' || shiftRaw.includes('s2')) return 18 * 60; // Shift 2: 09:00 - 18:00
+    return 17 * 60; // Shift 1 default: 08:00 - 17:00
+  };
 
   // Evaluate each presensi record
   myPresensi.forEach((p) => {
     const sLower = (p.status || '').toLowerCase();
     if (sLower.includes('libur') || sLower.includes('cuti') || sLower.includes('izin') || sLower.includes('ijin') || sLower.includes('sakit')) {
+      if (!sLower.includes('libur')) leaveDates.add(p.tanggal);
       return;
     }
     if (sLower.includes('alpha') || sLower.includes('bolos')) {
-      bolosDates.add(p.tanggal);
+      if (!isTodayInProgress(p.tanggal)) bolosDates.add(p.tanggal);
       return;
     }
 
     const hasMasuk = Boolean(p.jam_masuk && p.jam_masuk.trim() !== '' && p.jam_masuk.trim() !== '-');
     const hasPulang = Boolean(p.jam_pulang && p.jam_pulang.trim() !== '' && p.jam_pulang.trim() !== '-');
 
-    // Karyawan yang tidak melakukan absen pulang (atau tidak absen datang) ditandai sebagai BOLOS & tidak dihitung masuk kerja
+    // Jika hari ini masih jam kerja (belum absen pulang), jangan dicap BOLOS dulu
+    if (isTodayInProgress(p.tanggal)) {
+      return;
+    }
+
+    // Karyawan yang tidak melakukan absen pulang (atau tidak absen datang) pada hari yang sudah lewat ditandai sebagai BOLOS
     if (!hasMasuk || !hasPulang) {
       bolosDates.add(p.tanggal);
       return;
@@ -168,13 +235,7 @@ export function calculateKpiAbsensi({
 
     // 2. EVALUASI ABSEN PULANG (CHECK-OUT)
     const hasApprovedEarlyOut = myIzinPulang.some((i) => i.tanggal === p.tanggal);
-
-    // Standard shift end time
-    let standardEndMins = 17 * 60; // default 17:00
-    const pShift = (p.shift || '').toLowerCase();
-    if (pShift.includes('shift 2') || pShift === '2') standardEndMins = 18 * 60;
-    else if (pShift.includes('shift 3') || pShift === '3') standardEndMins = 21 * 60;
-
+    const standardEndMins = resolveStandardEndMinutes(p);
     const actualEndMins = parseTimeToMinutes(p.jam_pulang);
 
     if (hasApprovedEarlyOut) {
@@ -193,10 +254,20 @@ export function calculateKpiAbsensi({
     }
   });
 
-  // Calculate Cuti & Alpha (Bolos: tidak absen datang ATAU tidak absen pulang)
-  const totalCutiIzin = myCuti.reduce((acc, c) => acc + (Number(c.jumlah_hari) || 1), 0);
-
+  // Calculate Cuti/Sakit/Izin & Alpha (Bolos: tidak absen datang ATAU tidak absen pulang)
   workingRoster.forEach((r) => {
+    // Jika Roster eksplisit ditandai Sakit / Cuti / Izin (mis. SKT / CTI / IJN) -> BUKAN Bolos/Alpha
+    if (isLeaveShift(r.shift)) {
+      leaveDates.add(r.tanggal);
+      return;
+    }
+
+    // Jika Roster eksplisit ditandai BOLOS / ALPHA -> PASTI masuk bolosDates
+    if (isBolosShift(r.shift)) {
+      bolosDates.add(r.tanggal);
+      return;
+    }
+
     const p = presensiMap.get(r.tanggal);
     const hasValidFullPresensi = Boolean(
       p &&
@@ -211,11 +282,17 @@ export function calculateKpiAbsensi({
         )
     );
     const hasCuti = myCuti.some((c) => r.tanggal >= c.tgl_mulai && r.tanggal <= c.tgl_selesai);
-    if (!hasValidFullPresensi && !hasCuti) {
+    if (hasCuti) {
+      leaveDates.add(r.tanggal);
+      return;
+    }
+    if (!hasValidFullPresensi) {
       bolosDates.add(r.tanggal);
     }
   });
 
+  const totalCutiFromForm = myCuti.reduce((acc, c) => acc + (Number(c.jumlah_hari) || 1), 0);
+  const totalCutiIzin = Math.max(totalCutiFromForm, leaveDates.size);
   const totalAlpha = bolosDates.size;
 
   const totalLemburJam = myLembur.reduce((acc, l) => acc + (Number(l.durasi_jam) || 0), 0);
