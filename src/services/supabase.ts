@@ -9354,20 +9354,29 @@ export async function submitPresensiRecord(record: Partial<PresensiRecord>): Pro
 
   // Auto calculate lateness status if not special non-attendance status
   const effectiveShift = cleanPayload.shift || existing?.shift || 'Shift 1';
-  const effectiveJamMasuk = cleanPayload.jam_masuk || existing?.jam_masuk;
   const sLower = effectiveShift.toLowerCase();
+  const explicitStatusLower = String(record.status || '').trim().toLowerCase();
+  const isExplicitNonWorkingStatus = ['libur', 'off', 'cuti', 'izin', 'ijin', 'sakit', 'alpha', 'bolos'].some(
+    (k) => explicitStatusLower === k || explicitStatusLower.includes(k)
+  );
+  const effectiveJamMasuk = isExplicitNonWorkingStatus
+    ? cleanPayload.jam_masuk
+    : cleanPayload.jam_masuk || existing?.jam_masuk;
 
-  if (sLower.includes('libur') || sLower.includes('off')) {
+  if (sLower.includes('libur') || sLower.includes('off') || explicitStatusLower === 'libur') {
     cleanPayload.status = 'Libur';
-  } else if (sLower.includes('cuti')) {
+  } else if (sLower.includes('cuti') || explicitStatusLower === 'cuti') {
     cleanPayload.status = 'Cuti';
-  } else if (sLower.includes('izin') || sLower.includes('ijin') || sLower.includes('sakit')) {
+  } else if (sLower.includes('sakit') || explicitStatusLower === 'sakit') {
+    cleanPayload.status = 'Sakit';
+  } else if (sLower.includes('izin') || sLower.includes('ijin') || explicitStatusLower === 'izin' || explicitStatusLower === 'ijin') {
     cleanPayload.status = 'Izin';
-  } else if (sLower.includes('alpha')) {
+  } else if (sLower.includes('alpha') || sLower.includes('bolos') || explicitStatusLower === 'alpha' || explicitStatusLower === 'bolos') {
     cleanPayload.status = 'Alpha';
   } else if (effectiveJamMasuk) {
     let schedStart = '08:00';
-    if (sLower.includes('shift 2') || sLower === '2') schedStart = '09:00';
+    if (sLower.includes('3b')) schedStart = '11:00';
+    else if (sLower.includes('shift 2') || sLower === '2') schedStart = '09:00';
     else if (sLower.includes('shift 3') || sLower === '3') schedStart = '12:00';
 
     const calc = calculateLatenessStatus(effectiveJamMasuk, schedStart, 15);
@@ -9384,11 +9393,11 @@ export async function submitPresensiRecord(record: Partial<PresensiRecord>): Pro
   let resultData: any = null;
 
   if (existing) {
-    // Update existing record
+    // Update existing record (clear jam_masuk/jam_pulang if HR explicitly switched status to Libur/Cuti/Sakit/Izin/Alpha)
     const updatePayload: Record<string, any> = {
       ...cleanPayload,
-      jam_masuk: cleanPayload.jam_masuk || existing.jam_masuk,
-      jam_pulang: cleanPayload.jam_pulang || existing.jam_pulang,
+      jam_masuk: isExplicitNonWorkingStatus ? (cleanPayload.jam_masuk || null) : (cleanPayload.jam_masuk || existing.jam_masuk),
+      jam_pulang: isExplicitNonWorkingStatus ? (cleanPayload.jam_pulang || null) : (cleanPayload.jam_pulang || existing.jam_pulang),
       shift: effectiveShift,
       status: cleanPayload.status,
       catatan: cleanPayload.catatan !== null ? cleanPayload.catatan : existing.catatan,

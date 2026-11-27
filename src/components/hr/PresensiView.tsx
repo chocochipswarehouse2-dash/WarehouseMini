@@ -35,6 +35,9 @@ import {
   Compass,
   Search,
   Filter,
+  Wallet,
+  Printer,
+  RefreshCw,
 } from 'lucide-react';
 import {
   UserSession,
@@ -68,6 +71,12 @@ import { playSuccessBeep, playErrorBeep } from '../../services/audio';
 import { calculateKpiAbsensi } from '../../utils/kpiCalculator';
 import { evaluatePresensiForAudit } from '../../utils/hrExportUtils';
 import { getActivePayrollPeriod } from '../../utils/hrPayrollUtils';
+import {
+  fetchEmployeePublishedPeriods,
+  fetchEmployeePublishedPayslip,
+  PublishedPayslipPeriodMeta,
+  PublishedEmployeePayslip,
+} from '../../services/hrPayslipService';
 import {
   getPresensiLocationConfig,
   savePresensiLocationConfig,
@@ -143,7 +152,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       if (s?.presensi_locations && s.presensi_locations.locations) {
         setLocationConfig(s.presensi_locations);
       }
-    }).catch(() => {});
+    }).catch(() => { });
 
     const handleLocChange = (e: any) => {
       if (e.detail && e.detail.locations) {
@@ -161,7 +170,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   const [capturingAdminGps, setCapturingAdminGps] = useState<boolean>(false);
   const [mapPickerTargetIndex, setMapPickerTargetIndex] = useState<number | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'harian' | 'kpi' | 'tukar_shift' | 'log'>('harian');
+  const [activeTab, setActiveTab] = useState<'harian' | 'kpi' | 'tukar_shift' | 'log' | 'slip_gaji'>('harian');
   const [logRecords, setLogRecords] = useState<PresensiRecord[]>([]);
   const [logVisibleCount, setLogVisibleCount] = useState<number>(100);
   const [loadingLog, setLoadingLog] = useState<boolean>(false);
@@ -209,6 +218,12 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
   // KPI states
   const [myKpiSummary, setMyKpiSummary] = useState<KpiAbsensiSummary | null>(null);
   const [loadingKpi, setLoadingKpi] = useState<boolean>(false);
+
+  // Slip Gaji Saya (Hanya tampil jika HR sudah klik Publish untuk periode tersebut)
+  const [publishedPeriods, setPublishedPeriods] = useState<PublishedPayslipPeriodMeta[]>([]);
+  const [selectedSlipMonth, setSelectedSlipMonth] = useState<string>('');
+  const [myPublishedPayslip, setMyPublishedPayslip] = useState<PublishedEmployeePayslip | null>(null);
+  const [loadingMyPayslip, setLoadingMyPayslip] = useState<boolean>(false);
 
   const userNik = getUserNik(session);
   const userName = session?.name || getUserPersonName(session?.username) || 'Karyawan';
@@ -444,6 +459,122 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     }
   }, [activeTab, loadMyKpi]);
 
+  const loadMyPublishedPayslips = useCallback(
+    async (forceRefresh = false) => {
+      if (!userNik) return;
+      setLoadingMyPayslip(true);
+      try {
+        const periods = await fetchEmployeePublishedPeriods(userNik, forceRefresh);
+        setPublishedPeriods(periods);
+        if (periods.length === 0) {
+          setSelectedSlipMonth('');
+          setMyPublishedPayslip(null);
+          return;
+        }
+        const targetMonth =
+          selectedSlipMonth && periods.some((p) => p.monthKey === selectedSlipMonth)
+            ? selectedSlipMonth
+            : periods[0].monthKey;
+        if (targetMonth !== selectedSlipMonth) {
+          setSelectedSlipMonth(targetMonth);
+        }
+        const slip = await fetchEmployeePublishedPayslip(userNik, targetMonth, forceRefresh);
+        setMyPublishedPayslip(slip);
+      } catch (err) {
+        console.warn('Gagal memuat slip gaji karyawan:', err);
+        setMyPublishedPayslip(null);
+      } finally {
+        setLoadingMyPayslip(false);
+      }
+    },
+    [userNik, selectedSlipMonth]
+  );
+
+  useEffect(() => {
+    if (activeTab === 'slip_gaji') {
+      loadMyPublishedPayslips(true);
+    }
+  }, [activeTab, loadMyPublishedPayslips]);
+
+  const handleSelectEmployeeSlipMonth = async (monthKey: string) => {
+    setSelectedSlipMonth(monthKey);
+    if (!userNik || !monthKey) {
+      setMyPublishedPayslip(null);
+      return;
+    }
+    setLoadingMyPayslip(true);
+    try {
+      const slip = await fetchEmployeePublishedPayslip(userNik, monthKey, true);
+      setMyPublishedPayslip(slip);
+    } catch {
+      setMyPublishedPayslip(null);
+    } finally {
+      setLoadingMyPayslip(false);
+    }
+  };
+
+  const handlePrintMyPayslip = (slip: PublishedEmployeePayslip) => {
+    const win = window.open('', '_blank');
+    if (!win) {
+      onShowToast('Popup terblokir, izinkan popup browser untuk mencetak slip gaji.', 'warning');
+      return;
+    }
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Slip Gaji ${slip.nama} - ${slip.payrollPeriodLabel}</title>
+        <style>
+          @page { size: A4; margin: 14mm; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #0f172a; padding: 16px; }
+          .head { display: flex; justify-content: space-between; border-bottom: 2px solid #4f46e5; padding-bottom: 10px; margin-bottom: 14px; }
+          .title { font-size: 18px; font-weight: 800; }
+          .sub { font-size: 12px; color: #475569; }
+          table { width: 100%; border-collapse: collapse; margin-bottom: 14px; font-size: 12px; }
+          th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+          th { background: #f8fafc; font-size: 11px; text-transform: uppercase; }
+          .right { text-align: right; font-family: monospace; font-weight: 700; }
+          .total { background: #eef2ff; font-weight: 800; font-size: 14px; }
+        </style>
+      </head>
+      <body>
+        <div class="head">
+          <div>
+            <div class="title">SLIP GAJI KARYAWAN — CHOCOCHIPS WMS</div>
+            <div class="sub">Periode ${slip.payrollPeriodLabel} (${slip.rangeLabel})</div>
+          </div>
+          <div style="text-align:right;" class="sub">
+            <div><b>${slip.nama}</b> (${slip.nik})</div>
+            <div>${slip.divisi} · ${slip.jabatan}</div>
+          </div>
+        </div>
+        <table>
+          <tr><th>Komponen Pendapatan</th><th class="right">Nominal</th></tr>
+          <tr><td>Gaji Pokok</td><td class="right">Rp ${slip.gajiPokok.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Tunjangan</td><td class="right">Rp ${slip.tunjangan.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Upah Lembur ACC (${slip.totalJamLembur} Jam)</td><td class="right">Rp ${slip.uangLembur.toLocaleString('id-ID')}</td></tr>
+          <tr class="total"><td>Total Pendapatan Kotor</td><td class="right">Rp ${slip.totalPendapatanKotor.toLocaleString('id-ID')}</td></tr>
+        </table>
+        <table>
+          <tr><th>Komponen Potongan</th><th class="right">Nominal</th></tr>
+          <tr><td>Denda Datang Tidak Absen Pulang (${slip.totalTidakAbsenPulang}x)</td><td class="right">-Rp ${slip.potonganTidakAbsenPulang.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Potongan Tidak Hadir Tanpa Absen (${slip.totalTidakHadirTanpaAbsen} hari)</td><td class="right">-Rp ${slip.potonganTidakHadir.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Potongan Cuti / Izin / Sakit Unpaid (${slip.totalHariCutiIzinSakit} hari)</td><td class="right">-Rp ${slip.potonganCutiIzinSakit.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Potongan Terlambat &gt;${slip.toleransiTerlambatMenit} mnt (${slip.totalHariTerlambatDipotong} hari)</td><td class="right">-Rp ${slip.potonganTerlambat.toLocaleString('id-ID')}</td></tr>
+          <tr><td>Potongan Kasbon</td><td class="right">-Rp ${slip.potonganKasbon.toLocaleString('id-ID')}</td></tr>
+          <tr class="total"><td>Total Potongan</td><td class="right">-Rp ${slip.totalPotongan.toLocaleString('id-ID')}</td></tr>
+        </table>
+        <table>
+          <tr class="total"><td>GAJI BERSIH (TAKE-HOME PAY)</td><td class="right">Rp ${slip.gajiBersih.toLocaleString('id-ID')}</td></tr>
+        </table>
+        <div class="sub">Dipublikasikan oleh ${slip.publishedBy} pada ${new Date(slip.publishedAt).toLocaleString('id-ID')}</div>
+        <script>window.onload = function() { window.print(); };</script>
+      </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
   const todayRoster = upcomingRoster.find((r) => r.tanggal === todayIso);
   const isShiftLibur = Boolean(todayRoster?.shift?.toLowerCase().includes('libur'));
   const isShiftCutiOrIzin = Boolean(
@@ -568,11 +699,11 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     const updatedLocations = (locationConfig.locations || []).map((l) =>
       l.id === targetLoc.id
         ? {
-            ...l,
-            latitude: newLat,
-            longitude: newLng,
-            radiusMeters: Math.max(l.radiusMeters || 25, 50), // Atur minimal 50m agar leluasa di area warehouse
-          }
+          ...l,
+          latitude: newLat,
+          longitude: newLng,
+          radiusMeters: Math.max(l.radiusMeters || 25, 50), // Atur minimal 50m agar leluasa di area warehouse
+        }
         : l
     );
 
@@ -791,7 +922,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
     try {
       const nowTime = getFormatTime();
       const staffFullName = session?.name || todayPresensi.nama || getUserPersonName(userNik, userNik);
-      
+
       let noteAppend = ` | Pulang (${nowTime})`;
       if (todayApprovedEarlyCheckout) {
         noteAppend += ` [Izin Pulang Awal Disetujui: ${todayApprovedEarlyCheckout.approved_by || 'HR'}]`;
@@ -941,42 +1072,54 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       {/* Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-800 overflow-x-auto no-scrollbar items-center justify-between gap-2">
         <div className="flex items-center">
-        <button
-          onClick={() => setActiveTab('harian')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'harian' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-        >
-          <Clock className="w-4 h-4" />
-          <span>Presensi Harian</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('kpi')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'kpi' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-        >
-          <Award className="w-4 h-4" />
-          <span>KPI Absensi Saya</span>
-          {myKpiSummary && (
-            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${myKpiSummary.grade === 'A+' || myKpiSummary.grade === 'A' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400' : myKpiSummary.grade === 'B' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400'}`}>
-              Grade {myKpiSummary.grade} ({myKpiSummary.nilaiKpiAbsensi} Pts)
-            </span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('tukar_shift')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'tukar_shift' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-        >
-          <ArrowRightLeft className="w-4 h-4" />
-          <span>Pengajuan Tukar Shift</span>
-          {tukarShiftList.filter((t) => t.status === 'Diajukan').length > 0 && (
-            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
-          )}
-        </button>
-        <button
-          onClick={() => setActiveTab('log')}
-          className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'log' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-        >
-          <FileText className="w-4 h-4" />
-          <span>Log Presensi</span>
-        </button>
+          <button
+            onClick={() => setActiveTab('harian')}
+            className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'harian' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <Clock className="w-4 h-4" />
+            <span>Presensi Harian</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('kpi')}
+            className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'kpi' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <Award className="w-4 h-4" />
+            <span>KPI Absensi Saya</span>
+            {myKpiSummary && (
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${myKpiSummary.grade === 'A+' || myKpiSummary.grade === 'A' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-400' : myKpiSummary.grade === 'B' ? 'bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400' : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-400'}`}>
+                Grade {myKpiSummary.grade} ({myKpiSummary.nilaiKpiAbsensi} Pts)
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('tukar_shift')}
+            className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'tukar_shift' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <ArrowRightLeft className="w-4 h-4" />
+            <span>Pengajuan Tukar Shift</span>
+            {tukarShiftList.filter((t) => t.status === 'Diajukan').length > 0 && (
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+            )}
+          </button>
+          <button
+            onClick={() => setActiveTab('log')}
+            className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'log' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Log Presensi</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('slip_gaji')}
+            className={`px-4 py-3 text-sm font-bold border-b-2 whitespace-nowrap flex items-center gap-2 cursor-pointer transition-colors ${activeTab === 'slip_gaji' ? 'border-primary-500 text-primary-500' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+          >
+            <Wallet className="w-4 h-4" />
+            <span>Slip Gaji</span>
+            {publishedPeriods.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 font-mono">
+                {publishedPeriods.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {userIsAdmin && (
@@ -985,7 +1128,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
             onClick={() => {
               setEditingLocConfig(JSON.parse(JSON.stringify(locationConfig)));
               if (karyawanList.length === 0) {
-                fetchKaryawanDirectory().then((kList) => setKaryawanList(kList)).catch(() => {});
+                fetchKaryawanDirectory().then((kList) => setKaryawanList(kList)).catch(() => { });
               }
               setShowLocationSettingsModal(true);
             }}
@@ -1174,116 +1317,113 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                 )}
               </div>
 
-                {/* GEOFENCE RADAR & STATUS JANGKAUAN */}
-                <div
-                  className={`mb-4 p-3.5 rounded-2xl border transition-all ${
-                    !locationConfig.enabled
-                      ? "bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
-                      : isWithinGeofence
-                      ? "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200"
-                      : "bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200"
+              {/* GEOFENCE RADAR & STATUS JANGKAUAN */}
+              <div
+                className={`mb-4 p-3.5 rounded-2xl border transition-all ${!locationConfig.enabled
+                  ? "bg-slate-50 dark:bg-slate-900/60 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400"
+                  : isWithinGeofence
+                    ? "bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200"
+                    : "bg-rose-50/80 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-900 dark:text-rose-200"
                   }`}
-                >
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                          !locationConfig.enabled
-                            ? "bg-slate-200 dark:bg-slate-800 text-slate-500"
-                            : isWithinGeofence
-                            ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 animate-pulse"
-                            : "bg-rose-500/20 text-rose-600 dark:text-rose-400"
+              >
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2.5">
+                    <div
+                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${!locationConfig.enabled
+                        ? "bg-slate-200 dark:bg-slate-800 text-slate-500"
+                        : isWithinGeofence
+                          ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 animate-pulse"
+                          : "bg-rose-500/20 text-rose-600 dark:text-rose-400"
                         }`}
-                      >
-                        <MapPin className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <div className="font-extrabold text-xs flex items-center gap-1.5">
-                          {!locationConfig.enabled ? (
-                            <span>Validasi Radius Lokasi Dinonaktifkan</span>
-                          ) : isWithinGeofence ? (
-                            <span className="text-emerald-700 dark:text-emerald-300">
-                              ✅ Terverifikasi di Area: <b>{locationMatch?.matchedLocation?.name || "Lokasi Kerja"}</b>
-                            </span>
-                          ) : (
-                            <span className="text-rose-700 dark:text-rose-300">
-                              ❌ Di Luar Radius Lokasi Kerja
-                            </span>
-                          )}
-                        </div>
-                        <div className="text-[11px] opacity-80 mt-0.5 space-y-0.5">
-                          {!locationConfig.enabled ? (
-                            <p>Presensi dapat dilakukan bebas dari lokasi mana pun.</p>
-                          ) : currentCoords && locationMatch ? (
-                            <>
-                              <p>
-                                Jarak terdekat: <b>{formatDistanceMeters(locationMatch.closestDistance)}</b> dari{" "}
-                                <b>{locationMatch.closestLocation?.name}</b> (Toleransi:{" "}
-                                {locationMatch.closestLocation?.radiusMeters}m)
-                                {currentCoords.accuracy ? ` • Akurasi GPS ±${Math.round(currentCoords.accuracy)}m` : ""}
-                              </p>
-                              {locationConfig.locations?.length > 1 && (
-                                <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 flex-wrap">
-                                  <span>Semua Titik:</span>
-                                  {locationMatch.allDistances.map((d) => (
-                                    <span
-                                      key={d.location.id}
-                                      className={`px-1.5 py-0.5 rounded-md font-mono ${
-                                        d.isWithin
-                                          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 font-bold"
-                                          : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
-                                      }`}
-                                    >
-                                      {d.location.name}: {formatDistanceMeters(d.distance)}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                            </>
-                          ) : gpsError ? (
-                            <span className="text-rose-600 dark:text-rose-400">{gpsError}</span>
-                          ) : (
-                            <p>Mendeteksi sinyal GPS presisi...</p>
-                          )}
-                        </div>
-                      </div>
+                    >
+                      <MapPin className="w-4 h-4" />
                     </div>
-
-                                        <div className="flex items-center gap-1.5 ml-auto">
-                      {locationConfig.enabled && (
-                        <button
-                          type="button"
-                          onClick={() => handleDetectUserLocation(false)}
-                          disabled={gpsLoading}
-                          className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer transition shadow-xs"
-                          title="Perbarui koordinat lokasi GPS saat ini"
-                        >
-                          <LocateFixed className={`w-3.5 h-3.5 ${gpsLoading ? "animate-spin text-primary-500" : ""}`} />
-                          <span>{gpsLoading ? "Mendeteksi..." : "Cek Lokasi GPS"}</span>
-                        </button>
-                      )}
+                    <div>
+                      <div className="font-extrabold text-xs flex items-center gap-1.5">
+                        {!locationConfig.enabled ? (
+                          <span>Validasi Radius Lokasi Dinonaktifkan</span>
+                        ) : isWithinGeofence ? (
+                          <span className="text-emerald-700 dark:text-emerald-300">
+                            ✅ Terverifikasi di Area: <b>{locationMatch?.matchedLocation?.name || "Lokasi Kerja"}</b>
+                          </span>
+                        ) : (
+                          <span className="text-rose-700 dark:text-rose-300">
+                            ❌ Di Luar Radius Lokasi Kerja
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] opacity-80 mt-0.5 space-y-0.5">
+                        {!locationConfig.enabled ? (
+                          <p>Presensi dapat dilakukan bebas dari lokasi mana pun.</p>
+                        ) : currentCoords && locationMatch ? (
+                          <>
+                            <p>
+                              Jarak terdekat: <b>{formatDistanceMeters(locationMatch.closestDistance)}</b> dari{" "}
+                              <b>{locationMatch.closestLocation?.name}</b> (Toleransi:{" "}
+                              {locationMatch.closestLocation?.radiusMeters}m)
+                              {currentCoords.accuracy ? ` • Akurasi GPS ±${Math.round(currentCoords.accuracy)}m` : ""}
+                            </p>
+                            {locationConfig.locations?.length > 1 && (
+                              <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400 flex-wrap">
+                                <span>Semua Titik:</span>
+                                {locationMatch.allDistances.map((d) => (
+                                  <span
+                                    key={d.location.id}
+                                    className={`px-1.5 py-0.5 rounded-md font-mono ${d.isWithin
+                                      ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 font-bold"
+                                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300"
+                                      }`}
+                                  >
+                                    {d.location.name}: {formatDistanceMeters(d.distance)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        ) : gpsError ? (
+                          <span className="text-rose-600 dark:text-rose-400">{gpsError}</span>
+                        ) : (
+                          <p>Mendeteksi sinyal GPS presisi...</p>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Tombol Kalibrasi Instan Langsung untuk Superadmin / Manager saat di lokasi */}
-                  {!isWithinGeofence && userIsAdmin && (
-                    <div className="mt-3 pt-3 border-t border-rose-200/60 dark:border-rose-800/60 flex flex-col sm:flex-row items-center justify-between gap-2.5 bg-rose-100/60 dark:bg-rose-950/40 p-3 rounded-2xl">
-                      <div className="text-xs text-rose-800 dark:text-rose-200 font-semibold leading-relaxed">
-                        📍 <b>Anda Superadmin di lokasi kerja saat ini?</b> Jadikan titik GPS HP Anda langsung sebagai koordinat resmi <b>{locationMatch?.closestLocation?.name || "Gudang Utama"}</b>:
-                      </div>
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    {locationConfig.enabled && (
                       <button
                         type="button"
-                        onClick={handleQuickCalibrateLocation}
-                        disabled={capturingAdminGps}
-                        className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-md shadow-amber-600/25 flex items-center justify-center gap-1.5 cursor-pointer transition shrink-0 active:scale-95 disabled:opacity-50"
-                        title="Set titik koordinat lokasi terdekat ke posisi GPS Anda saat ini dan langsung simpan ke Supabase Cloud"
+                        onClick={() => handleDetectUserLocation(false)}
+                        disabled={gpsLoading}
+                        className="px-2.5 py-1 rounded-xl text-[11px] font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1 cursor-pointer transition shadow-xs"
+                        title="Perbarui koordinat lokasi GPS saat ini"
                       >
-                        <LocateFixed className={`w-3.5 h-3.5 ${capturingAdminGps ? "animate-spin" : ""}`} />
-                        <span>{capturingAdminGps ? "Mengkalibrasi..." : "⚡ Kalibrasi Titik Ini ke Posisi Saya (Simpan Otomatis)"}</span>
+                        <LocateFixed className={`w-3.5 h-3.5 ${gpsLoading ? "animate-spin text-primary-500" : ""}`} />
+                        <span>{gpsLoading ? "Mendeteksi..." : "Cek Lokasi GPS"}</span>
                       </button>
-                    </div>
-                  )}
+                    )}
+                  </div>
                 </div>
+
+                {/* Tombol Kalibrasi Instan Langsung untuk Superadmin / Manager saat di lokasi */}
+                {!isWithinGeofence && userIsAdmin && (
+                  <div className="mt-3 pt-3 border-t border-rose-200/60 dark:border-rose-800/60 flex flex-col sm:flex-row items-center justify-between gap-2.5 bg-rose-100/60 dark:bg-rose-950/40 p-3 rounded-2xl">
+                    <div className="text-xs text-rose-800 dark:text-rose-200 font-semibold leading-relaxed">
+                      📍 <b>Anda Superadmin di lokasi kerja saat ini?</b> Jadikan titik GPS HP Anda langsung sebagai koordinat resmi <b>{locationMatch?.closestLocation?.name || "Gudang Utama"}</b>:
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleQuickCalibrateLocation}
+                      disabled={capturingAdminGps}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-md shadow-amber-600/25 flex items-center justify-center gap-1.5 cursor-pointer transition shrink-0 active:scale-95 disabled:opacity-50"
+                      title="Set titik koordinat lokasi terdekat ke posisi GPS Anda saat ini dan langsung simpan ke Supabase Cloud"
+                    >
+                      <LocateFixed className={`w-3.5 h-3.5 ${capturingAdminGps ? "animate-spin" : ""}`} />
+                      <span>{capturingAdminGps ? "Mengkalibrasi..." : "⚡ Kalibrasi Titik Ini ke Posisi Saya (Simpan Otomatis)"}</span>
+                    </button>
+                  </div>
+                )}
+              </div>
 
               {/* Action Buttons */}
               <div className="space-y-3 pt-2">
@@ -1307,14 +1447,14 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                         {submitting
                           ? "Memproses..."
                           : isShiftCutiOrIzin
-                          ? `Sedang ${todayRoster?.shift || "Cuti / Izin"}`
-                          : isShiftLibur
-                          ? "Hari Ini Libur (Off)"
-                          : locationConfig.enabled && !currentCoords
-                          ? "Mendeteksi Lokasi GPS..."
-                          : locationConfig.enabled && !isWithinGeofence
-                          ? `Di Luar Radius (${formatDistanceMeters(distanceToOffice || 0)})`
-                          : "Presensi Masuk Sekarang"}
+                            ? `Sedang ${todayRoster?.shift || "Cuti / Izin"}`
+                            : isShiftLibur
+                              ? "Hari Ini Libur (Off)"
+                              : locationConfig.enabled && !currentCoords
+                                ? "Mendeteksi Lokasi GPS..."
+                                : locationConfig.enabled && !isWithinGeofence
+                                  ? `Di Luar Radius (${formatDistanceMeters(distanceToOffice || 0)})`
+                                  : "Presensi Masuk Sekarang"}
                       </span>
                     </button>
                   ) : (
@@ -1341,11 +1481,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                         loading ||
                         Boolean(locationConfig.enabled && (!currentCoords || !isWithinGeofence))
                       }
-                      className={`w-full py-3.5 px-5 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:cursor-not-allowed ${
-                        canCheckoutNow && !(locationConfig.enabled && (!currentCoords || !isWithinGeofence))
-                          ? "bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/20"
-                          : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700"
-                      }`}
+                      className={`w-full py-3.5 px-5 rounded-2xl font-extrabold text-sm flex items-center justify-center gap-2.5 transition-all cursor-pointer disabled:cursor-not-allowed ${canCheckoutNow && !(locationConfig.enabled && (!currentCoords || !isWithinGeofence))
+                        ? "bg-primary-500 hover:bg-primary-600 text-white shadow-lg shadow-primary-500/20"
+                        : "bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border border-slate-200 dark:border-slate-700"
+                        }`}
                     >
                       {canCheckoutNow ? (
                         <>
@@ -1455,11 +1594,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   {upcomingRoster.map((r) => (
                     <div
                       key={r.tanggal}
-                      className={`p-2 rounded-xl text-center min-w-[54px] shrink-0 border ${
-                        r.tanggal === todayIso
-                          ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-500 text-primary-700 dark:text-primary-300 font-extrabold'
-                          : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
-                      }`}
+                      className={`p-2 rounded-xl text-center min-w-[54px] shrink-0 border ${r.tanggal === todayIso
+                        ? 'bg-primary-50 dark:bg-primary-950/60 border-primary-500 text-primary-700 dark:text-primary-300 font-extrabold'
+                        : 'bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
                     >
                       <div className="text-[9px] font-bold uppercase">{r.tanggal.slice(8, 10)}/{r.tanggal.slice(5, 7)}</div>
                       <div className="text-[10px] font-extrabold truncate mt-0.5">{r.shift}</div>
@@ -1658,13 +1796,12 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
 
                     <div>
                       <span
-                        className={`px-3 py-1 rounded-full text-xs font-black inline-flex items-center gap-1 ${
-                          ts.status === 'Disetujui'
-                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                            : ts.status === 'Ditolak'
+                        className={`px-3 py-1 rounded-full text-xs font-black inline-flex items-center gap-1 ${ts.status === 'Disetujui'
+                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                          : ts.status === 'Ditolak'
                             ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
                             : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                        }`}
+                          }`}
                       >
                         {ts.status === 'Disetujui' ? (
                           <CheckCircle2 className="w-3.5 h-3.5" />
@@ -1704,11 +1841,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
               <button
                 type="button"
                 onClick={() => setLogDatePreset('today')}
-                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition cursor-pointer ${
-                  logStartDate === todayIso && logEndDate === todayIso
-                    ? 'bg-indigo-600 text-white shadow-xs'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                }`}
+                className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold transition cursor-pointer ${logStartDate === todayIso && logEndDate === todayIso
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+                  }`}
               >
                 Hari Ini
               </button>
@@ -1923,9 +2059,8 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                   return (
                     <tr
                       key={r.id || i}
-                      className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors ${
-                        isBolosAudit ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
-                      }`}
+                      className={`hover:bg-slate-50/70 dark:hover:bg-slate-900/40 transition-colors ${isBolosAudit ? 'bg-rose-50/30 dark:bg-rose-950/10' : ''
+                        }`}
                     >
                       <td className="p-3 font-mono font-bold">{r.tanggal}</td>
                       <td className="p-3 font-mono text-slate-500 dark:text-slate-400">{r.nik}</td>
@@ -1934,148 +2069,147 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                           ? r.nama
                           : getUserPersonName(r.nik, r.nama || r.nik)}
                       </td>
-                    {editingPresensiId === r.id ? (
-                      <>
-                        <td className="p-3">
-                          <select
-                            value={editPresensiData.shift || 'Shift 1'}
-                            onChange={(e) => setEditPresensiData({ ...editPresensiData, shift: e.target.value })}
-                            className="border p-1.5 rounded-lg text-xs bg-white dark:bg-slate-900"
-                          >
-                            <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
-                            <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
-                            <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
-                            <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
-                            <option value="Libur">Libur (Off)</option>
-                            <option value="Cuti">Cuti</option>
-                            <option value="Izin">Izin</option>
-                            <option value="Sakit">Sakit</option>
-                          </select>
-                        </td>
-                        <td className="p-3">
-                          <input
-                            type="time"
-                            value={editPresensiData.jam_masuk || ''}
-                            onChange={(e) => setEditPresensiData({ ...editPresensiData, jam_masuk: e.target.value })}
-                            className="border p-1.5 rounded-lg text-xs font-mono"
-                          />
-                        </td>
-                        <td className="p-3">
-                          <input
-                            type="time"
-                            value={editPresensiData.jam_pulang || ''}
-                            onChange={(e) => setEditPresensiData({ ...editPresensiData, jam_pulang: e.target.value })}
-                            className="border p-1.5 rounded-lg text-xs font-mono"
-                          />
-                        </td>
-                        <td className="p-3">
-                          <select
-                            value={editPresensiData.status || 'Hadir'}
-                            onChange={(e) => setEditPresensiData({ ...editPresensiData, status: e.target.value })}
-                            className="border p-1.5 rounded-lg text-xs"
-                          >
-                            <option value="Hadir">Hadir</option>
-                            <option value="Terlambat">Terlambat</option>
-                            <option value="Alpha">Alpha</option>
-                            <option value="Izin">Izin</option>
-                            <option value="Cuti">Cuti</option>
-                            <option value="Libur">Libur</option>
-                          </select>
-                        </td>
-                        <td className="p-3">
-                          <input
-                            type="text"
-                            value={editPresensiData.catatan || ''}
-                            onChange={(e) => setEditPresensiData({ ...editPresensiData, catatan: e.target.value })}
-                            placeholder="Catatan..."
-                            className="border p-1.5 rounded-lg text-xs w-40 bg-white dark:bg-slate-900"
-                          />
-                        </td>
-                        <td className="p-3 flex items-center gap-1.5">
-                          <button
-                            onClick={async () => {
-                              if (!editPresensiData.id) return;
-                              try {
-                                await submitPresensiRecord(editPresensiData);
-                                onShowToast('Presensi berhasil diperbarui', 'success');
-                                setEditingPresensiId(null);
-                                loadLogData();
-                              } catch(e: any) {
-                                onShowToast(`Gagal update: ${e.message || 'Error'}`, 'error');
-                              }
-                            }}
-                            className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
-                          >
-                            <Save className="w-4 h-4" />
-                          </button>
-                          <button onClick={() => setEditingPresensiId(null)} className="p-1 rounded bg-slate-100 text-slate-400">
-                            <X className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </>
-                    ) : (
-                      <>
-                        <td className="p-3">{r.shift}</td>
-                        <td className="p-3 font-mono font-bold">
-                          {evalRes.hasMasuk ? (
-                            <span className="text-emerald-600 dark:text-emerald-400">{r.jam_masuk}</span>
-                          ) : evalRes.isBolosTidakAbsenDatang ? (
-                            <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold">
-                              Tidak Absen Datang
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="p-3 font-mono">
-                          {evalRes.hasPulang ? (
-                            <span className="font-bold">{r.jam_pulang}</span>
-                          ) : evalRes.isBolosTidakAbsenPulang ? (
-                            <span
-                              className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold"
-                              title="Karyawan melakukan tap masuk namun tidak melakukan absen pulang -> Ditandai Bolos (Tidak dihitung masuk kerja)"
+                      {editingPresensiId === r.id ? (
+                        <>
+                          <td className="p-3">
+                            <select
+                              value={editPresensiData.shift || 'Shift 1'}
+                              onChange={(e) => setEditPresensiData({ ...editPresensiData, shift: e.target.value })}
+                              className="border p-1.5 rounded-lg text-xs bg-white dark:bg-slate-900"
                             >
-                              Tidak Absen Pulang
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">-</span>
-                          )}
-                        </td>
-                        <td className="p-3">
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isBolosAudit
+                              <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
+                              <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
+                              <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
+                              <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
+                              <option value="Libur">Libur (Off)</option>
+                              <option value="Cuti">Cuti</option>
+                              <option value="Izin">Izin</option>
+                              <option value="Sakit">Sakit</option>
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="time"
+                              value={editPresensiData.jam_masuk || ''}
+                              onChange={(e) => setEditPresensiData({ ...editPresensiData, jam_masuk: e.target.value })}
+                              className="border p-1.5 rounded-lg text-xs font-mono"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="time"
+                              value={editPresensiData.jam_pulang || ''}
+                              onChange={(e) => setEditPresensiData({ ...editPresensiData, jam_pulang: e.target.value })}
+                              className="border p-1.5 rounded-lg text-xs font-mono"
+                            />
+                          </td>
+                          <td className="p-3">
+                            <select
+                              value={editPresensiData.status || 'Hadir'}
+                              onChange={(e) => setEditPresensiData({ ...editPresensiData, status: e.target.value })}
+                              className="border p-1.5 rounded-lg text-xs"
+                            >
+                              <option value="Hadir">Hadir</option>
+                              <option value="Terlambat">Terlambat</option>
+                              <option value="Alpha">Alpha</option>
+                              <option value="Izin">Izin</option>
+                              <option value="Cuti">Cuti</option>
+                              <option value="Libur">Libur</option>
+                            </select>
+                          </td>
+                          <td className="p-3">
+                            <input
+                              type="text"
+                              value={editPresensiData.catatan || ''}
+                              onChange={(e) => setEditPresensiData({ ...editPresensiData, catatan: e.target.value })}
+                              placeholder="Catatan..."
+                              className="border p-1.5 rounded-lg text-xs w-40 bg-white dark:bg-slate-900"
+                            />
+                          </td>
+                          <td className="p-3 flex items-center gap-1.5">
+                            <button
+                              onClick={async () => {
+                                if (!editPresensiData.id) return;
+                                try {
+                                  await submitPresensiRecord(editPresensiData);
+                                  onShowToast('Presensi berhasil diperbarui', 'success');
+                                  setEditingPresensiId(null);
+                                  loadLogData();
+                                } catch (e: any) {
+                                  onShowToast(`Gagal update: ${e.message || 'Error'}`, 'error');
+                                }
+                              }}
+                              className="p-1 rounded bg-emerald-50 text-emerald-600 hover:bg-emerald-100"
+                            >
+                              <Save className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingPresensiId(null)} className="p-1 rounded bg-slate-100 text-slate-400">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-3">{r.shift}</td>
+                          <td className="p-3 font-mono font-bold">
+                            {evalRes.hasMasuk ? (
+                              <span className="text-emerald-600 dark:text-emerald-400">{r.jam_masuk}</span>
+                            ) : evalRes.isBolosTidakAbsenDatang ? (
+                              <span className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold">
+                                Tidak Absen Datang
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono">
+                            {evalRes.hasPulang ? (
+                              <span className="font-bold">{r.jam_pulang}</span>
+                            ) : evalRes.isBolosTidakAbsenPulang ? (
+                              <span
+                                className="px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 text-[10px] font-bold"
+                                title="Karyawan melakukan tap masuk namun tidak melakukan absen pulang -> Ditandai Bolos (Tidak dihitung masuk kerja)"
+                              >
+                                Tidak Absen Pulang
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+                          <td className="p-3">
+                            <div className="flex flex-col items-start gap-0.5">
+                              <span
+                                className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${isBolosAudit
                                   ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60'
                                   : evalRes.isValidHadir && (r.status === 'Hadir' || r.status === 'Tepat Waktu')
-                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
-                                  : evalRes.isValidHadir && r.status === 'Terlambat'
-                                  ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
-                                  : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
-                              }`}
-                            >
-                              {evalRes.auditStatusLabel}
-                            </span>
-                            {evalRes.isBolosTidakAbsenPulang && r.status && (
-                              <span className="text-[9px] text-slate-400">
-                                Log awal: {r.status} (Tap Masuk {r.jam_masuk})
+                                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                    : evalRes.isValidHadir && r.status === 'Terlambat'
+                                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                                      : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                  }`}
+                              >
+                                {evalRes.auditStatusLabel}
                               </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 text-slate-500 dark:text-slate-400 max-w-xs truncate" title={r.catatan || ''}>
-                          {r.catatan || '-'}
-                        </td>
-                        {userIsAdmin && (
-                          <td className="p-3">
-                            <button onClick={() => { setEditingPresensiId(r.id || null); setEditPresensiData(r); }} className="text-blue-500 p-1 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4"/></button>
+                              {evalRes.isBolosTidakAbsenPulang && r.status && (
+                                <span className="text-[9px] text-slate-400">
+                                  Log awal: {r.status} (Tap Masuk {r.jam_masuk})
+                                </span>
+                              )}
+                            </div>
                           </td>
-                        )}
-                      </>
-                    )}
-                  </tr>
-                );
-              })}
+                          <td className="p-3 text-slate-500 dark:text-slate-400 max-w-xs truncate" title={r.catatan || ''}>
+                            {r.catatan || '-'}
+                          </td>
+                          {userIsAdmin && (
+                            <td className="p-3">
+                              <button onClick={() => { setEditingPresensiId(r.id || null); setEditPresensiData(r); }} className="text-blue-500 p-1 hover:bg-blue-50 rounded"><Edit2 className="w-4 h-4" /></button>
+                            </td>
+                          )}
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
                 {filteredLogRecords.length === 0 && !loadingLog && (
                   <tr>
                     <td colSpan={userIsAdmin ? 9 : 8} className="text-center p-8 text-slate-400">
@@ -2104,7 +2238,7 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
       )}
 
       {/* ================= MODAL 1: IZIN PULANG LEBIH AWAL ================= */}
-            {/* MODAL KONFIRMASI PRESENSI PULANG (MENCEGAH KEPENCET TIDAK SENGAJA) */}
+      {/* MODAL KONFIRMASI PRESENSI PULANG (MENCEGAH KEPENCET TIDAK SENGAJA) */}
       {showConfirmPulangModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 animate-in fade-in zoom-in duration-150">
@@ -2410,6 +2544,263 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
         />
       )}
 
+      {/* ================= TAB 5: SLIP GAJI SAYA (HANYA TAMPIL JIKA HR SUDAH PUBLISH) ================= */}
+      {activeTab === 'slip_gaji' && (
+        <div className="bg-white dark:bg-[#131d31] rounded-3xl p-4 sm:p-6 shadow-sm border border-slate-200 dark:border-slate-800 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
+                <Wallet className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <span>Slip Gaji Saya</span>
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Hanya menampilkan periode gaji yang telah resmi dipublikasikan oleh HR / Admin.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              {publishedPeriods.length > 0 && (
+                <select
+                  value={selectedSlipMonth}
+                  onChange={(e) => handleSelectEmployeeSlipMonth(e.target.value)}
+                  className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-white"
+                >
+                  {publishedPeriods.map((p) => (
+                    <option key={p.monthKey} value={p.monthKey}>
+                      {p.label} ({p.rangeLabel})
+                    </option>
+                  ))}
+                </select>
+              )}
+              <button
+                type="button"
+                onClick={() => loadMyPublishedPayslips(true)}
+                disabled={loadingMyPayslip}
+                className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingMyPayslip ? 'animate-spin' : ''}`} />
+                <span>Segarkan</span>
+              </button>
+              {myPublishedPayslip && (
+                <button
+                  type="button"
+                  onClick={() => handlePrintMyPayslip(myPublishedPayslip)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-extrabold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Cetak Slip</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {loadingMyPayslip ? (
+            <div className="py-12 text-center text-xs text-slate-500">
+              Memeriksa slip gaji terpublikasi...
+            </div>
+          ) : !myPublishedPayslip ? (
+            <div className="py-12 text-center space-y-2.5">
+              <div className="w-12 h-12 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 flex items-center justify-center mx-auto">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h3 className="text-sm font-extrabold text-slate-800 dark:text-white">
+                Belum Ada Slip Gaji yang Dipublish
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                Slip gaji periode berjalan belum dipublikasikan oleh HR / Admin. Setelah HR menekan tombol <b>Publish Slip Gaji</b>, rincian gaji Anda akan otomatis tampil di halaman ini.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Banner Profil & Periode */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/80 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <div className="text-sm font-black text-slate-900 dark:text-white">
+                    {myPublishedPayslip.nama}{' '}
+                    <span className="font-mono text-xs text-slate-500">({myPublishedPayslip.nik})</span>
+                  </div>
+                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                    {myPublishedPayslip.divisi} · {myPublishedPayslip.jabatan} · Periode{' '}
+                    <strong className="text-slate-700 dark:text-slate-200">{myPublishedPayslip.payrollPeriodLabel}</strong> ({myPublishedPayslip.rangeLabel})
+                  </div>
+                </div>
+                <div className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1 rounded-xl font-semibold">
+                  Dipublish oleh {myPublishedPayslip.publishedBy} · {new Date(myPublishedPayslip.publishedAt).toLocaleDateString('id-ID')}
+                </div>
+              </div>
+
+              {/* Ringkasan Kehadiran */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center">
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                  <div className="text-[10px] text-slate-400 font-bold">Dibayar / Jadwal</div>
+                  <div className="text-sm font-black font-mono text-emerald-600 dark:text-emerald-400">
+                    {myPublishedPayslip.totalHariDibayar}/{myPublishedPayslip.totalJadwalKerja}
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                  <div className="text-[10px] text-slate-400 font-bold">Tak Absen Pulang</div>
+                  <div className="text-sm font-black font-mono text-amber-600 dark:text-amber-400">
+                    {myPublishedPayslip.totalTidakAbsenPulang}x
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                  <div className="text-[10px] text-slate-400 font-bold">Cuti/Izin/Sakit</div>
+                  <div className="text-sm font-black font-mono text-teal-600 dark:text-teal-400">
+                    {myPublishedPayslip.totalHariCutiIzinSakit}h
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800">
+                  <div className="text-[10px] text-slate-400 font-bold">Tak Hadir</div>
+                  <div className="text-sm font-black font-mono text-rose-600 dark:text-rose-400">
+                    {myPublishedPayslip.totalTidakHadirTanpaAbsen}h
+                  </div>
+                </div>
+                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200/70 dark:border-slate-800 col-span-2 sm:col-span-1">
+                  <div className="text-[10px] text-slate-400 font-bold">Telat (Akumulasi)</div>
+                  <div className="text-sm font-black font-mono text-indigo-600 dark:text-indigo-400">
+                    {myPublishedPayslip.totalMenitTerlambat}m
+                  </div>
+                </div>
+              </div>
+
+              {/* Pendapatan vs Potongan */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-emerald-600 dark:text-emerald-400">
+                    Pendapatan
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 dark:text-slate-300">Gaji Pokok</span>
+                    <span className="font-mono font-bold">Rp {myPublishedPayslip.gajiPokok.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 dark:text-slate-300">Tunjangan</span>
+                    <span className="font-mono font-bold">Rp {myPublishedPayslip.tunjangan.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Upah Lembur ACC ({myPublishedPayslip.totalJamLembur} Jam)
+                    </span>
+                    <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      +Rp {myPublishedPayslip.uangLembur.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between font-black">
+                    <span>Total Pendapatan Kotor</span>
+                    <span className="font-mono">Rp {myPublishedPayslip.totalPendapatanKotor.toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-2">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                    Potongan
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Denda Tak Absen Pulang ({myPublishedPayslip.totalTidakAbsenPulang}x)
+                    </span>
+                    <span className="font-mono font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                      -Rp {myPublishedPayslip.potonganTidakAbsenPulang.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Tidak Hadir Tanpa Absen ({myPublishedPayslip.totalTidakHadirTanpaAbsen} hari)
+                    </span>
+                    <span className="font-mono font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                      -Rp {myPublishedPayslip.potonganTidakHadir.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Cuti / Izin / Sakit Unpaid ({myPublishedPayslip.totalHariCutiIzinSakit} hari)
+                    </span>
+                    <span className="font-mono font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                      -Rp {myPublishedPayslip.potonganCutiIzinSakit.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300">
+                      Telat &gt;{myPublishedPayslip.toleransiTerlambatMenit} mnt ({myPublishedPayslip.totalHariTerlambatDipotong} hari)
+                    </span>
+                    <span className="font-mono font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                      -Rp {myPublishedPayslip.potonganTerlambat.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-2">
+                    <span className="text-slate-600 dark:text-slate-300">Potongan Kasbon</span>
+                    <span className="font-mono font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                      -Rp {myPublishedPayslip.potonganKasbon.toLocaleString('id-ID')}
+                    </span>
+                  </div>
+                  <div className="pt-2 border-t border-slate-200 dark:border-slate-800 flex justify-between font-black text-rose-600 dark:text-rose-400">
+                    <span>Total Potongan</span>
+                    <span className="font-mono">-Rp {myPublishedPayslip.totalPotongan.toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Take Home Pay */}
+              <div className="p-4 rounded-2xl bg-indigo-600 text-white flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-100">
+                    Gaji Bersih Diterima (Take-Home Pay)
+                  </div>
+                  <div className="text-xs text-indigo-100">
+                    Periode {myPublishedPayslip.payrollPeriodLabel} ({myPublishedPayslip.rangeLabel})
+                  </div>
+                </div>
+                <div className="text-xl sm:text-2xl font-black font-mono tabular-nums">
+                  Rp {myPublishedPayslip.gajiBersih.toLocaleString('id-ID')}
+                </div>
+              </div>
+
+              {/* Rincian Ketidakhadiran & Keterlambatan */}
+              {myPublishedPayslip.detailTidakHadirItems.length > 0 && (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-2 text-xs">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Rincian Tanggal Ketidakhadiran &amp; Tak Absen Pulang
+                  </div>
+                  <div className="space-y-1.5">
+                    {myPublishedPayslip.detailTidakHadirItems.map((it) => (
+                      <div key={`${it.tanggal}_${it.tipe}`} className="flex items-center justify-between gap-2 py-1 border-b border-slate-200/60 dark:border-slate-800 last:border-b-0">
+                        <div className="min-w-0">
+                          <span className="font-mono font-bold text-slate-800 dark:text-slate-200">{it.tanggal}</span>{' '}
+                          <span className="font-bold text-slate-700 dark:text-slate-300">· {it.statusLabel}</span>
+                          <div className="text-[11px] text-slate-500 dark:text-slate-400">{it.alasan}</div>
+                        </div>
+                        <span className="font-mono font-bold text-rose-600 dark:text-rose-400 shrink-0">
+                          {it.potonganNominal > 0 ? `-Rp ${it.potonganNominal.toLocaleString('id-ID')}` : 'Rp 0'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {myPublishedPayslip.detailTerlambatItems.length > 0 && (
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/80 dark:border-slate-800 space-y-2 text-xs">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    Rincian Keterlambatan (Toleransi {myPublishedPayslip.toleransiTerlambatMenit} mnt/bln)
+                  </div>
+                  <div className="space-y-1">
+                    {myPublishedPayslip.detailTerlambatItems.map((lt) => (
+                      <div key={lt.tanggal} className="flex items-center justify-between gap-2 text-[11px]">
+                        <span>
+                          <strong className="font-mono">{lt.tanggal}</strong> · Masuk {lt.jamMasuk} (+{lt.menitTerlambat}m, akum {lt.akumulasiMenit}m)
+                        </span>
+                        <span className={`font-mono font-bold ${lt.melewatiToleransi ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          {lt.melewatiToleransi ? `-Rp ${lt.potonganNominal.toLocaleString('id-ID')}` : 'Toleransi'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ================= MODAL ATUR MULTI-TITIK LOKASI GEOFENCING (ADMIN) ================= */}
       {showLocationSettingsModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
@@ -2637,11 +3028,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                                     return { ...prev, locations: copy };
                                   });
                                 }}
-                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${
-                                  loc.radiusMeters === rVal
-                                    ? "bg-primary-500 text-white"
-                                    : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
-                                }`}
+                                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition cursor-pointer ${loc.radiusMeters === rVal
+                                  ? "bg-primary-500 text-white"
+                                  : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700"
+                                  }`}
                               >
                                 {rVal}m
                               </button>
@@ -2678,11 +3068,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                                 return { ...prev, locations: copy };
                               });
                             }}
-                            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer border ${
-                              !isSpecific
-                                ? "bg-primary-500 text-white border-primary-500 shadow-sm shadow-primary-500/25"
-                                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
-                            }`}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer border ${!isSpecific
+                              ? "bg-primary-500 text-white border-primary-500 shadow-sm shadow-primary-500/25"
+                              : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                              }`}
                           >
                             <UserCheck className="w-3.5 h-3.5" />
                             <span>Semua Karyawan (Umum)</span>
@@ -2701,11 +3090,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                                 return { ...prev, locations: copy };
                               });
                             }}
-                            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer border ${
-                              isSpecific
-                                ? "bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/25"
-                                : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
-                            }`}
+                            className={`py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer border ${isSpecific
+                              ? "bg-amber-500 text-white border-amber-500 shadow-sm shadow-amber-500/25"
+                              : "bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50"
+                              }`}
                           >
                             <MapPin className="w-3.5 h-3.5" />
                             <span>Karyawan Tertentu Saja</span>
@@ -2771,11 +3159,10 @@ export const PresensiView: React.FC<PresensiViewProps> = ({ session, onShowToast
                                   return (
                                     <label
                                       key={k.nik}
-                                      className={`flex items-center justify-between text-xs py-1.5 px-2.5 rounded-xl cursor-pointer transition border ${
-                                        isChecked
-                                          ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60"
-                                          : "bg-slate-50/70 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-700/60 hover:bg-slate-100"
-                                      }`}
+                                      className={`flex items-center justify-between text-xs py-1.5 px-2.5 rounded-xl cursor-pointer transition border ${isChecked
+                                        ? "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700/60"
+                                        : "bg-slate-50/70 dark:bg-slate-800/40 border-slate-200/60 dark:border-slate-700/60 hover:bg-slate-100"
+                                        }`}
                                     >
                                       <div className="flex items-center gap-2.5">
                                         <input

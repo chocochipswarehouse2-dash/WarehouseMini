@@ -4,6 +4,22 @@
 
 ---
 
+## v2.35.0 — 27 November 2026
+**Modul**: HR & Admin — Aturan Potongan Gaji Lengkap, Edit Absensi Ketidakhadiran, & Publish Slip Gaji (`src/utils/hrPayrollUtils.ts`, `src/services/hrPayslipService.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`, `src/services/supabase.ts`)
+- **Aturan Kalkulasi Gaji Akurat (`hrPayrollUtils.ts`)**:
+  - **Absen Datang Tapi Tidak Absen Pulang**: Denda tetap **`Rp 10.000`/kejadian** (`potonganTidakAbsenPulangNominal`), namun **gaji harian tetap dibayar** (`totalHariDibayar++`, tidak dipotong upah harian).
+  - **Tidak Hadir Tanpa Absen (Kecuali Libur)**: Dipotong upah harian (`potonganTidakHadir`) beserta rincian per tanggal (`detailTidakHadirItems`); tanggal **Libur/Off** serta hari kerja masa depan/hari ini yang masih berlangsung tidak pernah dipotong.
+  - **Cuti / Izin / Sakit Unpaid**: Tidak dibayar gaji harian (`potongGajiCutiIzinSakit = true` -> `potonganCutiIzinSakit`).
+  - **Toleransi Keterlambatan 30 Menit/Bulan**: Akumulasi keterlambatan hingga 30 menit gratis toleransi; keterlambatan setelah akumulasi `> 30 menit` otomatis dipotong **`Rp 5.000`/hari** (`detailTerlambatItems`).
+  - **Ekspor Excel 2 Sheet**: Sheet 1 rekap gaji terperinci + Sheet 2 `Rincian Ketidakhadiran`.
+- **Rincian Ketidakhadiran & Edit Absensi Inline (`HrRekapView.tsx` & `supabase.ts`)**:
+  - Modal Slip Gaji menampilkan rincian tanggal ketidakhadiran/tak absen pulang & rincian keterlambatan kronologis, dilengkapi tombol **`Edit`** inline per tanggal (ubah ke `Hadir` + jam masuk/pulang, `Libur`, `Sakit`, `Izin`, `Cuti`, atau `Alpha`) yang langsung menyinkronkan `presensi` + `roster_shift` dan menghitung ulang gaji seketika. Memperbaiki `submitPresensiRecord` agar status `Sakit` tidak tertimpa menjadi `Izin` dan mendukung jam masuk `Shift 3b` (`11:00`).
+- **Publish & Kontrol Visibilitas Slip Gaji (`hrPayslipService.ts`, `HrRekapView.tsx`, `PresensiView.tsx`)**:
+  - Menambahkan tombol **`Publish Slip Gaji`** & **`Tarik Slip`** (per periode maupun per karyawan) di `HrRekapView.tsx` yang menyimpan snapshot slip ke `wms_system_docs` (`hr_published_payslips_*`).
+  - Menambahkan tab **`Slip Gaji`** di `PresensiView.tsx` bagi karyawan: periode yang **belum di-publish HR tidak dapat dilihat** (terkunci), dan periode yang sudah di-publish dapat dilihat lengkap beserta tombol **Cetak Slip**.
+
+---
+
 ## v2.34.1 — 27 November 2026
 **Modul**: HR Rekap — KPI & Nilai Absensi (`src/utils/kpiCalculator.ts`)
 - **Perbaikan Akurasi Perhitungan KPI Absensi (Kasus Shift 3b / Hari Berjalan / SKT & BOLOS)**:
