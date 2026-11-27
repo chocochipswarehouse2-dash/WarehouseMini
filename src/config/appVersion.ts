@@ -15,20 +15,32 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.36.1",
-  "versionCode": 561,
+  "version": "v2.37.0",
+  "versionCode": 570,
   "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v561-1226",
-  "releaseTitle": "WMS v2.36.1 — Akurasi KPI Absensi (Roster-First, Full Shift 9 Jam & Bobot Kehadiran 40%)",
+  "buildHash": "wms-261127-v570-1252",
+  "releaseTitle": "WMS v2.37.0 — Pemisahan Roster 2 Mode: Jadwal Shift & Hasil Absensi",
   "releaseNotes": [
-    "Evaluasi keterlambatan KPI & Payroll kini memprioritaskan jam masuk Roster aktual (menghilangkan false late Shift 3a/3b yang tercatat Shift 1)",
-    "Deteksi pulang normal mendukung durasi kerja penuh >= 8 jam 50 menit untuk tukar shift",
-    "Bobot KPI diseimbangkan ke Kehadiran 40%, Berangkat 35%, Pulang 25% + tie-breaker kehadiran penuh & tampilkan % Kehadiran di podium KPI"
+    "Tabel Roster kini memiliki 2 opsi tampilan terpisah: Jadwal Shift (murni S1/S2/S3/OFF) dan Hasil Absensi (Tepat Waktu, Terlambat, Tak Pulang, Cuti/Izin/Sakit, Bolos, Pra-Join)",
+    "Edit Hasil Absensi langsung dari matriks/kalender/mingguan/harian hanya mengubah tabel presensi tanpa mengganggu Jadwal Shift, dan sebaliknya"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.36.1",
+    "versionCode": 561,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v561-1226",
+    "releaseTitle": "WMS v2.36.1 — Akurasi KPI Absensi (Roster-First, Full Shift 9 Jam & Bobot Kehadiran 40%)",
+    "releaseNotes": [
+      "Evaluasi keterlambatan KPI & Payroll kini memprioritaskan jam masuk Roster aktual (menghilangkan false late Shift 3a/3b yang tercatat Shift 1)",
+      "Deteksi pulang normal mendukung durasi kerja penuh >= 8 jam 50 menit untuk tukar shift",
+      "Bobot KPI diseimbangkan ke Kehadiran 40%, Berangkat 35%, Pulang 25% + tie-breaker kehadiran penuh & tampilkan % Kehadiran di podium KPI"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.36.0",
     "versionCode": 560,
@@ -117,17 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
     "releaseNotes": [
       "Tombol Share ke Tugas Picking pada item selisih kurang di Pengecekan SJ Pengiriman",
       "Rekonsiliasi SJ eksisting vs baru di picking_list, tampil hanya sisa kurang, dan anti-double #OUT via baseline persisten"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.32.1",
-    "versionCode": 521,
-    "buildDate": "26 November 2026",
-    "buildHash": "wms-261126-v521-0304",
-    "releaseTitle": "WMS v2.32.1 — Pembaruan Sistem & Optimasi Operasional",
-    "releaseNotes": [
-      "Pagination & pencarian arsip riwayat picking, multi-lokasi split picking per rak, serta atribusi picker per-produk/per-split ke log_produk #OUT"
     ],
     "minSupportedVersion": "v2.0.0"
   }

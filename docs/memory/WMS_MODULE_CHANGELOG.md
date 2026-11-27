@@ -4,6 +4,16 @@
 
 ---
 
+## v2.37.0 — 27 November 2026
+**Modul**: HR & Admin — Pemisahan Tabel Roster 2 Mode (`Jadwal Shift` & `Hasil Absensi`) (`src/components/hr/RosterShiftView.tsx`)
+- **2 Opsi Tampilan Terpisah di Roster (`rosterMode: 'jadwal' | 'absensi'`)**:
+  - **Mode `Jadwal Shift`**: Kini murni menampilkan dan mengedit jadwal kerja (`Shift 1`, `Shift 2`, `Shift 3a`, `Shift 3b`, `Libur`) pada tabel `roster_shift` tanpa lagi ditumpuki/ditimpa oleh status hasil absensi (`Bolos`, `Cuti`, `Izin`, `Sakit`). Generator massal bulanan & Kuas Shift tetap mengisi jadwal dasar secara utuh.
+  - **Mode `Hasil Absensi`**: Menampilkan status hasil absensi aktual per tanggal (**`HADIR` (Tepat Waktu)**, **`TELAT` (Terlambat)**, **`NO-OUT` (Tak Absen Pulang)**, **`CT` / `SKT` / `IZN` (Cuti / Sakit / Izin)**, **`BOLOS`**, **`OFF` (Libur)**, dan **`PRA` (Pra-Join)**) yang dihitung dari `presensi` + cuti disetujui terhadap jadwal `roster_shift`, lengkap dengan filter status & tile ringkasan bulanan di tampilan **Matriks Sebulan (`Kalender Staf` & `Tabel Geser`)**, **Mingguan**, **Tabel Harian**, dan **Kartu**.
+- **Edit Independen Tanpa Saling Mengganggu**:
+  - Menambahkan modal **Edit Hasil Absensi** saat Admin mengklik sel/baris di mode `Hasil Absensi` yang menulis langsung ke `presensi` (`updatePresensiRecord` / `submitPresensiRecord` / `deletePresensiRecord`) tanpa mengubah `roster_shift`, sehingga perbaikan hasil absensi dan pengaturan jadwal shift sepenuhnya terpisah.
+
+---
+
 ## v2.36.1 — 27 November 2026
 **Modul**: HR & Admin — Akurasi Ranking KPI Absensi & Roster-First Lateness (`src/utils/kpiCalculator.ts`, `src/utils/hrPayrollUtils.ts`, `src/components/hr/HrRekapView.tsx`, `src/components/hr/PresensiView.tsx`)
 - **Evaluasi Keterlambatan Roster-First (`kpiCalculator.ts`, `hrPayrollUtils.ts`)**:

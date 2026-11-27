@@ -32,6 +32,7 @@ import {
   CheckSquare,
   Square,
   Layers,
+  ClipboardCheck,
 } from 'lucide-react';
 import { UserSession, RosterShiftRecord, KaryawanRecord, MasterShiftRecord, PerijinanCutiRecord, PresensiRecord } from '../../types';
 import { hasPermission, isSuperadmin } from '../../services/permissions';
@@ -44,6 +45,9 @@ import {
   fetchMasterShiftList,
   fetchCutiRecords,
   fetchPresensiRange,
+  submitPresensiRecord,
+  updatePresensiRecord,
+  deletePresensiRecord,
 } from '../../services/supabase';
 
 interface RosterShiftViewProps {
@@ -52,6 +56,33 @@ interface RosterShiftViewProps {
 }
 
 type ViewMode = 'monthly' | 'weekly' | 'table' | 'cards';
+type RosterMode = 'jadwal' | 'absensi';
+type AttendanceCellCode =
+  | 'PRA_JOIN'
+  | 'TEPAT_WAKTU'
+  | 'TERLAMBAT'
+  | 'TAK_PULANG'
+  | 'CUTI'
+  | 'SAKIT'
+  | 'IZIN'
+  | 'BOLOS'
+  | 'LIBUR'
+  | 'MASUK'
+  | 'BELUM';
+
+interface AttendanceCellInfo {
+  code: AttendanceCellCode;
+  shortCode: string;
+  label: string;
+  badgeBg: string;
+  badgeText: string;
+  lateMins: number;
+  jamMasuk: string;
+  jamPulang: string;
+  rosterShift: string;
+  presensiRec?: PresensiRecord;
+  tooltip: string;
+}
 
 interface ShiftPreset {
   masuk: string;
@@ -140,9 +171,31 @@ const DEFAULT_SHIFTS: Record<string, ShiftPreset> = {
 export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onShowToast }) => {
   const [loading, setLoading] = useState<boolean>(true);
   const [rosterList, setRosterList] = useState<RosterShiftRecord[]>([]);
+  const [presensiList, setPresensiList] = useState<PresensiRecord[]>([]);
   const [karyawanList, setKaryawanList] = useState<KaryawanRecord[]>([]);
   const [masterShifts, setMasterShifts] = useState<MasterShiftRecord[]>([]);
   const [cutiList, setCutiList] = useState<PerijinanCutiRecord[]>([]);
+
+  // 2-Mode Separation: 'jadwal' (Jadwal Shift murni) vs 'absensi' (Hasil Absensi: Tepat Waktu, Telat, Cuti, Bolos, dll)
+  const [rosterMode, setRosterMode] = useState<RosterMode>('jadwal');
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<string>('ALL');
+
+  // Edit Hasil Absensi Modal (Hanya menulis ke tabel presensi, tidak mengubah roster_shift)
+  const [isAbsensiModalOpen, setIsAbsensiModalOpen] = useState<boolean>(false);
+  const [editingAbsensi, setEditingAbsensi] = useState<{
+    nik: string;
+    nama: string;
+    tanggal: string;
+    presensiId?: string | number;
+    rosterShift: string;
+    rosterJamMasuk: string;
+    rosterJamPulang: string;
+    status: 'Hadir' | 'Terlambat' | 'TakPulang' | 'Sakit' | 'Izin' | 'Cuti' | 'Alpha' | 'Libur';
+    jam_masuk: string;
+    jam_pulang: string;
+    catatan: string;
+  } | null>(null);
+  const [savingAbsensi, setSavingAbsensi] = useState<boolean>(false);
 
   // Access check: Pengaturan/Edit/Hapus Shift HANYA terbuka untuk Admin, Superadmin & HR Approval
   const userIsAdmin = useMemo(() => {
@@ -276,7 +329,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Load Data
+  // Load Data (Terpisah Murni: rosterList untuk Jadwal Shift, presensiList & cutiList untuk Hasil Absensi)
   const loadData = async () => {
     setLoading(true);
     try {
@@ -287,171 +340,11 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
         fetchCutiRecords(),
         fetchPresensiRange('2025-01-01', '2027-12-31'),
       ]);
+      setRosterList(roster || []);
+      setPresensiList(presensis || []);
       setCutiList(cutis || []);
       setKaryawanList(employees);
       setMasterShifts(shifts);
-
-      // Auto-merge cuti/izin/sakit yang sudah disetujui (Disetujui) ke dalam roster shift dengan O(1) Map index
-      const approvedCutis = (cutis || []).filter((c) => c.status === 'Disetujui');
-      const mergedRoster = [...(roster || [])];
-      const rosterIdxMap = new Map<string, number>();
-      for (let i = 0; i < mergedRoster.length; i++) {
-        const item = mergedRoster[i];
-        if (item.nik && item.tanggal) {
-          const normKey = `${String(item.nik).trim().toUpperCase()}_${String(item.tanggal).trim()}`;
-          rosterIdxMap.set(normKey, i);
-        }
-      }
-
-      approvedCutis.forEach((cuti) => {
-        if (!cuti.tgl_mulai || !cuti.tgl_selesai || !cuti.nik) return;
-        try {
-          const [sY, sM, sD] = cuti.tgl_mulai.split('-').map(Number);
-          const [eY, eM, eD] = cuti.tgl_selesai.split('-').map(Number);
-          const cur = new Date(sY, sM - 1, sD);
-          const end = new Date(eY, eM - 1, eD);
-
-          const jUpper = (cuti.jenis || '').toUpperCase();
-          const leaveShift = jUpper.includes('SAKIT')
-            ? 'Sakit'
-            : jUpper.includes('CUTI')
-            ? 'Cuti'
-            : 'Izin';
-          const ket = `[${cuti.jenis || leaveShift}] ${cuti.alasan || ''}`.trim();
-
-          while (cur <= end) {
-            const y = cur.getFullYear();
-            const m = String(cur.getMonth() + 1).padStart(2, '0');
-            const d = String(cur.getDate()).padStart(2, '0');
-            const dateStr = `${y}-${m}-${d}`;
-            const mapKey = `${String(cuti.nik).trim().toUpperCase()}_${dateStr}`;
-
-            const existingIdx = rosterIdxMap.get(mapKey);
-
-            if (existingIdx !== undefined) {
-              mergedRoster[existingIdx] = {
-                ...mergedRoster[existingIdx],
-                shift: leaveShift,
-                jam_masuk: '',
-                jam_pulang: '',
-                keterangan: ket,
-              };
-            } else {
-              rosterIdxMap.set(mapKey, mergedRoster.length);
-              mergedRoster.push({
-                nik: cuti.nik,
-                nama: cuti.nama,
-                tanggal: dateStr,
-                shift: leaveShift,
-                jam_masuk: '',
-                jam_pulang: '',
-                keterangan: ket,
-              });
-            }
-
-            cur.setDate(cur.getDate() + 1);
-          }
-        } catch (eDate) {
-          console.warn('Gagal parsing rentang cuti:', eDate);
-        }
-      });
-
-      // Auto-mark Bolos pada jadwal hari kerja yang telah lewat apabila karyawan tidak melakukan absensi datang & pulang
-      const presensiMap = new Map<string, PresensiRecord>();
-      for (const p of presensis || []) {
-        if (p.nik && p.tanggal) {
-          const normKey = `${String(p.nik).trim().toUpperCase()}_${String(p.tanggal).trim()}`;
-          if (!presensiMap.has(normKey)) {
-            presensiMap.set(normKey, p);
-          }
-        }
-      }
-
-      const now = new Date();
-      const todayLocalStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const nowMinutes = now.getHours() * 60 + now.getMinutes();
-
-      for (let i = 0; i < mergedRoster.length; i++) {
-        const r = mergedRoster[i];
-        if (!r.nik || !r.tanggal) continue;
-
-        const rawShift = String(r.shift || '').trim();
-        const sLower = rawShift.toLowerCase();
-
-        // Lewati jika hari tersebut adalah Libur/Off, Cuti, Izin, Sakit, atau sudah berstatus Bolos
-        if (
-          !sLower ||
-          sLower === '-' ||
-          sLower.includes('libur') ||
-          sLower.includes('off') ||
-          sLower.includes('cuti') ||
-          sLower.includes('izin') ||
-          sLower.includes('ijin') ||
-          sLower.includes('sakit') ||
-          sLower.includes('bolos') ||
-          sLower.includes('alpha')
-        ) {
-          continue;
-        }
-
-        const normKey = `${String(r.nik).trim().toUpperCase()}_${String(r.tanggal).trim()}`;
-        const p = presensiMap.get(normKey);
-        const pStatusLower = String(p?.status || '').trim().toLowerCase();
-
-        // Jika di log presensi tercatat resmi sebagai Libur/Cuti/Izin/Sakit, jangan tandai bolos
-        if (['libur', 'off', 'cuti', 'izin', 'ijin', 'sakit'].some((k) => pStatusLower.includes(k))) {
-          continue;
-        }
-
-        const isExplicitAlpha = pStatusLower === 'alpha' || pStatusLower.includes('bolos');
-
-        // Evaluasi apakah hari kerja tersebut sudah selesai/berlalu
-        let isWorkdayElapsed = false;
-        if (r.tanggal < todayLocalStr) {
-          isWorkdayElapsed = true;
-        } else if (r.tanggal === todayLocalStr) {
-          if (isExplicitAlpha) {
-            isWorkdayElapsed = true;
-          } else {
-            let endHour = 17;
-            let endMin = 0;
-            const jpRaw = r.jam_pulang || (sLower.includes('3b') ? '20:00' : sLower.includes('3') ? '21:00' : sLower.includes('2') ? '18:00' : '17:00');
-            const [pH, pM] = jpRaw.split(':').map(Number);
-            if (Number.isFinite(pH)) endHour = pH;
-            if (Number.isFinite(pM)) endMin = pM;
-            const shiftEndMins = endHour * 60 + endMin;
-            // Tandai bolos hari ini apabila jam pulang shift + 60 menit toleransi sudah lewat namun belum absen datang & pulang lengkap
-            if (nowMinutes >= shiftEndMins + 60) {
-              isWorkdayElapsed = true;
-            }
-          }
-        }
-
-        if (!isWorkdayElapsed) continue;
-
-        const hasMasuk = Boolean(p && p.jam_masuk && p.jam_masuk.trim() !== '' && p.jam_masuk.trim() !== '-');
-        const hasPulang = Boolean(p && p.jam_pulang && p.jam_pulang.trim() !== '' && p.jam_pulang.trim() !== '-');
-
-        if (isExplicitAlpha || !hasMasuk || !hasPulang) {
-          let reason = 'Tidak Absen Datang & Pulang';
-          if (hasMasuk && !hasPulang) {
-            reason = `Absen Datang (${p!.jam_masuk}), Tidak Absen Pulang`;
-          } else if (!hasMasuk && hasPulang) {
-            reason = `Tidak Absen Datang, Absen Pulang (${p!.jam_pulang})`;
-          } else if (p?.catatan) {
-            reason = `Tidak Absen Datang & Pulang (${p.catatan})`;
-          }
-
-          const cleanOrigKet = (r.keterangan || '').replace(/^\[BOLOS:[^\]]*\]\s*(Eks Jadwal:\s*[^•]+\s*•?\s*)?/i, '').trim();
-          mergedRoster[i] = {
-            ...r,
-            shift: 'Bolos',
-            keterangan: `[BOLOS: ${reason}] Eks Jadwal: ${rawShift}${cleanOrigKet ? ` • ${cleanOrigKet}` : ''}`,
-          };
-        }
-      }
-
-      setRosterList(mergedRoster);
     } catch (err) {
       console.warn('Gagal memuat jadwal roster:', err);
       onShowToast('Gagal memuat jadwal roster', 'error');
@@ -651,12 +544,506 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     return map;
   }, [rosterList]);
 
+  // O(1) Lookup map for presensi & approved cuti (untuk mode Hasil Absensi)
+  const presensiByNikDate = useMemo(() => {
+    const map = new Map<string, PresensiRecord>();
+    for (const p of presensiList) {
+      if (p.nik && p.tanggal) {
+        const normNik = String(p.nik).trim().toUpperCase();
+        const normDate = String(p.tanggal).trim();
+        const key = `${normNik}_${normDate}`;
+        if (!map.has(key)) map.set(key, p);
+        if (p.nik !== normNik && !map.has(`${p.nik}_${normDate}`)) {
+          map.set(`${p.nik}_${normDate}`, p);
+        }
+      }
+    }
+    return map;
+  }, [presensiList]);
+
+  const approvedCutiByNik = useMemo(() => {
+    const map = new Map<string, PerijinanCutiRecord[]>();
+    for (const c of cutiList) {
+      if (c.status !== 'Disetujui' || !c.nik) continue;
+      const key = String(c.nik).trim().toUpperCase();
+      const arr = map.get(key);
+      if (arr) arr.push(c);
+      else map.set(key, [c]);
+    }
+    return map;
+  }, [cutiList]);
+
+  const parseClockMins = (val?: string | null): number | null => {
+    if (!val) return null;
+    const clean = String(val).replace(/\./g, ':').trim();
+    const parts = clean.split(':');
+    if (parts.length < 2) return null;
+    const h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return null;
+    return h * 60 + m;
+  };
+
+  // Resolver Hasil Absensi murni per karyawan x tanggal tanpa memutasi roster_shift
+  const resolveAttendanceCell = (emp: KaryawanRecord, dateStr: string): AttendanceCellInfo => {
+    const nikUpper = String(emp.nik || '').trim().toUpperCase();
+    const key = `${nikUpper}_${dateStr}`;
+    const r = rosterByNikDate.get(key);
+    const p = presensiByNikDate.get(key);
+    const rosterShift = r?.shift ? String(r.shift).trim() : '-';
+
+    const joinDate =
+      emp.tgl_bergabung && /^\d{4}-\d{2}-\d{2}$/.test(emp.tgl_bergabung.trim())
+        ? emp.tgl_bergabung.trim()
+        : '';
+
+    if (joinDate && dateStr < joinDate) {
+      return {
+        code: 'PRA_JOIN',
+        shortCode: 'PRA',
+        label: 'Belum Bergabung (Pra-Join)',
+        badgeBg: 'bg-slate-100 dark:bg-slate-800/70 border-dashed border-slate-300 dark:border-slate-700',
+        badgeText: 'text-slate-500 dark:text-slate-400',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Belum Bergabung (Pra-Join, Join: ${joinDate})`,
+      };
+    }
+
+    const now = new Date();
+    const todayLocalStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+    const matchingCuti = (approvedCutiByNik.get(nikUpper) || []).find(
+      (c) => dateStr >= c.tgl_mulai && dateStr <= c.tgl_selesai
+    );
+
+    const pStatusLower = String(p?.status || '').trim().toLowerCase();
+    const rShiftLower = rosterShift.toLowerCase();
+    const isRosterOff = rShiftLower.includes('libur') || rShiftLower === 'off' || rShiftLower.includes('(off)');
+    const isRosterLeave =
+      rShiftLower.includes('sakit') ||
+      rShiftLower.includes('cuti') ||
+      rShiftLower.includes('izin') ||
+      rShiftLower.includes('ijin');
+    const isRosterExplicitBolos = rShiftLower.includes('bolos') || rShiftLower.includes('alpha');
+
+    // 1. Cek status non-hadir eksplisit pada log presensi
+    if (p && (pStatusLower.includes('libur') || pStatusLower === 'off')) {
+      return {
+        code: 'LIBUR',
+        shortCode: 'OFF',
+        label: 'Libur (Off)',
+        badgeBg: 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800',
+        badgeText: 'text-rose-700 dark:text-rose-300',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Libur · Jadwal: ${rosterShift}${p.catatan ? ` · ${p.catatan}` : ''}`,
+      };
+    }
+    if (p && pStatusLower.includes('sakit')) {
+      return {
+        code: 'SAKIT',
+        shortCode: 'SKT',
+        label: 'Sakit',
+        badgeBg: 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800',
+        badgeText: 'text-rose-700 dark:text-rose-300',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Sakit · Jadwal: ${rosterShift}${p.catatan ? ` · ${p.catatan}` : ''}`,
+      };
+    }
+    if (p && pStatusLower.includes('cuti')) {
+      return {
+        code: 'CUTI',
+        shortCode: 'CT',
+        label: 'Cuti',
+        badgeBg: 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800',
+        badgeText: 'text-amber-700 dark:text-amber-300',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Cuti · Jadwal: ${rosterShift}${p.catatan ? ` · ${p.catatan}` : ''}`,
+      };
+    }
+    if (p && (pStatusLower.includes('izin') || pStatusLower.includes('ijin'))) {
+      return {
+        code: 'IZIN',
+        shortCode: 'IZN',
+        label: 'Izin',
+        badgeBg: 'bg-teal-50 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800',
+        badgeText: 'text-teal-700 dark:text-teal-300',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Izin · Jadwal: ${rosterShift}${p.catatan ? ` · ${p.catatan}` : ''}`,
+      };
+    }
+    if (p && (pStatusLower.includes('alpha') || pStatusLower.includes('bolos'))) {
+      return {
+        code: 'BOLOS',
+        shortCode: 'BOLOS',
+        label: 'Bolos / Alpha',
+        badgeBg: 'bg-red-100 dark:bg-red-950/80 border-red-400 dark:border-red-700',
+        badgeText: 'text-red-800 dark:text-red-200',
+        lateMins: 0,
+        jamMasuk: p.jam_masuk || '',
+        jamPulang: p.jam_pulang || '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Bolos / Alpha · Jadwal: ${rosterShift}${p.catatan ? ` · ${p.catatan}` : ''}`,
+      };
+    }
+
+    // Helper jadwal jam masuk/pulang standar (Roster-first)
+    const activeShiftRaw = (
+      (r && !isRosterOff && !isRosterLeave && !isRosterExplicitBolos ? r.shift : '') ||
+      p?.shift ||
+      ''
+    ).toLowerCase();
+    let schedStart = parseClockMins(r && !isRosterOff && !isRosterLeave ? r.jam_masuk : null);
+    if (schedStart === null || schedStart <= 0) {
+      if (activeShiftRaw.includes('3b') || activeShiftRaw.includes('s3b')) schedStart = 11 * 60;
+      else if (activeShiftRaw.includes('3a') || activeShiftRaw.includes('3') || activeShiftRaw.includes('s3')) schedStart = 12 * 60;
+      else if (activeShiftRaw.includes('2') || activeShiftRaw.includes('s2')) schedStart = 9 * 60;
+      else schedStart = 8 * 60;
+    }
+    let schedEnd = parseClockMins(r && !isRosterOff && !isRosterLeave ? r.jam_pulang : null);
+    if (schedEnd === null || schedEnd <= 0) {
+      if (activeShiftRaw.includes('3b') || activeShiftRaw.includes('s3b')) schedEnd = 20 * 60;
+      else if (activeShiftRaw.includes('3a') || activeShiftRaw.includes('3') || activeShiftRaw.includes('s3')) schedEnd = 21 * 60;
+      else if (activeShiftRaw.includes('2') || activeShiftRaw.includes('s2')) schedEnd = 18 * 60;
+      else schedEnd = 17 * 60;
+    }
+
+    const hasMasuk = Boolean(p?.jam_masuk && p.jam_masuk.trim() !== '' && p.jam_masuk.trim() !== '-');
+    const hasPulang = Boolean(p?.jam_pulang && p.jam_pulang.trim() !== '' && p.jam_pulang.trim() !== '-');
+
+    // 2. Cek log presensi masuk
+    if (p && hasMasuk) {
+      const actStart = parseClockMins(p.jam_masuk);
+      let lateMins = 0;
+      if (actStart !== null) {
+        const diff = actStart - schedStart;
+        if (diff > 15 || (pStatusLower === 'terlambat' && diff > 0)) {
+          lateMins = diff;
+        }
+      } else {
+        const noteMatch = (p.catatan || '').match(/Terlambat\s+(\d+)\s*mnt/i);
+        lateMins = noteMatch ? parseInt(noteMatch[1], 10) || 0 : 0;
+      }
+
+      if (hasPulang) {
+        if (lateMins > 0) {
+          return {
+            code: 'TERLAMBAT',
+            shortCode: 'TELAT',
+            label: `Terlambat (${lateMins} mnt)`,
+            badgeBg: 'bg-amber-100 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700',
+            badgeText: 'text-amber-800 dark:text-amber-200',
+            lateMins,
+            jamMasuk: p.jam_masuk || '',
+            jamPulang: p.jam_pulang || '',
+            rosterShift,
+            presensiRec: p,
+            tooltip: `${emp.nama} (${dateStr}): Terlambat ${lateMins} mnt · Masuk ${p.jam_masuk}, Pulang ${p.jam_pulang} · Jadwal: ${rosterShift}`,
+          };
+        }
+        return {
+          code: 'TEPAT_WAKTU',
+          shortCode: 'HADIR',
+          label: 'Tepat Waktu',
+          badgeBg: 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800',
+          badgeText: 'text-emerald-700 dark:text-emerald-300',
+          lateMins: 0,
+          jamMasuk: p.jam_masuk || '',
+          jamPulang: p.jam_pulang || '',
+          rosterShift,
+          presensiRec: p,
+          tooltip: `${emp.nama} (${dateStr}): Tepat Waktu · Masuk ${p.jam_masuk}, Pulang ${p.jam_pulang} · Jadwal: ${rosterShift}`,
+        };
+      }
+
+      // Masuk ada tapi Pulang kosong
+      const isElapsed = dateStr < todayLocalStr || (dateStr === todayLocalStr && nowMinutes >= schedEnd + 60);
+      if (isElapsed) {
+        return {
+          code: 'TAK_PULANG',
+          shortCode: 'NO-OUT',
+          label: 'Tak Absen Pulang',
+          badgeBg: 'bg-orange-100 dark:bg-orange-950/70 border-orange-300 dark:border-orange-700',
+          badgeText: 'text-orange-800 dark:text-orange-200',
+          lateMins,
+          jamMasuk: p.jam_masuk || '',
+          jamPulang: '',
+          rosterShift,
+          presensiRec: p,
+          tooltip: `${emp.nama} (${dateStr}): Datang (${p.jam_masuk}), Tidak Absen Pulang · Jadwal: ${rosterShift}`,
+        };
+      }
+      return {
+        code: 'MASUK',
+        shortCode: 'IN',
+        label: 'Sedang Bekerja',
+        badgeBg: 'bg-sky-50 dark:bg-sky-950/60 border-sky-200 dark:border-sky-800',
+        badgeText: 'text-sky-700 dark:text-sky-300',
+        lateMins,
+        jamMasuk: p.jam_masuk || '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Sudah Masuk (${p.jam_masuk}), belum jam pulang · Jadwal: ${rosterShift}`,
+      };
+    }
+
+    // 3. Cek pengajuan Cuti / Izin / Sakit Disetujui (atau catatan cuti di roster)
+    if (matchingCuti || isRosterLeave) {
+      const jenisRaw = `${matchingCuti?.jenis || ''} ${rosterShift}`.toLowerCase();
+      if (jenisRaw.includes('sakit')) {
+        return {
+          code: 'SAKIT',
+          shortCode: 'SKT',
+          label: 'Sakit',
+          badgeBg: 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800',
+          badgeText: 'text-rose-700 dark:text-rose-300',
+          lateMins: 0,
+          jamMasuk: '',
+          jamPulang: '',
+          rosterShift,
+          presensiRec: p,
+          tooltip: `${emp.nama} (${dateStr}): Sakit${matchingCuti?.alasan ? ` — ${matchingCuti.alasan}` : ''} · Jadwal: ${rosterShift}`,
+        };
+      }
+      if (jenisRaw.includes('cuti')) {
+        return {
+          code: 'CUTI',
+          shortCode: 'CT',
+          label: 'Cuti',
+          badgeBg: 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800',
+          badgeText: 'text-amber-700 dark:text-amber-300',
+          lateMins: 0,
+          jamMasuk: '',
+          jamPulang: '',
+          rosterShift,
+          presensiRec: p,
+          tooltip: `${emp.nama} (${dateStr}): Cuti${matchingCuti?.alasan ? ` — ${matchingCuti.alasan}` : ''} · Jadwal: ${rosterShift}`,
+        };
+      }
+      return {
+        code: 'IZIN',
+        shortCode: 'IZN',
+        label: 'Izin',
+        badgeBg: 'bg-teal-50 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800',
+        badgeText: 'text-teal-700 dark:text-teal-300',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Izin${matchingCuti?.alasan ? ` — ${matchingCuti.alasan}` : ''} · Jadwal: ${rosterShift}`,
+      };
+    }
+
+    // 4. Roster Libur / Off
+    if (isRosterOff) {
+      return {
+        code: 'LIBUR',
+        shortCode: 'OFF',
+        label: 'Libur (Off)',
+        badgeBg: 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800',
+        badgeText: 'text-rose-700 dark:text-rose-300',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Libur Sesuai Jadwal`,
+      };
+    }
+
+    // 5. Jika ada jadwal kerja namun hari sudah lewat tanpa absen -> Bolos
+    const hasWorkingSchedule = Boolean(r && r.shift && r.shift.trim() !== '-' && !isRosterOff);
+    const isElapsed = dateStr < todayLocalStr || (dateStr === todayLocalStr && nowMinutes >= schedEnd + 60);
+    if ((hasWorkingSchedule && isElapsed) || isRosterExplicitBolos) {
+      return {
+        code: 'BOLOS',
+        shortCode: 'BOLOS',
+        label: 'Bolos / Tanpa Absen',
+        badgeBg: 'bg-red-100 dark:bg-red-950/80 border-red-400 dark:border-red-700 ring-1 ring-red-400/40',
+        badgeText: 'text-red-800 dark:text-red-200',
+        lateMins: 0,
+        jamMasuk: '',
+        jamPulang: '',
+        rosterShift,
+        presensiRec: p,
+        tooltip: `${emp.nama} (${dateStr}): Tidak Ada Absen (Bolos) · Jadwal: ${rosterShift}`,
+      };
+    }
+
+    return {
+      code: 'BELUM',
+      shortCode: '-',
+      label: 'Belum / Masa Depan',
+      badgeBg: 'bg-slate-50/60 dark:bg-slate-800/40 border-dashed border-slate-200 dark:border-slate-800',
+      badgeText: 'text-slate-400 dark:text-slate-500',
+      lateMins: 0,
+      jamMasuk: '',
+      jamPulang: '',
+      rosterShift,
+      presensiRec: p,
+      tooltip: `${emp.nama} (${dateStr}): Belum waktunya / Jadwal: ${rosterShift}`,
+    };
+  };
+
+  const matchesAttendanceFilter = (code: AttendanceCellCode): boolean => {
+    if (attendanceStatusFilter === 'ALL') return true;
+    if (attendanceStatusFilter === 'TEPAT_WAKTU') return code === 'TEPAT_WAKTU' || code === 'MASUK';
+    if (attendanceStatusFilter === 'TERLAMBAT') return code === 'TERLAMBAT';
+    if (attendanceStatusFilter === 'TAK_PULANG') return code === 'TAK_PULANG';
+    if (attendanceStatusFilter === 'LEAVE') return code === 'CUTI' || code === 'SAKIT' || code === 'IZIN';
+    if (attendanceStatusFilter === 'BOLOS') return code === 'BOLOS';
+    if (attendanceStatusFilter === 'LIBUR') return code === 'LIBUR' || code === 'PRA_JOIN';
+    return true;
+  };
+
+  // Buka Modal Edit Hasil Absensi (Hanya mengubah presensi, TIDAK menyentuh roster_shift)
+  const handleOpenEditAbsensi = (emp: KaryawanRecord, dateStr: string) => {
+    const info = resolveAttendanceCell(emp, dateStr);
+    const nikUpper = String(emp.nik || '').trim().toUpperCase();
+    const r = rosterByNikDate.get(`${nikUpper}_${dateStr}`);
+    const rosterShiftVal = r?.shift || 'Shift 1';
+    const hrs = resolveShiftHours(rosterShiftVal, r?.jam_masuk, r?.jam_pulang);
+
+    let initialStatus: 'Hadir' | 'Terlambat' | 'TakPulang' | 'Sakit' | 'Izin' | 'Cuti' | 'Alpha' | 'Libur' = 'Hadir';
+    if (info.code === 'TERLAMBAT') initialStatus = 'Terlambat';
+    else if (info.code === 'TAK_PULANG') initialStatus = 'TakPulang';
+    else if (info.code === 'SAKIT') initialStatus = 'Sakit';
+    else if (info.code === 'IZIN') initialStatus = 'Izin';
+    else if (info.code === 'CUTI') initialStatus = 'Cuti';
+    else if (info.code === 'BOLOS') initialStatus = 'Alpha';
+    else if (info.code === 'LIBUR') initialStatus = 'Libur';
+
+    setEditingAbsensi({
+      nik: emp.nik,
+      nama: emp.nama || emp.nik,
+      tanggal: dateStr,
+      presensiId: info.presensiRec?.id,
+      rosterShift: r?.shift || 'Belum diatur',
+      rosterJamMasuk: hrs.jamMasuk || '08:00',
+      rosterJamPulang: hrs.jamPulang || '17:00',
+      status: initialStatus,
+      jam_masuk: info.presensiRec?.jam_masuk ? info.presensiRec.jam_masuk.slice(0, 5) : hrs.jamMasuk || '08:00',
+      jam_pulang: info.presensiRec?.jam_pulang ? info.presensiRec.jam_pulang.slice(0, 5) : hrs.jamPulang || '17:00',
+      catatan: info.presensiRec?.catatan || '',
+    });
+    setIsAbsensiModalOpen(true);
+  };
+
+  const handleSaveAbsensiEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!userIsAdmin || !editingAbsensi) return;
+    setSavingAbsensi(true);
+    try {
+      const isWorkingStatus =
+        editingAbsensi.status === 'Hadir' ||
+        editingAbsensi.status === 'Terlambat' ||
+        editingAbsensi.status === 'TakPulang';
+
+      const dbStatus: PresensiRecord['status'] =
+        editingAbsensi.status === 'TakPulang' ? 'Hadir' : editingAbsensi.status;
+
+      const effectiveShift =
+        editingAbsensi.rosterShift && editingAbsensi.rosterShift !== 'Belum diatur' && !editingAbsensi.rosterShift.toLowerCase().includes('libur')
+          ? editingAbsensi.rosterShift
+          : 'Shift 1';
+
+      const jamMasukVal = isWorkingStatus ? editingAbsensi.jam_masuk || editingAbsensi.rosterJamMasuk : null;
+      const jamPulangVal =
+        editingAbsensi.status === 'Hadir' || editingAbsensi.status === 'Terlambat'
+          ? editingAbsensi.jam_pulang || editingAbsensi.rosterJamPulang
+          : null;
+
+      if (editingAbsensi.presensiId) {
+        const res = await updatePresensiRecord(editingAbsensi.presensiId, {
+          shift: effectiveShift,
+          status: dbStatus,
+          jam_masuk: jamMasukVal as any,
+          jam_pulang: jamPulangVal as any,
+          catatan: editingAbsensi.catatan.trim() || undefined,
+        });
+        if (!res.success) {
+          throw new Error(res.error || 'Gagal memperbarui log presensi');
+        }
+      } else {
+        await submitPresensiRecord({
+          nik: editingAbsensi.nik,
+          nama: editingAbsensi.nama,
+          tanggal: editingAbsensi.tanggal,
+          shift: effectiveShift,
+          status: dbStatus,
+          jam_masuk: jamMasukVal || undefined,
+          jam_pulang: jamPulangVal || undefined,
+          catatan:
+            editingAbsensi.catatan.trim() ||
+            `Diatur HR pada Roster Hasil Absensi (${editingAbsensi.status})`,
+        });
+      }
+
+      onShowToast(
+        `Hasil absensi ${editingAbsensi.nama} (${editingAbsensi.tanggal}) diperbarui tanpa mengubah Jadwal Shift!`,
+        'success'
+      );
+      setIsAbsensiModalOpen(false);
+      setEditingAbsensi(null);
+      await loadData();
+    } catch (err: any) {
+      onShowToast(`Gagal menyimpan hasil absensi: ${err?.message || 'Error'}`, 'error');
+    } finally {
+      setSavingAbsensi(false);
+    }
+  };
+
+  const handleDeleteAbsensiLog = async () => {
+    if (!userIsAdmin || !editingAbsensi?.presensiId) return;
+    if (!confirm(`Hapus log absensi ${editingAbsensi.nama} pada ${editingAbsensi.tanggal}? Jadwal shift tetap dipertahankan.`)) {
+      return;
+    }
+    setSavingAbsensi(true);
+    try {
+      const res = await deletePresensiRecord(editingAbsensi.presensiId);
+      if (!res.success) {
+        throw new Error(res.error || 'Gagal menghapus log presensi');
+      }
+      onShowToast('Log absensi dihapus tanpa mengubah Jadwal Shift.', 'success');
+      setIsAbsensiModalOpen(false);
+      setEditingAbsensi(null);
+      await loadData();
+    } catch (err: any) {
+      onShowToast(`Gagal menghapus log absensi: ${err?.message || 'Error'}`, 'error');
+    } finally {
+      setSavingAbsensi(false);
+    }
+  };
+
   // Reset pagination when filters change
   useEffect(() => {
     setRosterVisibleCount(100);
   }, [selectedDate, selectedShift, selectedDepartment, searchQuery]);
 
-  // Summary counts for current filtered or all
+  // Ringkasan Jadwal Shift murni (khusus mode Jadwal Shift)
   const summaryStats = useMemo(() => {
     const active = selectedDate
       ? rosterList.filter((r) => r.tanggal === selectedDate)
@@ -666,21 +1053,17 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     let s3a = 0;
     let s3b = 0;
     let libur = 0;
-    let cuti = 0;
-    let bolos = 0;
 
     active.forEach((r) => {
       const s = (r.shift || '').toLowerCase();
-      if (s.includes('bolos') || s.includes('alpha')) bolos++;
-      else if (s.includes('3b')) s3b++;
+      if (s.includes('3b')) s3b++;
       else if (s.includes('3a') || s.includes('shift 3') || s === '3') s3a++;
       else if (s.includes('shift 2') || s === '2') s2++;
       else if (s.includes('shift 1') || s === '1') s1++;
       else if (s.includes('libur') || s.includes('off')) libur++;
-      else if (s.includes('cuti') || s.includes('izin') || s.includes('ijin') || s.includes('sakit')) cuti++;
     });
 
-    return { total: active.length, s1, s2, s3a, s3b, libur, cuti, bolos };
+    return { total: active.length, s1, s2, s3a, s3b, libur };
   }, [rosterList, selectedDate]);
 
   // Days in current weekly view
@@ -767,6 +1150,29 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
         );
       });
   }, [karyawanList, selectedDepartment, searchQuery]);
+
+  // Ringkasan Hasil Absensi Bulanan (khusus mode Hasil Absensi)
+  const attendanceSummaryStats = useMemo(() => {
+    let tepatWaktu = 0;
+    let terlambat = 0;
+    let takPulang = 0;
+    let cutiIzinSakit = 0;
+    let bolos = 0;
+    let libur = 0;
+
+    for (const emp of matrixEmployees) {
+      for (const day of monthlyDays) {
+        const info = resolveAttendanceCell(emp, day.dateStr);
+        if (info.code === 'TEPAT_WAKTU' || info.code === 'MASUK') tepatWaktu++;
+        else if (info.code === 'TERLAMBAT') terlambat++;
+        else if (info.code === 'TAK_PULANG') takPulang++;
+        else if (info.code === 'CUTI' || info.code === 'SAKIT' || info.code === 'IZIN') cutiIzinSakit++;
+        else if (info.code === 'BOLOS') bolos++;
+        else if (info.code === 'LIBUR') libur++;
+      }
+    }
+    return { tepatWaktu, terlambat, takPulang, cutiIzinSakit, bolos, libur };
+  }, [matrixEmployees, monthlyDays, presensiByNikDate, rosterByNikDate, approvedCutiByNik]);
 
   // Initialize selectedMatrixNiks when karyawanList loads
   useEffect(() => {
@@ -866,16 +1272,6 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
     setMatrixDrafts((prev) => {
       const next = { ...prev };
       monthlyDays.forEach((day) => {
-        // Respect approved Cuti/Izin/Sakit
-        const activeLeave = cutiList.find(
-          (c) =>
-            c.status === 'Disetujui' &&
-            c.nik === nik &&
-            c.tgl_mulai <= day.dateStr &&
-            c.tgl_selesai >= day.dateStr
-        );
-        if (activeLeave) return;
-
         let isOff = false;
         if (offRule === 'OFF_WEEKEND') {
           isOff = day.dayOfWeek === 0 || day.dayOfWeek === 6;
@@ -924,15 +1320,6 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
       const effectiveOffRule = personalOff || bulkMonthOffRule;
 
       monthlyDays.forEach((day) => {
-        const activeLeave = cutiList.find(
-          (c) =>
-            c.status === 'Disetujui' &&
-            c.nik === emp.nik &&
-            c.tgl_mulai <= day.dateStr &&
-            c.tgl_selesai >= day.dateStr
-        );
-        if (activeLeave) return;
-
         let isOff = false;
         if (effectiveOffRule === 'OFF_WEEKEND') {
           isOff = day.dayOfWeek === 0 || day.dayOfWeek === 6;
@@ -1785,7 +2172,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 <Calendar className="w-5 h-5" />
               </span>
               <h2 className="text-lg sm:text-xl font-black text-slate-900 dark:text-white tracking-tight">
-                Jadwal Roster Shift Gudang
+                {rosterMode === 'jadwal' ? 'Jadwal Roster Shift Gudang' : 'Roster Hasil Absensi Karyawan'}
               </h2>
               {userIsAdmin ? (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
@@ -1798,8 +2185,38 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               )}
             </div>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Pengaturan shift tim gudang & pembaruan otomatis status keterlambatan presensi
+              {rosterMode === 'jadwal'
+                ? 'Menampilkan & mengatur jadwal shift kerja murni (Shift 1/2/3/Libur) tanpa tertumpuk status absensi'
+                : 'Menampilkan & mengedit hasil presensi aktual (Tepat Waktu, Telat, Cuti/Sakit/Izin, Bolos) tanpa mengubah Jadwal Shift'}
             </p>
+
+            {/* 2 Opsi Tampilan Roster Terpisah: Jadwal Shift vs Hasil Absensi */}
+            <div className="inline-flex items-center gap-1 p-1 mt-3 rounded-2xl bg-slate-100 dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setRosterMode('jadwal')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  rosterMode === 'jadwal'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <CalendarDays className="w-3.5 h-3.5" />
+                <span>Jadwal Shift</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRosterMode('absensi')}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  rosterMode === 'absensi'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <ClipboardCheck className="w-3.5 h-3.5" />
+                <span>Hasil Absensi</span>
+              </button>
+            </div>
           </div>
 
           {/* Action Buttons */}
@@ -1890,71 +2307,120 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           </div>
         </div>
 
-        {/* SUMMARY STATS TILES */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800/80">
-          <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-200/60 dark:border-slate-800">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">
-              Total Jadwal
-            </span>
-            <span className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100">
-              {summaryStats.total} <span className="text-[11px] font-normal text-slate-400">staf</span>
-            </span>
-          </div>
+        {/* SUMMARY STATS TILES (Terpisah sesuai Mode Aktif) */}
+        {rosterMode === 'jadwal' ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800/80">
+            <div className="bg-slate-50 dark:bg-slate-900/50 p-3 rounded-2xl border border-slate-200/60 dark:border-slate-800">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-0.5">
+                Total Jadwal
+              </span>
+              <span className="text-base sm:text-lg font-black text-slate-800 dark:text-slate-100">
+                {summaryStats.total} <span className="text-[11px] font-normal text-slate-400">entri</span>
+              </span>
+            </div>
 
-          <div className="bg-blue-50/50 dark:bg-blue-950/30 p-3 rounded-2xl border border-blue-100 dark:border-blue-900/40">
-            <span className="text-[10px] font-black text-blue-500 uppercase tracking-wider block mb-0.5">
-              Shift 1 (08:00)
-            </span>
-            <span className="text-base sm:text-lg font-black text-blue-700 dark:text-blue-300">
-              {summaryStats.s1}
-            </span>
-          </div>
+            <div className="bg-blue-50/50 dark:bg-blue-950/30 p-3 rounded-2xl border border-blue-100 dark:border-blue-900/40">
+              <span className="text-[10px] font-black text-blue-500 uppercase tracking-wider block mb-0.5">
+                Shift 1 (08:00)
+              </span>
+              <span className="text-base sm:text-lg font-black text-blue-700 dark:text-blue-300">
+                {summaryStats.s1}
+              </span>
+            </div>
 
-          <div className="bg-indigo-50/50 dark:bg-indigo-950/30 p-3 rounded-2xl border border-indigo-100 dark:border-indigo-900/40">
-            <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider block mb-0.5">
-              Shift 2 (09:00)
-            </span>
-            <span className="text-base sm:text-lg font-black text-indigo-700 dark:text-indigo-300">
-              {summaryStats.s2}
-            </span>
-          </div>
+            <div className="bg-indigo-50/50 dark:bg-indigo-950/30 p-3 rounded-2xl border border-indigo-100 dark:border-indigo-900/40">
+              <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider block mb-0.5">
+                Shift 2 (09:00)
+              </span>
+              <span className="text-base sm:text-lg font-black text-indigo-700 dark:text-indigo-300">
+                {summaryStats.s2}
+              </span>
+            </div>
 
-          <div className="bg-purple-50/50 dark:bg-purple-950/30 p-3 rounded-2xl border border-purple-100 dark:border-purple-900/40">
-            <span className="text-[10px] font-black text-purple-500 uppercase tracking-wider block mb-0.5">
-              Shift 3a (12:00)
-            </span>
-            <span className="text-base sm:text-lg font-black text-purple-700 dark:text-purple-300">
-              {summaryStats.s3a}
-            </span>
-          </div>
+            <div className="bg-purple-50/50 dark:bg-purple-950/30 p-3 rounded-2xl border border-purple-100 dark:border-purple-900/40">
+              <span className="text-[10px] font-black text-purple-500 uppercase tracking-wider block mb-0.5">
+                Shift 3a (12:00)
+              </span>
+              <span className="text-base sm:text-lg font-black text-purple-700 dark:text-purple-300">
+                {summaryStats.s3a}
+              </span>
+            </div>
 
-          <div className="bg-teal-50/50 dark:bg-teal-950/30 p-3 rounded-2xl border border-teal-100 dark:border-teal-900/40">
-            <span className="text-[10px] font-black text-teal-500 uppercase tracking-wider block mb-0.5">
-              Shift 3b (11:00)
-            </span>
-            <span className="text-base sm:text-lg font-black text-teal-700 dark:text-teal-300">
-              {summaryStats.s3b}
-            </span>
-          </div>
+            <div className="bg-teal-50/50 dark:bg-teal-950/30 p-3 rounded-2xl border border-teal-100 dark:border-teal-900/40">
+              <span className="text-[10px] font-black text-teal-500 uppercase tracking-wider block mb-0.5">
+                Shift 3b (11:00)
+              </span>
+              <span className="text-base sm:text-lg font-black text-teal-700 dark:text-teal-300">
+                {summaryStats.s3b}
+              </span>
+            </div>
 
-          <div className="bg-rose-50/50 dark:bg-rose-950/30 p-3 rounded-2xl border border-rose-100 dark:border-rose-900/40">
-            <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block mb-0.5">
-              Libur / Cuti
-            </span>
-            <span className="text-base sm:text-lg font-black text-rose-700 dark:text-rose-300">
-              {summaryStats.libur + summaryStats.cuti}
-            </span>
+            <div className="bg-rose-50/50 dark:bg-rose-950/30 p-3 rounded-2xl border border-rose-100 dark:border-rose-900/40">
+              <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block mb-0.5">
+                Libur (Off)
+              </span>
+              <span className="text-base sm:text-lg font-black text-rose-700 dark:text-rose-300">
+                {summaryStats.libur}
+              </span>
+            </div>
           </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5 mt-5 pt-5 border-t border-slate-100 dark:border-slate-800/80">
+            <div className="bg-emerald-50/60 dark:bg-emerald-950/30 p-3 rounded-2xl border border-emerald-200/70 dark:border-emerald-900/50">
+              <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block mb-0.5">
+                Tepat Waktu ({selectedMonthYear})
+              </span>
+              <span className="text-base sm:text-lg font-black text-emerald-700 dark:text-emerald-300">
+                {attendanceSummaryStats.tepatWaktu}
+              </span>
+            </div>
 
-          <div className="bg-red-50/80 dark:bg-red-950/50 p-3 rounded-2xl border border-red-200 dark:border-red-900/60">
-            <span className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wider block mb-0.5">
-              Bolos (Alpha)
-            </span>
-            <span className="text-base sm:text-lg font-black text-red-700 dark:text-red-300">
-              {summaryStats.bolos}
-            </span>
+            <div className="bg-amber-50/70 dark:bg-amber-950/30 p-3 rounded-2xl border border-amber-200 dark:border-amber-900/50">
+              <span className="text-[10px] font-black text-amber-600 uppercase tracking-wider block mb-0.5">
+                Terlambat
+              </span>
+              <span className="text-base sm:text-lg font-black text-amber-700 dark:text-amber-300">
+                {attendanceSummaryStats.terlambat}
+              </span>
+            </div>
+
+            <div className="bg-orange-50/70 dark:bg-orange-950/30 p-3 rounded-2xl border border-orange-200 dark:border-orange-900/50">
+              <span className="text-[10px] font-black text-orange-600 uppercase tracking-wider block mb-0.5">
+                Tak Absen Pulang
+              </span>
+              <span className="text-base sm:text-lg font-black text-orange-700 dark:text-orange-300">
+                {attendanceSummaryStats.takPulang}
+              </span>
+            </div>
+
+            <div className="bg-teal-50/60 dark:bg-teal-950/30 p-3 rounded-2xl border border-teal-200 dark:border-teal-900/50">
+              <span className="text-[10px] font-black text-teal-600 uppercase tracking-wider block mb-0.5">
+                Cuti / Izin / Sakit
+              </span>
+              <span className="text-base sm:text-lg font-black text-teal-700 dark:text-teal-300">
+                {attendanceSummaryStats.cutiIzinSakit}
+              </span>
+            </div>
+
+            <div className="bg-red-50/80 dark:bg-red-950/50 p-3 rounded-2xl border border-red-200 dark:border-red-900/60">
+              <span className="text-[10px] font-black text-red-600 dark:text-red-400 uppercase tracking-wider block mb-0.5">
+                Bolos (Alpha)
+              </span>
+              <span className="text-base sm:text-lg font-black text-red-700 dark:text-red-300">
+                {attendanceSummaryStats.bolos}
+              </span>
+            </div>
+
+            <div className="bg-rose-50/50 dark:bg-rose-950/30 p-3 rounded-2xl border border-rose-100 dark:border-rose-900/40">
+              <span className="text-[10px] font-black text-rose-500 uppercase tracking-wider block mb-0.5">
+                Libur (Off)
+              </span>
+              <span className="text-base sm:text-lg font-black text-rose-700 dark:text-rose-300">
+                {attendanceSummaryStats.libur}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* FILTER & VIEW CONTROLS */}
@@ -2031,21 +2497,35 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               )}
             </div>
 
-            {/* Shift Filter Dropdown */}
-            <select
-              value={selectedShift}
-              onChange={(e) => setSelectedShift(e.target.value)}
-              className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
-            >
-              <option value="all">Semua Shift</option>
-              <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
-              <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
-              <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
-              <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
-              <option value="Libur">Libur (Off)</option>
-              <option value="Cuti">Cuti / Izin</option>
-              <option value="Bolos">Bolos (Tanpa Absen Datang/Pulang)</option>
-            </select>
+            {/* Shift / Status Filter Dropdown */}
+            {rosterMode === 'jadwal' ? (
+              <select
+                value={selectedShift}
+                onChange={(e) => setSelectedShift(e.target.value)}
+                className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
+              >
+                <option value="all">Semua Shift</option>
+                <option value="Shift 1">Shift 1 (08:00 - 17:00)</option>
+                <option value="Shift 2">Shift 2 (09:00 - 18:00)</option>
+                <option value="Shift 3a">Shift 3a (12:00 - 21:00)</option>
+                <option value="Shift 3b">Shift 3b (11:00 - 20:00)</option>
+                <option value="Libur">Libur (Off)</option>
+              </select>
+            ) : (
+              <select
+                value={attendanceStatusFilter}
+                onChange={(e) => setAttendanceStatusFilter(e.target.value)}
+                className="px-3 py-2 rounded-xl text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 focus:outline-none focus:border-primary-500 text-slate-800 dark:text-slate-100 font-bold"
+              >
+                <option value="ALL">Semua Hasil Absensi</option>
+                <option value="TEPAT_WAKTU">Tepat Waktu (Hadir)</option>
+                <option value="TERLAMBAT">Terlambat</option>
+                <option value="TAK_PULANG">Tak Absen Pulang</option>
+                <option value="LEAVE">Cuti / Izin / Sakit</option>
+                <option value="BOLOS">Bolos / Alpha</option>
+                <option value="LIBUR">Libur / Pra-Join</option>
+              </select>
+            )}
 
             {/* Department Filter */}
             {departments.length > 0 && (
@@ -2064,13 +2544,14 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             )}
 
             {/* Reset Filters */}
-            {(searchQuery || selectedShift !== 'all' || selectedDepartment !== 'all') && (
+            {(searchQuery || selectedShift !== 'all' || selectedDepartment !== 'all' || attendanceStatusFilter !== 'ALL') && (
               <button
                 type="button"
                 onClick={() => {
                   setSearchQuery('');
                   setSelectedShift('all');
                   setSelectedDepartment('all');
+                  setAttendanceStatusFilter('ALL');
                 }}
                 className="p-2 rounded-xl text-xs text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 font-bold flex items-center gap-1 cursor-pointer"
               >
@@ -2140,8 +2621,108 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
           <RotateCcw className="w-8 h-8 text-primary-500 animate-spin mb-3" />
           <p className="text-sm font-bold text-slate-600 dark:text-slate-300">Memuat Jadwal Roster Shift...</p>
         </div>
+      ) : viewMode === 'table' && rosterMode === 'absensi' ? (
+        /* TABLE VIEW — HASIL ABSENSI HARIAN */
+        (() => {
+          const targetDate =
+            selectedDate ||
+            `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(
+              new Date().getDate()
+            ).padStart(2, '0')}`;
+          const rows = matrixEmployees
+            .map((emp) => ({ emp, att: resolveAttendanceCell(emp, targetDate) }))
+            .filter(({ att }) => matchesAttendanceFilter(att.code));
+          return (
+            <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
+              <div className="px-4 py-3 bg-indigo-50/50 dark:bg-indigo-950/30 border-b border-slate-200/80 dark:border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <span className="font-extrabold text-indigo-800 dark:text-indigo-200">
+                  Hasil Absensi Tanggal <span className="font-mono">{targetDate}</span> ({rows.length} Staf)
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Mengedit hasil absensi hanya memperbarui log presensi &amp; tidak mengubah Jadwal Shift.
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50/80 dark:bg-slate-900/80 border-b border-slate-200/80 dark:border-slate-800 text-slate-500 dark:text-slate-400 uppercase text-[10px] font-black tracking-wider">
+                      <th className="py-3 px-4">Karyawan / Staf</th>
+                      <th className="py-3 px-4">Jadwal Shift</th>
+                      <th className="py-3 px-4">Hasil Absensi</th>
+                      <th className="py-3 px-4">Jam Aktual</th>
+                      <th className="py-3 px-4">Catatan</th>
+                      <th className="py-3 px-4 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {rows.map(({ emp, att }) => {
+                      const shiftBadge = getShiftBadgeStyle(att.rosterShift);
+                      return (
+                        <tr key={emp.nik} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/30">
+                          <td className="py-3 px-4">
+                            <div className="font-extrabold text-slate-900 dark:text-white">{emp.nama}</div>
+                            <div className="text-[10px] font-mono text-slate-400">
+                              {emp.nik} · {emp.divisi || 'Warehouse'}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-lg text-[11px] font-bold border inline-block ${
+                                att.rosterShift !== '-'
+                                  ? `${shiftBadge.bg} ${shiftBadge.text}`
+                                  : 'bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400'
+                              }`}
+                            >
+                              {att.rosterShift}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border inline-flex items-center gap-1 ${att.badgeBg} ${att.badgeText}`}
+                            >
+                              {att.label}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[11px] text-slate-700 dark:text-slate-200">
+                            {att.jamMasuk || att.jamPulang
+                              ? `${att.jamMasuk || '-'} – ${att.jamPulang || '-'}`
+                              : '-'}
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 dark:text-slate-400 max-w-xs truncate">
+                            {att.presensiRec?.catatan || '-'}
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            {userIsAdmin ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditAbsensi(emp, targetDate)}
+                                className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-indigo-200 dark:border-indigo-700 bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-50 cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                <span>Edit Absensi</span>
+                              </button>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">Read-only</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {rows.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-10 text-center text-slate-400">
+                          Tidak ada data hasil absensi yang cocok dengan filter.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()
       ) : viewMode === 'table' ? (
-        /* TABLE VIEW */
+        /* TABLE VIEW — JADWAL SHIFT */
         <div className="bg-white dark:bg-[#131d31] rounded-3xl border border-slate-200/80 dark:border-slate-800 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
@@ -2342,8 +2923,88 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             </div>
           )}
         </div>
+      ) : viewMode === 'cards' && rosterMode === 'absensi' ? (
+        /* CARDS VIEW — HASIL ABSENSI HARIAN */
+        (() => {
+          const targetDate =
+            selectedDate ||
+            `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-${String(
+              new Date().getDate()
+            ).padStart(2, '0')}`;
+          const rows = matrixEmployees
+            .map((emp) => ({ emp, att: resolveAttendanceCell(emp, targetDate) }))
+            .filter(({ att }) => matchesAttendanceFilter(att.code));
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+              {rows.map(({ emp, att }) => {
+                const shiftBadge = getShiftBadgeStyle(att.rosterShift);
+                return (
+                  <div
+                    key={emp.nik}
+                    className="bg-white dark:bg-[#131d31] rounded-3xl p-4 sm:p-5 border border-slate-200/80 dark:border-slate-800 shadow-sm flex flex-col justify-between gap-3"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div>
+                          <h4 className="font-extrabold text-xs sm:text-sm text-slate-900 dark:text-white">
+                            {emp.nama}
+                          </h4>
+                          <span className="text-[10px] font-mono text-slate-400">
+                            {emp.nik} · {emp.divisi || 'Warehouse'}
+                          </span>
+                        </div>
+                        <span
+                          className={`px-2 py-0.5 rounded-lg text-[10px] font-extrabold border shrink-0 ${att.badgeBg} ${att.badgeText}`}
+                        >
+                          {att.shortCode}
+                        </span>
+                      </div>
+                      <div className="space-y-1.5 text-xs py-2 border-y border-slate-100 dark:border-slate-800">
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Tanggal:</span>
+                          <span className="font-mono font-bold">{targetDate}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-slate-400">Jadwal Shift:</span>
+                          <span className={`px-2 py-0.5 rounded-lg text-[10px] font-bold border ${shiftBadge.bg} ${shiftBadge.text}`}>
+                            {att.rosterShift}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Hasil Absensi:</span>
+                          <span className="font-bold text-slate-800 dark:text-slate-100">{att.label}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Jam Aktual:</span>
+                          <span className="font-mono font-bold">
+                            {att.jamMasuk || att.jamPulang ? `${att.jamMasuk || '-'} – ${att.jamPulang || '-'}` : '-'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {userIsAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditAbsensi(emp, targetDate)}
+                        className="w-full py-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/70 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 text-xs font-extrabold hover:bg-indigo-100 cursor-pointer flex items-center justify-center gap-1.5"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Edit Hasil Absensi</span>
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {rows.length === 0 && (
+                <div className="col-span-full bg-white dark:bg-[#131d31] rounded-3xl p-12 text-center text-slate-400 border border-slate-200/80 dark:border-slate-800">
+                  Tidak ada data hasil absensi yang ditemukan
+                </div>
+              )}
+            </div>
+          );
+        })()
       ) : viewMode === 'cards' ? (
-        /* CARDS VIEW */
+        /* CARDS VIEW — JADWAL SHIFT */
         <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
           {filteredRoster.slice(0, rosterVisibleCount).map((r, cardIdx) => {
@@ -2529,68 +3190,71 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               </span>
             </div>
 
-            {/* Save / Reset Drafts + Mobile Generator Toggle */}
-            <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
-              {userIsAdmin && (
-                <button
-                  type="button"
-                  onClick={() => setIsMobileGeneratorOpen((prev) => !prev)}
-                  className={`lg:hidden px-3 py-1.5 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    isMobileGeneratorOpen
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
-                  }`}
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{isMobileGeneratorOpen ? 'Tutup Generator Massal' : '⚡ Generator Massal & Info Pola'}</span>
-                </button>
-              )}
-
-              {userIsAdmin && (
-                <div className="flex flex-wrap items-center gap-2 ml-auto sm:ml-0">
-                  {Object.keys(matrixDrafts).length > 0 && (
-                    <>
-                      <span className="hidden sm:inline-flex px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-xs font-extrabold">
-                        ⚡ {Object.keys(matrixDrafts).length} Belum Disimpan
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setMatrixDrafts({})}
-                        disabled={isSavingMatrixDrafts}
-                        className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
-                      >
-                        Reset Draft
-                      </button>
-                    </>
-                  )}
+            {/* Save / Reset Drafts + Mobile Generator Toggle (Hanya untuk Mode Jadwal Shift) */}
+            {rosterMode === 'jadwal' && (
+              <div className="flex flex-wrap items-center justify-between sm:justify-end gap-2">
+                {userIsAdmin && (
                   <button
                     type="button"
-                    onClick={() => handleSaveAllMatrixDrafts()}
-                    disabled={isSavingMatrixDrafts || Object.keys(matrixDrafts).length === 0}
-                    className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-black text-white shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all ${
-                      Object.keys(matrixDrafts).length > 0
-                        ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/50'
-                        : 'bg-indigo-600 hover:bg-indigo-500'
+                    onClick={() => setIsMobileGeneratorOpen((prev) => !prev)}
+                    className={`lg:hidden px-3 py-1.5 rounded-xl text-[11px] font-extrabold border flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      isMobileGeneratorOpen
+                        ? 'bg-indigo-600 text-white border-indigo-600'
+                        : 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
                     }`}
                   >
-                    {isSavingMatrixDrafts ? (
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{isMobileGeneratorOpen ? 'Tutup Generator Massal' : '⚡ Generator Massal & Info Pola'}</span>
+                  </button>
+                )}
+
+                {userIsAdmin && (
+                  <div className="flex flex-wrap items-center gap-2 ml-auto sm:ml-0">
+                    {Object.keys(matrixDrafts).length > 0 && (
                       <>
-                        <RotateCcw className="w-3.5 h-3.5 animate-spin" />
-                        <span>Menyimpan ({Object.keys(matrixDrafts).length})...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5" />
-                        <span>💾 Simpan ({Object.keys(matrixDrafts).length})</span>
+                        <span className="hidden sm:inline-flex px-2.5 py-1.5 rounded-xl bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800 text-xs font-extrabold">
+                          ⚡ {Object.keys(matrixDrafts).length} Belum Disimpan
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setMatrixDrafts({})}
+                          disabled={isSavingMatrixDrafts}
+                          className="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-rose-50 hover:text-rose-600 cursor-pointer"
+                        >
+                          Reset Draft
+                        </button>
                       </>
                     )}
-                  </button>
-                </div>
-              )}
-            </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveAllMatrixDrafts()}
+                      disabled={isSavingMatrixDrafts || Object.keys(matrixDrafts).length === 0}
+                      className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-[11px] sm:text-xs font-black text-white shadow-sm flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-all ${
+                        Object.keys(matrixDrafts).length > 0
+                          ? 'bg-emerald-600 hover:bg-emerald-500 ring-2 ring-emerald-400/50'
+                          : 'bg-indigo-600 hover:bg-indigo-500'
+                      }`}
+                    >
+                      {isSavingMatrixDrafts ? (
+                        <>
+                          <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Menyimpan ({Object.keys(matrixDrafts).length})...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>💾 Simpan ({Object.keys(matrixDrafts).length})</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Collapsible on Mobile (<1024px), Always Visible on Desktop (lg:block): Pola Reguler Banner + Bulk Month Generator */}
+          {/* Collapsible on Mobile (<1024px), Always Visible on Desktop (lg:block): Pola Reguler Banner + Bulk Month Generator (Hanya Mode Jadwal Shift) */}
+          {rosterMode === 'jadwal' && (
           <div className={`${isMobileGeneratorOpen ? 'block' : 'hidden lg:block'} space-y-3`}>
             {/* Pola Reguler Information Banner */}
             <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 text-xs">
@@ -2693,45 +3357,77 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
               </div>
             )}
           </div>
+          )}
 
-          {/* Always-Accessible Compact Bar: Kuas Shift Cepat + Filter Rentang Tanggal (Swipe Horizontal di HP) */}
+          {/* Always-Accessible Compact Bar: Kuas Shift (Jadwal) ATAU Filter Status Absensi + Rentang Tanggal */}
           <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-2.5 bg-slate-50/90 dark:bg-slate-900/70 p-2.5 sm:p-3 rounded-2xl border border-slate-200/80 dark:border-slate-800">
-            {userIsAdmin && (
+            {rosterMode === 'jadwal' ? (
+              userIsAdmin ? (
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pb-0.5 xl:pb-0">
+                  <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 shrink-0 mr-1">
+                    🖌️ Kuas Shift:
+                  </span>
+                  {[
+                    { key: 'Shift 1', code: 'S1 (08-17)' },
+                    { key: 'Shift 2', code: 'S2 (09-18)' },
+                    { key: 'Shift 3', code: 'S3 Auto' },
+                    { key: 'Shift 3a', code: 'S3a (12-21)' },
+                    { key: 'Shift 3b', code: 'S3b (11-20)' },
+                    { key: 'Libur', code: 'OFF (Libur)' },
+                    { key: 'MODAL', code: '🔍 Detail' },
+                  ].map((b) => {
+                    const isActive = activeBrushShift === b.key;
+                    const bStyle = getShiftBadgeStyle(b.key === 'Shift 3' ? 'Shift 3a' : b.key);
+                    return (
+                      <button
+                        key={b.key}
+                        type="button"
+                        onClick={() => setActiveBrushShift(b.key)}
+                        className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border shrink-0 transition-all cursor-pointer ${
+                          isActive
+                            ? 'ring-2 ring-indigo-500 border-indigo-600 bg-indigo-600 text-white shadow-xs'
+                            : b.key === 'MODAL'
+                            ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
+                            : `${bStyle.bg} ${bStyle.text} opacity-85 hover:opacity-100`
+                        }`}
+                      >
+                        {b.code}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-[11px] text-slate-500 font-semibold">
+                  Jadwal shift kerja murni per tanggal.
+                </div>
+              )
+            ) : (
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar whitespace-nowrap pb-0.5 xl:pb-0">
-                <span className="text-[11px] font-black text-slate-700 dark:text-slate-200 shrink-0 mr-1">
-                  🖌️ Kuas Shift:
+                <span className="text-[11px] font-black text-indigo-700 dark:text-indigo-300 shrink-0 mr-1">
+                  Hasil Absensi (Klik sel untuk edit):
                 </span>
                 {[
-                  { key: 'Shift 1', code: 'S1 (08-17)' },
-                  { key: 'Shift 2', code: 'S2 (09-18)' },
-                  { key: 'Shift 3', code: 'S3 Auto' },
-                  { key: 'Shift 3a', code: 'S3a (12-21)' },
-                  { key: 'Shift 3b', code: 'S3b (11-20)' },
-                  { key: 'Libur', code: 'OFF (Libur)' },
-                  { key: 'Cuti', code: 'CT (Cuti)' },
-                  { key: 'Izin', code: 'IZN (Izin)' },
-                  { key: 'Bolos', code: 'BOLOS (Alpha)' },
-                  { key: 'MODAL', code: '🔍 Detail' },
-                ].map((b) => {
-                  const isActive = activeBrushShift === b.key;
-                  const bStyle = getShiftBadgeStyle(b.key === 'Shift 3' ? 'Shift 3a' : b.key);
-                  return (
-                    <button
-                      key={b.key}
-                      type="button"
-                      onClick={() => setActiveBrushShift(b.key)}
-                      className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border shrink-0 transition-all cursor-pointer ${
-                        isActive
-                          ? 'ring-2 ring-indigo-500 border-indigo-600 bg-indigo-600 text-white shadow-xs'
-                          : b.key === 'MODAL'
-                          ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300'
-                          : `${bStyle.bg} ${bStyle.text} opacity-85 hover:opacity-100`
-                      }`}
-                    >
-                      {b.code}
-                    </button>
-                  );
-                })}
+                  { id: 'ALL', label: 'Semua', cls: 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200' },
+                  { id: 'TEPAT_WAKTU', label: 'HADIR', cls: 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300' },
+                  { id: 'TERLAMBAT', label: 'TELAT', cls: 'bg-amber-100 dark:bg-amber-950/70 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200' },
+                  { id: 'TAK_PULANG', label: 'NO-OUT', cls: 'bg-orange-100 dark:bg-orange-950/70 border-orange-300 dark:border-orange-700 text-orange-800 dark:text-orange-200' },
+                  { id: 'LEAVE', label: 'CT / SKT / IZN', cls: 'bg-teal-50 dark:bg-teal-950/60 border-teal-200 dark:border-teal-800 text-teal-700 dark:text-teal-300' },
+                  { id: 'BOLOS', label: 'BOLOS', cls: 'bg-red-100 dark:bg-red-950/80 border-red-400 dark:border-red-700 text-red-800 dark:text-red-200' },
+                  { id: 'LIBUR', label: 'OFF / PRA', cls: 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300' },
+                ].map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setAttendanceStatusFilter(f.id)}
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-extrabold border shrink-0 transition-all cursor-pointer ${
+                      attendanceStatusFilter === f.id
+                        ? 'ring-2 ring-indigo-500 border-indigo-600 bg-indigo-600 text-white shadow-xs'
+                        : f.cls
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
               </div>
             )}
 
@@ -2772,21 +3468,34 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 const isSelected = selectedMatrixNiks.includes(k.nik);
                 const currentOffPref = employeeOffDayPref[k.nik] || 'OFF_0';
 
-                // Calculate monthly stats for this employee
+                // Calculate monthly stats for this employee (terpisah sesuai rosterMode)
                 let countS1 = 0;
                 let countS2 = 0;
                 let countS3 = 0;
                 let countOff = 0;
+                let countHadir = 0;
+                let countTelat = 0;
+                let countNoOut = 0;
+                let countLeave = 0;
                 let countBolos = 0;
                 monthlyDays.forEach((d) => {
-                  const ck = `${k.nik}_${d.dateStr}`;
-                  const eff = matrixDrafts[ck]?.shift ?? rosterByNikDate.get(ck)?.shift ?? '';
-                  const sc = getShortShiftCode(eff);
-                  if (sc === 'BOLOS') countBolos++;
-                  else if (sc === 'S1') countS1++;
-                  else if (sc === 'S2') countS2++;
-                  else if (sc === 'S3a' || sc === 'S3b') countS3++;
-                  else if (sc === 'OFF' || sc === 'CT' || sc === 'IZN' || sc === 'SKT') countOff++;
+                  if (rosterMode === 'jadwal') {
+                    const ck = `${k.nik}_${d.dateStr}`;
+                    const eff = matrixDrafts[ck]?.shift ?? rosterByNikDate.get(ck)?.shift ?? '';
+                    const sc = getShortShiftCode(eff);
+                    if (sc === 'S1') countS1++;
+                    else if (sc === 'S2') countS2++;
+                    else if (sc === 'S3a' || sc === 'S3b') countS3++;
+                    else if (sc === 'OFF') countOff++;
+                  } else {
+                    const att = resolveAttendanceCell(k, d.dateStr);
+                    if (att.code === 'TEPAT_WAKTU' || att.code === 'MASUK') countHadir++;
+                    else if (att.code === 'TERLAMBAT') countTelat++;
+                    else if (att.code === 'TAK_PULANG') countNoOut++;
+                    else if (att.code === 'CUTI' || att.code === 'SAKIT' || att.code === 'IZIN') countLeave++;
+                    else if (att.code === 'BOLOS') countBolos++;
+                    else if (att.code === 'LIBUR') countOff++;
+                  }
                 });
 
                 return (
@@ -2797,7 +3506,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                     {/* Employee Card Header */}
                     <div className="flex items-start justify-between gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
                       <label className="flex items-center gap-2 min-w-0 cursor-pointer">
-                        {userIsAdmin && (
+                        {userIsAdmin && rosterMode === 'jadwal' && (
                           <input
                             type="checkbox"
                             checked={isSelected}
@@ -2821,38 +3530,70 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                         </div>
                       </label>
 
-                      {/* Mini Stats Badges */}
+                      {/* Mini Stats Badges (Jadwal Shift vs Hasil Absensi) */}
                       <div className="flex flex-wrap items-center justify-end gap-1 shrink-0">
-                        {countS1 > 0 && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                            S1:{countS1}
-                          </span>
-                        )}
-                        {countS2 > 0 && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                            S2:{countS2}
-                          </span>
-                        )}
-                        {countS3 > 0 && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
-                            S3:{countS3}
-                          </span>
-                        )}
-                        {countOff > 0 && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                            OFF:{countOff}
-                          </span>
-                        )}
-                        {countBolos > 0 && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-black bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700">
-                            BOLOS:{countBolos}
-                          </span>
+                        {rosterMode === 'jadwal' ? (
+                          <>
+                            {countS1 > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                S1:{countS1}
+                              </span>
+                            )}
+                            {countS2 > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                S2:{countS2}
+                              </span>
+                            )}
+                            {countS3 > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-purple-50 dark:bg-purple-950/60 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                                S3:{countS3}
+                              </span>
+                            )}
+                            {countOff > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                OFF:{countOff}
+                              </span>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            {countHadir > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                HADIR:{countHadir}
+                              </span>
+                            )}
+                            {countTelat > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700">
+                                TELAT:{countTelat}
+                              </span>
+                            )}
+                            {countNoOut > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-orange-100 dark:bg-orange-950/70 text-orange-800 dark:text-orange-200 border border-orange-300 dark:border-orange-700">
+                                NO-OUT:{countNoOut}
+                              </span>
+                            )}
+                            {countLeave > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-teal-50 dark:bg-teal-950/60 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                                CT/SKT:{countLeave}
+                              </span>
+                            )}
+                            {countOff > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                OFF:{countOff}
+                              </span>
+                            )}
+                            {countBolos > 0 && (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-black bg-red-100 dark:bg-red-950/80 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-700">
+                                BOLOS:{countBolos}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
 
-                    {/* Quick 1-Month Fill Row for Admin */}
-                    {userIsAdmin && (
+                    {/* Quick 1-Month Fill Row for Admin (Hanya di Mode Jadwal Shift) */}
+                    {userIsAdmin && rosterMode === 'jadwal' && (
                       <div className="flex items-center justify-between gap-1.5 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1.5 rounded-xl">
                         <span className="text-[10px] font-bold text-slate-500 dark:text-slate-400">
                           Isi 1 Bulan:
@@ -2914,6 +3655,40 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                           <div key={`empty_${emptyIdx}`} className="h-11 rounded-lg bg-slate-50/40 dark:bg-slate-900/20" />
                         ))}
                         {monthlyDays.map((day) => {
+                          if (rosterMode === 'absensi') {
+                            const att = resolveAttendanceCell(k, day.dateStr);
+                            const isDimmed = !matchesAttendanceFilter(att.code);
+                            return (
+                              <button
+                                key={day.dateStr}
+                                type="button"
+                                title={`${att.tooltip}${userIsAdmin ? ' — Klik untuk edit hasil absensi' : ''}`}
+                                onClick={() => {
+                                  if (!userIsAdmin) return;
+                                  handleOpenEditAbsensi(k, day.dateStr);
+                                }}
+                                className={`h-11 rounded-lg border p-1 flex flex-col items-center justify-between transition-all ${att.badgeBg} ${att.badgeText} ${
+                                  userIsAdmin ? 'cursor-pointer active:scale-95 hover:ring-1 hover:ring-indigo-400' : 'cursor-default'
+                                } ${isDimmed ? 'opacity-25' : ''}`}
+                              >
+                                <span
+                                  className={`text-[9px] font-mono leading-none self-start ${
+                                    day.isWeekend ? 'font-black text-rose-600 dark:text-rose-400' : 'opacity-75'
+                                  }`}
+                                >
+                                  {String(day.dayNum).padStart(2, '0')}
+                                </span>
+                                <span
+                                  className={`font-black leading-none ${
+                                    att.shortCode.length >= 5 ? 'text-[8px] tracking-tighter' : 'text-[9.5px]'
+                                  }`}
+                                >
+                                  {att.shortCode}
+                                </span>
+                              </button>
+                            );
+                          }
+
                           const cellKey = `${k.nik}_${day.dateStr}`;
                           const draft = matrixDrafts[cellKey];
                           const savedRec = rosterByNikDate.get(cellKey);
@@ -2986,14 +3761,14 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                       return (
                         <th
                           key={d.dateStr}
-                          onClick={() => userIsAdmin && handleFillDayColumn(d.dateStr)}
+                          onClick={() => userIsAdmin && rosterMode === 'jadwal' && handleFillDayColumn(d.dateStr)}
                           title={
-                            userIsAdmin
+                            userIsAdmin && rosterMode === 'jadwal'
                               ? `Klik tanggal ${d.dayNum} untuk mengisi "${activeBrushShift}" ke seluruh staf terpilih pada hari ini`
                               : d.dateStr
                           }
                           className={`py-2 px-1 text-center min-w-[40px] sm:min-w-[38px] border-r border-slate-100 dark:border-slate-800/70 transition-colors ${
-                            userIsAdmin ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/40' : ''
+                            userIsAdmin && rosterMode === 'jadwal' ? 'cursor-pointer hover:bg-indigo-50 dark:hover:bg-indigo-950/40' : ''
                           } ${
                             isToday
                               ? 'bg-indigo-600/15 text-indigo-700 dark:text-indigo-300 font-black'
@@ -3025,7 +3800,7 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                         <td className="sticky left-0 z-10 bg-white dark:bg-[#131d31] py-1.5 px-1.5 sm:py-2 sm:px-2.5 w-[112px] min-w-[112px] max-w-[112px] sm:w-auto sm:min-w-[310px] sm:max-w-none border-r border-slate-200 dark:border-slate-800 shadow-2xs">
                           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
                             <label className="flex items-start sm:items-center gap-1.5 sm:gap-2 min-w-0 cursor-pointer">
-                              {userIsAdmin && (
+                              {userIsAdmin && rosterMode === 'jadwal' && (
                                 <input
                                   type="checkbox"
                                   checked={isSelected}
@@ -3049,8 +3824,8 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                               </div>
                             </label>
 
-                            {/* Per-Employee 1-Click Full Month Fill Buttons (Compact row under name on mobile, right-aligned on desktop) */}
-                            {userIsAdmin && (
+                            {/* Per-Employee 1-Click Full Month Fill Buttons (Hanya Mode Jadwal Shift) */}
+                            {userIsAdmin && rosterMode === 'jadwal' && (
                               <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                                 {[
                                   { label: 'S1', pattern: 'Shift 1', desc: 'Set 1 bulan penuh Shift 1 (08:00-17:00, Minggu Libur)' },
@@ -3092,8 +3867,36 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                           </div>
                         </td>
 
-                        {/* Day Cells (Touch-Safe: Scrolling horizontally on mobile will NOT accidentally paint cells) */}
+                        {/* Day Cells (Terpisah: Jadwal Shift vs Hasil Absensi) */}
                         {visibleMonthlyDays.map((day) => {
+                          if (rosterMode === 'absensi') {
+                            const att = resolveAttendanceCell(k, day.dateStr);
+                            const isDimmed = !matchesAttendanceFilter(att.code);
+                            return (
+                              <td
+                                key={day.dateStr}
+                                onClick={() => {
+                                  if (!userIsAdmin) return;
+                                  handleOpenEditAbsensi(k, day.dateStr);
+                                }}
+                                className={`p-1 text-center border-r border-slate-100 dark:border-slate-800/50 ${
+                                  day.isWeekend ? 'bg-rose-50/20 dark:bg-rose-950/10' : ''
+                                }`}
+                              >
+                                <div
+                                  title={`${att.tooltip}${userIsAdmin ? ' — Klik untuk edit hasil absensi' : ''}`}
+                                  className={`w-full py-1.5 px-0.5 rounded-lg font-black border transition-all relative ${
+                                    att.shortCode.length >= 5 ? 'text-[8px] sm:text-[8.5px] tracking-tighter' : 'text-[9.5px]'
+                                  } ${att.badgeBg} ${att.badgeText} ${
+                                    userIsAdmin ? 'cursor-pointer hover:scale-105' : ''
+                                  } ${isDimmed ? 'opacity-25' : ''}`}
+                                >
+                                  {att.shortCode}
+                                </div>
+                              </td>
+                            );
+                          }
+
                           const cellKey = `${k.nik}_${day.dateStr}`;
                           const draft = matrixDrafts[cellKey];
                           const savedRec = rosterByNikDate.get(cellKey);
@@ -3157,8 +3960,8 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             </div>
           )}
 
-          {/* Bottom Save Footer inside Card */}
-          {userIsAdmin && (
+          {/* Bottom Save Footer inside Card (Hanya Mode Jadwal Shift) */}
+          {userIsAdmin && rosterMode === 'jadwal' && (
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 {Object.keys(matrixDrafts).length > 0 ? (
@@ -3204,8 +4007,8 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
             </div>
           )}
 
-          {/* STICKY FLOATING SAVE BAR AT BOTTOM OF SCREEN WHEN DRAFTS EXIST */}
-          {userIsAdmin && Object.keys(matrixDrafts).length > 0 && (
+          {/* STICKY FLOATING SAVE BAR AT BOTTOM OF SCREEN WHEN DRAFTS EXIST (Hanya Mode Jadwal Shift) */}
+          {userIsAdmin && rosterMode === 'jadwal' && Object.keys(matrixDrafts).length > 0 && (
             <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 w-[94%] max-w-2xl bg-slate-900/95 dark:bg-slate-950/95 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 flex flex-wrap items-center justify-between gap-3 backdrop-blur-md">
               <div className="flex items-center gap-2.5">
                 <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-ping shrink-0" />
@@ -3319,6 +4122,30 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                     </td>
 
                     {weeklyDays.map((day) => {
+                      if (rosterMode === 'absensi') {
+                        const att = resolveAttendanceCell(k, day.dateStr);
+                        const isDimmed = !matchesAttendanceFilter(att.code);
+                        return (
+                          <td key={day.dateStr} className="py-2 px-1 sm:px-1.5 text-center border-r border-slate-100 dark:border-slate-800/50">
+                            <button
+                              type="button"
+                              onClick={() => userIsAdmin && handleOpenEditAbsensi(k, day.dateStr)}
+                              title={`${att.tooltip}${userIsAdmin ? ' — Klik untuk edit hasil absensi' : ''}`}
+                              className={`w-full py-1.5 px-1 rounded-xl text-[10px] sm:text-[11px] font-extrabold border transition-all block ${att.badgeBg} ${att.badgeText} ${
+                                userIsAdmin ? 'cursor-pointer hover:opacity-85' : 'cursor-default'
+                              } ${isDimmed ? 'opacity-25' : ''}`}
+                            >
+                              <div className="truncate">{att.label}</div>
+                              {(att.jamMasuk || att.jamPulang) && (
+                                <div className="text-[9px] font-mono opacity-80 truncate">
+                                  {att.jamMasuk || '-'}–{att.jamPulang || '-'}
+                                </div>
+                              )}
+                            </button>
+                          </td>
+                        );
+                      }
+
                       const shiftRec = rosterByNikDate.get(`${k.nik}_${day.dateStr}`);
                       const sName = shiftRec?.shift || '-';
                       const badgeStyle = getShiftBadgeStyle(sName);
@@ -4260,6 +5087,166 @@ export const RosterShiftView: React.FC<RosterShiftViewProps> = ({ session, onSho
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDIT HASIL ABSENSI (Hanya mengubah presensi, TIDAK menyentuh jadwal shift) */}
+      {isAbsensiModalOpen && editingAbsensi && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-white dark:bg-[#131d31] rounded-3xl shadow-2xl border border-slate-200 dark:border-slate-800 overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <ClipboardCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900 dark:text-white">
+                    Edit Hasil Absensi
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                    {editingAbsensi.nama} ({editingAbsensi.nik}) · {editingAbsensi.tanggal}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAbsensiModalOpen(false);
+                  setEditingAbsensi(null);
+                }}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAbsensiEdit} className="p-5 space-y-3.5 text-xs">
+              <div className="p-3 rounded-2xl bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-200/70 dark:border-indigo-800/60 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 uppercase">
+                    Jadwal Shift (Tetap Terjaga)
+                  </div>
+                  <div className="text-xs font-extrabold text-slate-800 dark:text-slate-100">
+                    {editingAbsensi.rosterShift}
+                  </div>
+                </div>
+                <span className="text-[10px] text-indigo-600 dark:text-indigo-300 font-semibold">
+                  Tidak ikut terubah
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Status Hasil Absensi
+                </label>
+                <select
+                  value={editingAbsensi.status}
+                  onChange={(e) =>
+                    setEditingAbsensi({
+                      ...editingAbsensi,
+                      status: e.target.value as any,
+                    })
+                  }
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="Hadir">Tepat Waktu / Hadir Penuh</option>
+                  <option value="Terlambat">Terlambat (Masuk &amp; Pulang Lengkap)</option>
+                  <option value="TakPulang">Datang, Tidak Absen Pulang</option>
+                  <option value="Cuti">Cuti (Unpaid)</option>
+                  <option value="Izin">Izin (Unpaid)</option>
+                  <option value="Sakit">Sakit (Unpaid)</option>
+                  <option value="Alpha">Bolos / Alpha</option>
+                  <option value="Libur">Libur / Off</option>
+                </select>
+              </div>
+
+              {(editingAbsensi.status === 'Hadir' ||
+                editingAbsensi.status === 'Terlambat' ||
+                editingAbsensi.status === 'TakPulang') && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                      Jam Masuk Aktual
+                    </label>
+                    <input
+                      type="time"
+                      value={editingAbsensi.jam_masuk}
+                      onChange={(e) =>
+                        setEditingAbsensi({ ...editingAbsensi, jam_masuk: e.target.value })
+                      }
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono font-bold text-slate-800 dark:text-slate-100"
+                    />
+                  </div>
+                  {editingAbsensi.status !== 'TakPulang' && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                        Jam Pulang Aktual
+                      </label>
+                      <input
+                        type="time"
+                        value={editingAbsensi.jam_pulang}
+                        onChange={(e) =>
+                          setEditingAbsensi({ ...editingAbsensi, jam_pulang: e.target.value })
+                        }
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 font-mono font-bold text-slate-800 dark:text-slate-100"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-300 mb-1">
+                  Catatan Absensi
+                </label>
+                <input
+                  type="text"
+                  value={editingAbsensi.catatan}
+                  onChange={(e) =>
+                    setEditingAbsensi({ ...editingAbsensi, catatan: e.target.value })
+                  }
+                  placeholder="Contoh: Koreksi jam tap, surat dokter, dll."
+                  className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-between gap-2 border-t border-slate-100 dark:border-slate-800">
+                {editingAbsensi.presensiId ? (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAbsensiLog}
+                    disabled={savingAbsensi}
+                    className="px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 font-bold hover:bg-rose-100 cursor-pointer flex items-center gap-1"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Hapus Log</span>
+                  </button>
+                ) : (
+                  <span />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAbsensiModalOpen(false);
+                      setEditingAbsensi(null);
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingAbsensi}
+                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-black shadow-sm cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{savingAbsensi ? 'Menyimpan...' : 'Simpan Absensi'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
       )}
