@@ -174,7 +174,11 @@ export const PesananSayaView: React.FC<PesananSayaViewProps> = ({
 
         {activeTab === 'shopee' && (
           <div>
-            <ShopeeTab onShowToast={onShowToast} />
+            <ShopeeTab
+              session={session}
+              productCatalog={productCatalog}
+              onShowToast={onShowToast}
+            />
           </div>
         )}
         {activeTab === 'iglive' && (

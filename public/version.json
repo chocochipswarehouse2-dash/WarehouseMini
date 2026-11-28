@@ -1,13 +1,13 @@
 {
-  "version": "v2.39.1",
-  "versionCode": 591,
-  "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v591-2101",
-  "releaseTitle": "WMS v2.39.1 — Pembaruan Sistem & Optimasi Operasional",
+  "version": "v2.40.0",
+  "versionCode": 600,
+  "buildDate": "28 November 2026",
+  "buildHash": "wms-261128-v600-1257",
+  "releaseTitle": "WMS v2.40.0 — Fulfilment Pesanan Online (Jalur C Fase 1)",
   "releaseNotes": [
-    "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
-    "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
-    "Notifikasi Data Scan Tersimpan kini wajib terverifikasi masuk ke Supabase terlebih dahulu (anti false-positive) & dukungan ganti lokasi tag #IN X002 / #X002"
+    "Impor Shopee Dual-Mode (Tab Perlu Dikirim cepat & Tab Semua audit batal ke TAHAN)",
+    "Pengaman pesanan hilang (Perlu Dicek), deteksi Pre-order & item hadiah/kemasan non-SKU",
+    "Sinkronisasi cloud multi-user + IndexedDB cache & watermark gate + Pengaturan Fulfilment"
   ],
   "minSupportedVersion": "v2.0.0"
 }

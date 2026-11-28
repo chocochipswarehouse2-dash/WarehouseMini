@@ -25,6 +25,7 @@ description: Guardrails, schema constraints, watermark/SWR/dedup patterns, measu
 | `wms_settings` | 2 baris | **392.7 KB** (`katalog_manual_data` 203 KB + `recount_audit_map` 93.5 KB) | Watermark gate `updated_at` (~150B) + `LS_SETTINGS_SNAPSHOT_KEY` + dedup |
 | `picking_list` | 7.841 total (`limit=800`) | **279.4 KB/call** | Probe ringan **~200B** pada polling 60s (`status=neq.SELESAI&limit=50` + `created_at.desc&limit=1`); full fetch hanya jika signature berubah |
 | `manual_shipment` | 120 baris | **159.0 KB** | SWR 2 menit + watermark `updated_at` & `count=exact` |
+| `online_orders` / `wms_online_orders_v1` | Dinamis (pesanan aktif online) | Bervariasi | SWR 60s + IndexedDB (`wms_online_orders_idb_v1`) + watermark gate `updated_at` (~150B) + fallback `wms_system_docs` (`wms_online_orders_v1`, `wms_online_fulfilment_setup_v1`) |
 
 ---
 

@@ -15,20 +15,33 @@ export interface VersionInfo {
 }
 
 export const CURRENT_APP_VERSION_INFO: VersionInfo = {
-  "version": "v2.39.1",
-  "versionCode": 591,
-  "buildDate": "27 November 2026",
-  "buildHash": "wms-261127-v591-2101",
-  "releaseTitle": "WMS v2.39.1 — Pembaruan Sistem & Optimasi Operasional",
+  "version": "v2.40.0",
+  "versionCode": 600,
+  "buildDate": "28 November 2026",
+  "buildHash": "wms-261128-v600-1257",
+  "releaseTitle": "WMS v2.40.0 — Fulfilment Pesanan Online (Jalur C Fase 1)",
   "releaseNotes": [
-    "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
-    "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
-    "Notifikasi Data Scan Tersimpan kini wajib terverifikasi masuk ke Supabase terlebih dahulu (anti false-positive) & dukungan ganti lokasi tag #IN X002 / #X002"
+    "Impor Shopee Dual-Mode (Tab Perlu Dikirim cepat & Tab Semua audit batal ke TAHAN)",
+    "Pengaman pesanan hilang (Perlu Dicek), deteksi Pre-order & item hadiah/kemasan non-SKU",
+    "Sinkronisasi cloud multi-user + IndexedDB cache & watermark gate + Pengaturan Fulfilment"
   ],
   "minSupportedVersion": "v2.0.0"
 };
 
 export const VERSION_HISTORY: VersionInfo[] = [
+  {
+    "version": "v2.39.1",
+    "versionCode": 591,
+    "buildDate": "27 November 2026",
+    "buildHash": "wms-261127-v591-2101",
+    "releaseTitle": "WMS v2.39.1 — Pembaruan Sistem & Optimasi Operasional",
+    "releaseNotes": [
+      "Perbaikan bug localStorage penuh (QuotaExceededError) yang membuat scan >5 item gagal tersimpan diam-diam meski muncul notif berhasil",
+      "Perlindungan 3 lapis Outbox (In-Memory + Auto-Eviction localStorage + IndexedDB) & perbaikan race condition antrean simpan beruntun",
+      "Notifikasi Data Scan Tersimpan kini wajib terverifikasi masuk ke Supabase terlebih dahulu (anti false-positive) & dukungan ganti lokasi tag #IN X002 / #X002"
+    ],
+    "minSupportedVersion": "v2.0.0"
+  },
   {
     "version": "v2.39.0",
     "versionCode": 590,
@@ -116,19 +129,6 @@ export const VERSION_HISTORY: VersionInfo[] = [
       "Evaluasi keterlambatan KPI & Payroll kini memprioritaskan jam masuk Roster aktual (menghilangkan false late Shift 3a/3b yang tercatat Shift 1)",
       "Deteksi pulang normal mendukung durasi kerja penuh >= 8 jam 50 menit untuk tukar shift",
       "Bobot KPI diseimbangkan ke Kehadiran 40%, Berangkat 35%, Pulang 25% + tie-breaker kehadiran penuh & tampilkan % Kehadiran di podium KPI"
-    ],
-    "minSupportedVersion": "v2.0.0"
-  },
-  {
-    "version": "v2.36.0",
-    "versionCode": 560,
-    "buildDate": "27 November 2026",
-    "buildHash": "wms-261127-v560-1059",
-    "releaseTitle": "WMS v2.36.0 — Prorata Gaji Karyawan Baru, Join Date & Pemilih Periode Terpisah",
-    "releaseNotes": [
-      "Input Tanggal Bergabung (Join Date) & Tanggal Lahir ditambahkan di Master Karyawan (modal Tambah/Edit & Detail)",
-      "Tanggal sebelum join date otomatis berstatus Belum Bergabung (Pra-Join) tanpa Alpha/Bolos atau penalti KPI, dengan prorata Gaji Pokok & Tunjangan proporsional hari kerja aktif",
-      "Pemilih periode 26-25 di HR Rekap dipisah menjadi dropdown Nama Bulan (Januari-Desember) + panah bulan & field Tahun manual"
     ],
     "minSupportedVersion": "v2.0.0"
   }

@@ -2,7 +2,27 @@
 
 Modul di dalam WMS gudang fashion untuk menangani pesanan semua marketplace secara semi-manual: impor pesanan, picking list, scan-pack, dan handover ke kurir.
 
-Status: Draft v2 · Pemilik produk: pengelola gudang · Stack: Supabase, Vercel, Google Apps Script (GAS)
+Status: Disetujui v3 — Eksekusi Fase 1 (`v2.40.0`) · Pemilik produk: pengelola gudang · Stack: Supabase, Vercel, Google Apps Script (GAS)
+
+> [!NOTE]
+> **Keputusan Final v3 (A4–A6, B1–B3, X1–X10, Y1–Y4 — Disetujui 28 Nov 2026)**:
+> 1. **Alur Impor Dual-Mode Shopee (Y4)**:
+>    - **Harian Cepat (`perlu_dikirim`)**: Admin mengunggah ekspor Tab **"Perlu Dikirim"** (49 kolom, ringan) untuk tarik pesanan baru & melengkapi resi sepanjang hari. Pesanan aktif di WMS yang tiba-tiba hilang dari file ini otomatis ditandai **`PERLU CEK`** (`check`).
+>    - **Audit & Deteksi Batal (`semua_audit`)**: Admin mengunggah ekspor Tab **"Semua"** (50 kolom, memuat kolom `Alasan Pembatalan`) atau Tab **"Dibatalkan"** saat diperlukan untuk melengkapi status & mendeteksi pembatalan. Pesanan yang sudah masuk proses gudang dan terbaca `Batal` otomatis berubah menjadi **`TAHAN`** (`hold`).
+> 2. **Nomor Urut Harian & Blok Ekspedisi (Y1, Y2, X8)**:
+>    - Nomor urut memakai **1 deret per hari** untuk semua ekspedisi (`1, 2, 3, ...`), dikelompokkan per blok ekspedisi dengan urutan default **`Instan → Same Day → JNE → SPX Standard → Lainnya`**.
+>    - **1 blok ekspedisi = 1 Picking List / Tugas Picking** (di app maupun pesan WA grup).
+>    - Pada putaran/tarikan proses berikutnya di hari yang sama, nomor urut melanjutkan dari nomor terakhir dan kembali mengurutkan dari prioritas blok ekspedisi teratas (mis. Instan 44–49, JNE 50–...).
+> 3. **Jam Closing 19:00 Tanpa Approval Khusus (X6, Y3)**:
+>    - Pesanan yang masuk/diproses setelah jam closing `19:00` default masuk nomor urut besok, namun **siapa pun boleh memproses untuk hari yang sama tanpa tombol/approval khusus**.
+> 4. **Ceklis, 1 Pesanan = 1 Keranjang (`#KRJ`), & Item Hadiah/Kemasan (X5, X7)**:
+>    - Ceklis admin + scan packer memakai **scanner Bluetooth** (dengan alternatif **kamera HP**) serta **1 pesanan = 1 keranjang** (barcode `#KRJ`).
+>    - Hadiah dengan SKU terdaftar di Master Produk wajib discan; hadiah tanpa SKU (`freeleatherwallet`) dan item kemasan (`bagkecil`, `BAGBESAR`, `bubblewrap`) dicentang manual (kemasan tidak ikut dipicking).
+> 5. **Info Stok Store, Pre-order, Perubahan Manual, & Kirim Parsial (X1–X4, X9–X10)**:
+>    - Stok kurang menampilkan **info stok store maksimal 3 store terdekat** sesuai Setup Prioritas Store (permintaan barang ke store dibuat manual oleh admin).
+>    - Pre-order boleh dilepas oleh **admin** saat ready; kirim parsial mengirim barang ready lebih dulu dan sisa item memakai modul **Manual Shipment + Label A6 WMS**.
+>    - Perubahan pesanan manual (ganti varian/warna/size) dicatat dengan audit log & dikunci dari impor ulang (`is_manual_edited`).
+> 6. **Peta 6 Fase**: Fase 1 (Impor Shopee Dual-Mode + Setup Dasar) → Fase 2 (Nomor Urut, Batch, Picking) → Fase 3 (Ceklis, Keranjang `#KRJ`, Scan Packer) → Fase 4 (Handover + TAHAN) → Fase 5 (Pre-order + Kirim Parsial) → Fase 6 (Pilot Shopee), lalu adapter marketplace lain (TikTok, Lazada, Website, WooCommerce).
 
 ## 1. Ringkasan
 

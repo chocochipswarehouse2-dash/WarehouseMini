@@ -4,6 +4,20 @@
 
 ---
 
+## v2.40.0 — 28 November 2026
+**Modul**: Fulfilment Pesanan Online — Jalur C Fase 1 (`tools/sql/fulfilment_online_jalur_c.sql`, `src/services/onlineFulfilmentService.ts`, `src/components/PesananSaya/ShopeeTab.tsx`, `src/components/PesananSaya/PesananSayaView.tsx`, `src/components/PesananSaya/OnlineFulfilment/*`)
+- **Fondasi Database & Cloud Sync (`online_orders`, `online_import_jobs` + Fallback `wms_system_docs`)**:
+  - Memindahkan data Shopee dari browser-only ke penyimpanan cloud multi-user dengan **IndexedDB cache** (`wms_online_orders_idb_v1`) + **Watermark Gate ~150B** (`fetchSupabaseWatermark`) + SWR 60 detik.
+  - Menyediakan skrip migrasi DDL `tools/sql/fulfilment_online_jalur_c.sql` dan fallback otomatis ke `wms_system_docs` (`wms_online_orders_v1`, `wms_online_import_jobs_v1`, `wms_online_fulfilment_setup_v1`) bila tabel belum dibuat di SQL Editor.
+- **Impor Dual-Mode Shopee & Pengaman Pembatalan (`TAHAN` & `Perlu Dicek`)**:
+  - **Mode Cepat (`perlu_dikirim`)**: Memproses ekspor Tab **"Perlu Dikirim"** secara cepat sepanjang hari tanpa menggandakan pesanan, melengkapi `No. Resi` baru, menandai pesanan Instan/Same Day ber-resi sebagai mendesak, serta menandai **`Perlu Dicek`** bila pesanan aktif hilang dari file terbaru.
+  - **Mode Audit (`semua_audit`)**: Memproses ekspor Tab **"Semua"** (memuat kolom `Alasan Pembatalan`) untuk menyaring riwayat lama non-aktif tanpa mengotori database, menyinkronkan status kirim, dan otomatis mengunci pesanan yang sudah masuk proses gudang namun dibatalkan pembeli ke status **`TAHAN` (`hold`)**.
+  - **Integrasi Master Produk & Item Khusus**: Validasi SKU via `lookupProductBySku`, penandaan item hadiah & kemasan non-SKU (`freeleatherwallet`, `bagkecil`, `BAGBESAR`, `bubblewrap`), serta deteksi otomatis antrean **Pre-order** (tenggat > 5 hari atau daftar SKU).
+- **UI 2-Mode & Setup Dasar Fulfilment (`ShopeeTab.tsx`, `OnlineImportPreviewModal`, `OnlineFulfilmentSetupModal`, `OnlineImportHistoryModal`)**:
+  - Tampilan seragam 2-Mode (**Tabel** & **Kartu**), 6 tab status (`Siap Diproses`, `Pre-order`, `Sedang Diproses`, `TAHAN`, `Perlu Dicek`, `Batal & Selesai`), pratinjau diff sebelum simpan, riwayat impor, aksi cepat per tahap, cetak ringkasan A4, serta modal **Pengaturan Fulfilment** (urutan blok ekspedisi `Instan -> Same Day -> JNE -> SPX Standard -> Lainnya`, jam closing `19:00` tanpa approval khusus, pre-order, hadiah/kemasan, prioritas store, batas jeda impor, & nomor WA alert).
+
+---
+
 ## v2.35.1 — 28 November 2026
 **Modul**: Inventory & Keranjang Order Picking (`src/components/inventory/InventoryList.tsx`, `src/components/inventory/InventoryDetailDrawer.tsx`, `src/components/inventory/InventoryPickingCartDrawer.tsx`, `src/components/InventoryView.tsx`, `src/components/PesananSaya/DistribusiPickingModal.tsx`)
 - **Dukungan Penuh Request / Keranjang Order dari Studio, Shopee, TikTok, IG Live (Blok F) & Perbaikan**:
