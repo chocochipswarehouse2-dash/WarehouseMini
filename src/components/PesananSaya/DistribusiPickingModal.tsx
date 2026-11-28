@@ -149,13 +149,47 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
     sourceArea?: string
   ): boolean => {
     const cleanSource = String(sourceArea || '').trim();
-    if (!cleanSource || cleanSource.toUpperCase() === 'ALL') {
+    // Default Pengecekan SJ (tanpa source_area): ketat Priority 1 & 2 saja
+    if (!cleanSource) {
       return isPickingEligibleForPengecekan(loc, area);
     }
+    const cleanLoc = String(loc || '').trim().toUpperCase();
+    if (!cleanLoc || cleanLoc === '-' || cleanLoc === '--') return false;
+
+    const upperSource = cleanSource.toUpperCase();
+    // Keranjang Order: Semua Area Normal (Warehouse, Aksesoris, Transit, Kolian & Blok F; tanpa Perbaikan/Anomali)
+    if (upperSource === 'ALL' || upperSource === 'ALL_NORMAL') {
+      return isWarehouseLocation(cleanLoc, area);
+    }
+    // Keranjang Order: Semua Area termasuk Perbaikan (Warehouse, Kolian, Aksesoris, Transit, Blok F & Perbaikan)
+    if (upperSource === 'ALL_INCLUDING_PERBAIKAN') {
+      const detected = getAreaFromLokasi(cleanLoc, area);
+      return isWarehouseLocation(cleanLoc, area) || detected === 'Perbaikan';
+    }
+    // Sub-lokasi spesifik Blok F: STUDIO, SHOPEE, TIKTOK, IGLIVE
+    if (upperSource === 'STUDIO') return cleanLoc.includes('STUDIO');
+    if (upperSource === 'SHOPEE') return cleanLoc.includes('SHOPEE');
+    if (upperSource === 'TIKTOK') return cleanLoc.includes('TIKTOK');
+    if (upperSource === 'IGLIVE' || upperSource === 'IG LIVE') {
+      return cleanLoc.includes('IGLIVE') || cleanLoc.includes('IG LIVE');
+    }
+
     const normalizedTarget = cleanSource.toLowerCase() === 'koli' ? 'kolian' : cleanSource.toLowerCase();
-    const detectedArea = getAreaFromLokasi(loc, area).toLowerCase();
+    const detectedArea = getAreaFromLokasi(cleanLoc, area).toLowerCase();
     const normalizedDetected = detectedArea === 'koli' ? 'kolian' : detectedArea;
     return normalizedDetected === normalizedTarget;
+  };
+
+  const formatSourceAreaBadge = (sourceArea?: string): string => {
+    const map: Record<string, string> = {
+      ALL_NORMAL: 'Semua Area (incl. Blok F)',
+      ALL_INCLUDING_PERBAIKAN: 'Semua Area + Perbaikan',
+      STUDIO: 'Studio (Blok F)',
+      SHOPEE: 'Shopee (Blok F)',
+      TIKTOK: 'TikTok (Blok F)',
+      IGLIVE: 'IG Live (Blok F)',
+    };
+    return map[String(sourceArea || '')] || String(sourceArea || '');
   };
 
   // Helper: Extract all warehouse locations for a given item / SKU across realtime stock, master catalog, and draft items
@@ -931,7 +965,7 @@ export const DistribusiPickingModal: React.FC<DistribusiPickingModalProps> = ({
                 {primaryDraft?.source_area && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
                     <MapPin className="w-2.5 h-2.5 shrink-0" />
-                    <span>Area: {primaryDraft.source_area}</span>
+                    <span>Area: {formatSourceAreaBadge(primaryDraft.source_area)}</span>
                   </span>
                 )}
               </div>

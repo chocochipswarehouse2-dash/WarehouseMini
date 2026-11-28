@@ -4,6 +4,15 @@
 
 ---
 
+## v2.35.1 — 28 November 2026
+**Modul**: Inventory & Keranjang Order Picking (`src/components/inventory/InventoryList.tsx`, `src/components/inventory/InventoryDetailDrawer.tsx`, `src/components/inventory/InventoryPickingCartDrawer.tsx`, `src/components/InventoryView.tsx`, `src/components/PesananSaya/DistribusiPickingModal.tsx`)
+- **Dukungan Penuh Request / Keranjang Order dari Studio, Shopee, TikTok, IG Live (Blok F) & Perbaikan**:
+  - **Fix Tombol Keranjang Nonaktif akibat Rak Minus / Area Perbaikan**: `InventoryList` (Desktop Tabel, Mobile Tabel, & Mobile Kartu) serta `InventoryDetailDrawer` kini menjumlahkan stok rak **positif (`qty > 0`)** dari semua area yang tampil (termasuk **Blok F** & **Perbaikan**), bukan total bersih yang terpotong stok minus dari rak lain (seperti `KOLI R090 (-10)`).
+  - **Filter Sub-Lokasi Blok F & Perbaikan 1-Klik di Keranjang Order**: Menambahkan chip **Area Sumber Picking** langsung untuk **`Studio`**, **`Shopee`**, **`TikTok`**, **`IG Live`**, **`Blok F`**, **`Perbaikan`**, dan **`Semua + Perbaikan`** lengkap dengan jumlah SKU aktif, auto-deteksi saat keranjang berisi item Perbaikan, serta saran pindah area 1-klik bila stok SKU berada di rak area lain.
+  - **Fix Propagasi `source_area` ke `DistribusiPickingModal`**: Memisahkan mode `ALL_NORMAL` / `ALL_INCLUDING_PERBAIKAN` / `STUDIO` / `SHOPEE` / `TIKTOK` / `IGLIVE` / `Perbaikan` dari Keranjang Order agar lokasi Blok F & Perbaikan tidak lagi terbuang saat diproses ke Tugas Picking App / WA / Cetak A4, sementara **Pengecekan SJ** (`source_area` kosong) tetap ketat Priority 1 & 2 (`isPickingEligibleForPengecekan`).
+
+---
+
 ## v2.35.0 — 27 November 2026
 **Modul**: Asisten AI Pintar WMS (`src/services/wmsAiKnowledgeBase.ts`, `src/services/wmsAiService.ts`, `src/services/wmsAiExtendedTools.ts`, `api/ai.js`, `src/components/ai/WmsAiModal.tsx`, `src/App.tsx`)
 - **Basis Pengetahuan Workflow & SOP Menyeluruh (`wmsAiKnowledgeBase.ts`)**:

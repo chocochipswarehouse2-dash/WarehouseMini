@@ -69,11 +69,16 @@ export interface InventoryPickingCartDrawerProps {
 const SOURCE_AREA_OPTIONS = [
   { id: 'ALL', label: 'Semua Area Normal', shortLabel: 'Semua Area', desc: 'Warehouse, Kolian, Aksesoris, Transit & Blok F' },
   { id: 'Warehouse', label: 'Warehouse', shortLabel: 'Warehouse', desc: 'Hanya rak A/B/C/D/E' },
-  { id: 'Blok F', label: 'Blok F', shortLabel: 'Blok F', desc: 'TIKTOK, SHOPEE, STUDIO, IGLIVE' },
+  { id: 'Blok F', label: 'Semua Blok F', shortLabel: 'Blok F', desc: 'STUDIO, SHOPEE, TIKTOK, IGLIVE' },
+  { id: 'STUDIO', label: 'Studio (Blok F)', shortLabel: 'Studio', desc: 'Khusus stok di rak STUDIO' },
+  { id: 'SHOPEE', label: 'Shopee (Blok F)', shortLabel: 'Shopee', desc: 'Khusus stok di rak SHOPEE' },
+  { id: 'TIKTOK', label: 'TikTok (Blok F)', shortLabel: 'TikTok', desc: 'Khusus stok di rak TIKTOK' },
+  { id: 'IGLIVE', label: 'IG Live (Blok F)', shortLabel: 'IG Live', desc: 'Khusus stok di rak IGLIVE' },
+  { id: 'Perbaikan', label: 'Perbaikan', shortLabel: 'Perbaikan', desc: 'CC (Cuci), PMK (Permak), DF (Defect), SORTIR' },
+  { id: 'ALL_INCLUDING_PERBAIKAN', label: 'Semua + Perbaikan', shortLabel: 'Semua + Perbaikan', desc: 'Gabungan seluruh area termasuk Blok F & Perbaikan' },
   { id: 'Kolian', label: 'Kolian / Koli', shortLabel: 'Kolian', desc: 'Rak R0, V0, Z0 & KOLI' },
   { id: 'Aksesoris', label: 'Aksesoris', shortLabel: 'Aksesoris', desc: 'BELT, CARD, GIFT, BOX' },
   { id: 'Transit', label: 'Transit', shortLabel: 'Transit', desc: 'Area X / TRANSIT' },
-  { id: 'Perbaikan', label: 'Perbaikan', shortLabel: 'Perbaikan', desc: 'CC (Cuci), PMK (Permak), DF (Defect), SORTIR' },
   { id: 'Anomali', label: 'Anomali', shortLabel: 'Anomali', desc: 'Lokasi non-standar / perlu verifikasi' },
 ];
 
@@ -89,6 +94,37 @@ function normalizeLocArea(loc: { lokasi: string; area?: string }): string {
     if (rawArea.toLowerCase() === 'anomali') return 'Anomali';
   }
   return getAreaFromLokasi(loc.lokasi, loc.area);
+}
+
+function detectBlokFSubLocation(lokasi: string): 'STUDIO' | 'SHOPEE' | 'TIKTOK' | 'IGLIVE' | null {
+  const u = String(lokasi || '').trim().toUpperCase();
+  if (u.includes('STUDIO')) return 'STUDIO';
+  if (u.includes('SHOPEE')) return 'SHOPEE';
+  if (u.includes('TIKTOK')) return 'TIKTOK';
+  if (u.includes('IGLIVE') || u.includes('IG LIVE')) return 'IGLIVE';
+  return null;
+}
+
+function matchesCartSourceArea(
+  loc: { lokasi: string; area?: string },
+  locArea: string,
+  selectedSourceArea: string
+): boolean {
+  if (selectedSourceArea === 'ALL') {
+    return locArea !== 'Perbaikan' && locArea !== 'Anomali';
+  }
+  if (selectedSourceArea === 'ALL_INCLUDING_PERBAIKAN') {
+    return locArea !== 'Anomali';
+  }
+  if (
+    selectedSourceArea === 'STUDIO' ||
+    selectedSourceArea === 'SHOPEE' ||
+    selectedSourceArea === 'TIKTOK' ||
+    selectedSourceArea === 'IGLIVE'
+  ) {
+    return detectBlokFSubLocation(loc.lokasi) === selectedSourceArea;
+  }
+  return locArea === selectedSourceArea;
 }
 
 const TUJUAN_OPTIONS = [
@@ -138,12 +174,42 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
   });
 
   useEffect(() => {
-    if (isOpen && initialSourceArea) {
-      const normalized = initialSourceArea === 'Koli' ? 'Kolian' : initialSourceArea;
-      if (SOURCE_AREA_OPTIONS.some((opt) => opt.id === normalized)) {
-        setSelectedSourceArea(normalized);
+    if (!isOpen) return;
+    const normalized = initialSourceArea === 'Koli' ? 'Kolian' : String(initialSourceArea || 'ALL').trim();
+    if (normalized !== 'ALL' && SOURCE_AREA_OPTIONS.some((opt) => opt.id === normalized)) {
+      setSelectedSourceArea(normalized);
+      return;
+    }
+
+    // Jika dibuka dari filter "Semua" dan isi keranjang menyertakan item yang hanya ada di Perbaikan,
+    // otomatis pilih Perbaikan (bila semuanya Perbaikan) atau Semua + Perbaikan (bila campuran).
+    if (cartItems.length > 0 && availableRows.length > 0) {
+      const posBySku = new Map<string, Array<{ lokasi: string; qty: number; area: string }>>();
+      for (const r of availableRows) {
+        if (!r || !r.sku) continue;
+        const locs = (r.locations || [])
+          .filter((l) => l && l.lokasi && l.lokasi !== '-' && (Number(l.qty) || 0) > 0)
+          .map((l) => ({ lokasi: l.lokasi, qty: Number(l.qty) || 0, area: normalizeLocArea(l) }));
+        if (locs.length > 0) posBySku.set(r.sku.trim().toUpperCase(), locs);
+      }
+
+      let hasPerbaikanOnlyItem = false;
+      let hasNormalAreaItem = false;
+      for (const ci of cartItems) {
+        const locs = posBySku.get(ci.sku.trim().toUpperCase()) || [];
+        const hasNormal = locs.some((l) => l.area !== 'Perbaikan' && l.area !== 'Anomali');
+        const hasPerbaikan = locs.some((l) => l.area === 'Perbaikan');
+        if (hasNormal) hasNormalAreaItem = true;
+        if (!hasNormal && hasPerbaikan) hasPerbaikanOnlyItem = true;
+      }
+
+      if (hasPerbaikanOnlyItem) {
+        setSelectedSourceArea(hasNormalAreaItem ? 'ALL_INCLUDING_PERBAIKAN' : 'Perbaikan');
+        return;
       }
     }
+
+    setSelectedSourceArea('ALL');
   }, [isOpen, initialSourceArea]);
 
   // Quick Search & Autocomplete
@@ -172,11 +238,16 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Hitung jumlah SKU aktif per area & susun daftar produk terfilter sesuai Area Sumber Picking
-  const { scopedAvailableRows, areaSkuCounts } = useMemo(() => {
+  const { scopedAvailableRows, areaSkuCounts, allPositiveLocsBySku } = useMemo(() => {
     const counts: Record<string, number> = {
       ALL: 0,
+      ALL_INCLUDING_PERBAIKAN: 0,
       Warehouse: 0,
       'Blok F': 0,
+      STUDIO: 0,
+      SHOPEE: 0,
+      TIKTOK: 0,
+      IGLIVE: 0,
       Kolian: 0,
       Aksesoris: 0,
       Transit: 0,
@@ -185,6 +256,7 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
     };
 
     const scoped: typeof availableRows = [];
+    const allPosMap = new Map<string, Array<{ lokasi: string; qty: number; area: string }>>();
 
     for (const r of availableRows) {
       if (!r || !r.sku) continue;
@@ -192,32 +264,44 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
       if (validLocs.length === 0) continue;
 
       const areasPresent = new Set<string>();
+      const blokFSubsPresent = new Set<string>();
       const matchedLocs: Array<{ lokasi: string; qty: number; area?: string }> = [];
+      const allPosLocs: Array<{ lokasi: string; qty: number; area: string }> = [];
       let matchedQty = 0;
       let hasNormalArea = false;
+      let hasNonAnomalyArea = false;
 
       for (const l of validLocs) {
         const locArea = normalizeLocArea(l);
         const lQty = Number(l.qty) || 0;
         areasPresent.add(locArea);
-        if (locArea !== 'Perbaikan' && locArea !== 'Anomali') {
-          hasNormalArea = true;
+        allPosLocs.push({ lokasi: l.lokasi, qty: lQty, area: locArea });
+
+        if (locArea !== 'Anomali') {
+          hasNonAnomalyArea = true;
+          if (locArea !== 'Perbaikan') {
+            hasNormalArea = true;
+          }
         }
 
-        const isMatch =
-          selectedSourceArea === 'ALL'
-            ? locArea !== 'Perbaikan' && locArea !== 'Anomali'
-            : locArea === selectedSourceArea;
+        const sub = detectBlokFSubLocation(l.lokasi);
+        if (sub) blokFSubsPresent.add(sub);
 
-        if (isMatch) {
+        if (matchesCartSourceArea(l, locArea, selectedSourceArea)) {
           matchedLocs.push({ lokasi: l.lokasi, qty: lQty, area: locArea });
           matchedQty += lQty;
         }
       }
 
+      allPosMap.set(r.sku.trim().toUpperCase(), allPosLocs);
+
       if (hasNormalArea) counts.ALL++;
+      if (hasNonAnomalyArea) counts.ALL_INCLUDING_PERBAIKAN++;
       areasPresent.forEach((a) => {
         if (counts[a] !== undefined) counts[a]++;
+      });
+      blokFSubsPresent.forEach((sub) => {
+        if (counts[sub] !== undefined) counts[sub]++;
       });
 
       if (matchedQty > 0 && matchedLocs.length > 0) {
@@ -231,7 +315,7 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
       }
     }
 
-    return { scopedAvailableRows: scoped, areaSkuCounts: counts };
+    return { scopedAvailableRows: scoped, areaSkuCounts: counts, allPositiveLocsBySku: allPosMap };
   }, [availableRows, selectedSourceArea]);
 
   const activeAreaMeta = useMemo(
@@ -935,10 +1019,13 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
             ) : (
               <div className="space-y-2">
                 {cartItems.map((item) => {
-                  const liveScopedMatch = availableMap.get(item.sku.trim().toUpperCase());
+                  const skuUpper = item.sku.trim().toUpperCase();
+                  const liveScopedMatch = availableMap.get(skuUpper);
+                  const allSkuPositiveLocs = allPositiveLocsBySku.get(skuUpper) || [];
+                  const hasLiveRows = availableRows.length > 0;
                   const availStock = liveScopedMatch
                     ? Number(liveScopedMatch.qty) || 0
-                    : selectedSourceArea === 'ALL'
+                    : !hasLiveRows && selectedSourceArea === 'ALL'
                       ? Number(item.available_stock) || 0
                       : 0;
                   const itemQty = Number(item.qty) || 1;
@@ -946,11 +1033,23 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                   const isZeroStock = availStock <= 0;
                   const safeLocations = liveScopedMatch
                     ? liveScopedMatch.locations
-                    : selectedSourceArea === 'ALL'
+                    : !hasLiveRows && selectedSourceArea === 'ALL'
                       ? (Array.isArray(item.locations)
-                          ? item.locations.filter((l) => l && l.lokasi && l.lokasi !== '-')
+                          ? item.locations.filter((l) => l && l.lokasi && l.lokasi !== '-' && (Number(l.qty) || 0) > 0)
                           : [])
                       : [];
+
+                  // Jika stok di area terpilih = 0, cek apakah SKU punya stok di area lain (mis. Studio, Shopee, TikTok, Perbaikan)
+                  const fallbackAreaTargets = isZeroStock && allSkuPositiveLocs.length > 0
+                    ? Array.from(
+                        new Set(
+                          allSkuPositiveLocs.map((l) => {
+                            const sub = detectBlokFSubLocation(l.lokasi);
+                            return sub || l.area;
+                          })
+                        )
+                      )
+                    : [];
 
                   return (
                     <div
@@ -985,7 +1084,7 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                           ) : (
                             <span className="text-[10px] italic text-slate-400">
                               {selectedSourceArea === 'ALL'
-                                ? 'Belum ada rak'
+                                ? 'Tidak ada di area normal'
                                 : `Tidak ada di Area ${activeAreaMeta.shortLabel}`}
                             </span>
                           )}
@@ -995,7 +1094,43 @@ export const InventoryPickingCartDrawer: React.FC<InventoryPickingCartDrawerProp
                           </span>
                         </div>
 
-                        {isZeroStock && (
+                        {isZeroStock && fallbackAreaTargets.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px]">
+                            <span className="font-semibold text-amber-700 dark:text-amber-300">
+                              Tersedia di rak lain ({allSkuPositiveLocs.slice(0, 3).map((l) => `${l.lokasi} (${l.qty})`).join(', ')}):
+                            </span>
+                            {fallbackAreaTargets.map((targetId) => {
+                              const meta = SOURCE_AREA_OPTIONS.find((o) => o.id === targetId);
+                              return (
+                                <button
+                                  key={`${item.sku}_switch_${targetId}`}
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedSourceArea(targetId);
+                                    setParsedImportRows([]);
+                                  }}
+                                  className="px-2 py-0.5 rounded-md border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-800 text-indigo-700 dark:text-indigo-300 font-bold hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                                >
+                                  Pilih {meta?.shortLabel || targetId}
+                                </button>
+                              );
+                            })}
+                            {fallbackAreaTargets.includes('Perbaikan') && selectedSourceArea !== 'ALL_INCLUDING_PERBAIKAN' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedSourceArea('ALL_INCLUDING_PERBAIKAN');
+                                  setParsedImportRows([]);
+                                }}
+                                className="px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+                              >
+                                Semua + Perbaikan
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        {isZeroStock && fallbackAreaTargets.length === 0 && (
                           <div className="flex items-center gap-1 text-[10.5px] font-bold text-rose-600 dark:text-rose-400 mt-1">
                             <AlertCircle className="w-3 h-3 shrink-0" />
                             <span>

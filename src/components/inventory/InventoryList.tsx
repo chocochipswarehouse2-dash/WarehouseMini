@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ArrowUpDown, ExternalLink, LayoutGrid, MapPin, Package, Table2, Wrench, Boxes, ShoppingCart } from 'lucide-react';
 import {
   type InventoryAreaRow,
+  type InventorySkuGroup,
   type InventorySortOption,
   groupRowsBySku,
 } from './inventoryModel';
@@ -151,6 +152,29 @@ export interface InventoryListProps {
 
 const CHUNK_SIZE = 60;
 
+function computeCartEligibleForGroup(group: InventorySkuGroup) {
+  const allRows = [...(group.commercialAreas || []), ...(group.perbaikanAreas || [])];
+  const positiveLocations: Array<{ lokasi: string; qty: number; area?: string }> = [];
+  let positiveStock = 0;
+
+  for (const row of allRows) {
+    const normalizedArea = row.area === 'Koli' ? 'Kolian' : row.area;
+    for (const loc of row.locations || []) {
+      const q = Number(loc?.qty) || 0;
+      if (loc && loc.lokasi && loc.lokasi !== '-' && q > 0) {
+        positiveLocations.push({
+          lokasi: loc.lokasi,
+          qty: q,
+          area: normalizedArea,
+        });
+        positiveStock += q;
+      }
+    }
+  }
+
+  return { positiveStock, positiveLocations };
+}
+
 export const InventoryList: React.FC<InventoryListProps> = ({
   rows = [],
   sort,
@@ -285,10 +309,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
           {/* TABLE BODY (Per SKU Group) */}
           {displayedGroups.map((group) => {
             const totalSkuRows = group.commercialAreas.length + group.perbaikanAreas.length;
-            const commercialStock = (group.commercialAreas || []).reduce((s, a) => s + (Number(a.qty) || 0), 0);
-            const commercialLocations = (group.commercialAreas || [])
-              .flatMap((a) => a.locations || [])
-              .filter((l) => l && l.lokasi && l.lokasi !== '-');
+            const { positiveStock, positiveLocations } = computeCartEligibleForGroup(group);
 
             return (
               <tbody
@@ -345,21 +366,21 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (commercialStock <= 0) {
-                                      if (onNotify) onNotify(`Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`, 'warning');
+                                    if (positiveStock <= 0) {
+                                      if (onNotify) onNotify(`Belum ada stok fisik positif untuk ${group.produk} di area yang ditampilkan`, 'warning');
                                       return;
                                     }
                                     onAddToCart({
                                       sku: group.sku,
                                       nama_produk: group.produk,
                                       size: group.size,
-                                      available_stock: commercialStock,
-                                      locations: commercialLocations,
+                                      available_stock: positiveStock,
+                                      locations: positiveLocations,
                                     }, 1);
                                   }}
-                                  title={commercialStock > 0 ? `Tambah ke Keranjang Order Picking (${commercialStock} pcs)` : 'Stok fisik gudang kosong (0 pcs)'}
+                                  title={positiveStock > 0 ? `Tambah ke Keranjang Order Picking (${positiveStock} pcs tersedia)` : 'Belum ada stok fisik positif di rak'}
                                   className={`p-1 rounded transition-colors ${
-                                    commercialStock > 0
+                                    positiveStock > 0
                                       ? 'text-slate-400 hover:text-emerald-500 cursor-pointer'
                                       : 'text-slate-300 dark:text-slate-700 opacity-30 cursor-not-allowed'
                                   }`}
@@ -478,21 +499,21 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    if (commercialStock <= 0) {
-                                      if (onNotify) onNotify(`Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`, 'warning');
+                                    if (positiveStock <= 0) {
+                                      if (onNotify) onNotify(`Belum ada stok fisik positif untuk ${group.produk} di area yang ditampilkan`, 'warning');
                                       return;
                                     }
                                     onAddToCart({
                                       sku: group.sku,
                                       nama_produk: group.produk,
                                       size: group.size,
-                                      available_stock: commercialStock,
-                                      locations: commercialLocations,
+                                      available_stock: positiveStock,
+                                      locations: positiveLocations,
                                     }, 1);
                                   }}
-                                  title={commercialStock > 0 ? `Tambah ke Keranjang Order Picking (${commercialStock} pcs)` : 'Stok fisik gudang kosong (0 pcs)'}
+                                  title={positiveStock > 0 ? `Tambah ke Keranjang Order Picking (${positiveStock} pcs tersedia)` : 'Belum ada stok fisik positif di rak'}
                                   className={`p-1 rounded transition-colors ${
-                                    commercialStock > 0
+                                    positiveStock > 0
                                       ? 'text-slate-400 hover:text-emerald-500 cursor-pointer'
                                       : 'text-slate-300 dark:text-slate-700 opacity-30 cursor-not-allowed'
                                   }`}
@@ -609,10 +630,7 @@ export const InventoryList: React.FC<InventoryListProps> = ({
 
             {displayedGroups.map((group) => {
               const totalSkuRows = group.commercialAreas.length + group.perbaikanAreas.length;
-              const commercialStock = (group.commercialAreas || []).reduce((s, a) => s + (Number(a.qty) || 0), 0);
-              const commercialLocations = (group.commercialAreas || [])
-                .flatMap((a) => a.locations || [])
-                .filter((l) => l && l.lokasi && l.lokasi !== '-');
+              const { positiveStock, positiveLocations } = computeCartEligibleForGroup(group);
               const cleanSize = group.size && group.size !== '-' && !isCorruptedColorCodeSize(group.size) ? group.size : '';
 
               const renderProductCell = (rowSpanCount: number) => (
@@ -651,10 +669,10 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (commercialStock <= 0) {
+                            if (positiveStock <= 0) {
                               if (onNotify) {
                                 onNotify(
-                                  `Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`,
+                                  `Belum ada stok fisik positif untuk ${group.produk} di area yang ditampilkan`,
                                   'warning'
                                 );
                               }
@@ -665,20 +683,20 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                                 sku: group.sku,
                                 nama_produk: group.produk,
                                 size: group.size,
-                                available_stock: commercialStock,
-                                locations: commercialLocations,
+                                available_stock: positiveStock,
+                                locations: positiveLocations,
                               },
                               1
                             );
                           }}
                           title={
-                            commercialStock > 0
-                              ? `Tambah ke Keranjang Picking (${commercialStock} pcs)`
-                              : 'Stok fisik kosong (0 pcs)'
+                            positiveStock > 0
+                              ? `Tambah ke Keranjang Order Picking (${positiveStock} pcs tersedia)`
+                              : 'Belum ada stok fisik positif di rak'
                           }
                           aria-label={`Tambah ${group.produk} ke keranjang`}
                           className={`w-6 h-6 rounded-md flex items-center justify-center shrink-0 transition-colors ${
-                            commercialStock > 0
+                            positiveStock > 0
                               ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 active:scale-95 cursor-pointer'
                               : 'text-slate-300 dark:text-slate-700 opacity-35 cursor-not-allowed'
                           }`}
@@ -838,33 +856,30 @@ export const InventoryList: React.FC<InventoryListProps> = ({
                     {group.size}
                   </span>
                   {onAddToCart && (() => {
-                    const commercialStock = (group.commercialAreas || []).reduce((s, a) => s + (Number(a.qty) || 0), 0);
-                    const commercialLocations = (group.commercialAreas || [])
-                      .flatMap((a) => a.locations || [])
-                      .filter((l) => l && l.lokasi && l.lokasi !== '-');
+                    const { positiveStock, positiveLocations } = computeCartEligibleForGroup(group);
 
                     return (
                       <button
                         type="button"
                         onClick={() => {
-                          if (commercialStock <= 0) {
-                            if (onNotify) onNotify(`Stok fisik ${group.produk} kosong (0 pcs), tidak dapat ditambahkan ke keranjang picking`, 'warning');
+                          if (positiveStock <= 0) {
+                            if (onNotify) onNotify(`Belum ada stok fisik positif untuk ${group.produk} di area yang ditampilkan`, 'warning');
                             return;
                           }
                           onAddToCart({
                             sku: group.sku,
                             nama_produk: group.produk,
                             size: group.size,
-                            available_stock: commercialStock,
-                            locations: commercialLocations,
+                            available_stock: positiveStock,
+                            locations: positiveLocations,
                           }, 1);
                         }}
                         className={`p-1.5 rounded-lg transition-colors ${
-                          commercialStock > 0
+                          positiveStock > 0
                             ? 'bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400 cursor-pointer'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600 opacity-40 cursor-not-allowed'
                         }`}
-                        title={commercialStock > 0 ? `Tambah ke Keranjang Order Picking (${commercialStock} pcs)` : 'Stok fisik gudang kosong (0 pcs)'}
+                        title={positiveStock > 0 ? `Tambah ke Keranjang Order Picking (${positiveStock} pcs tersedia)` : 'Belum ada stok fisik positif di rak'}
                       >
                         <ShoppingCart className="w-3.5 h-3.5" />
                       </button>

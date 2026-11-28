@@ -534,14 +534,31 @@ export const InventoryView: React.FC<InventoryViewProps> = React.memo(({
   const handleProceedToPicking = useCallback((details: InventoryOrderPickingDetails) => {
     if (cartItems.length === 0) return;
 
-    const activeSourceArea =
-      details.source_area && details.source_area !== 'ALL' ? details.source_area : undefined;
-    const areaNotePrefix = activeSourceArea ? `Area ${activeSourceArea} · ` : '';
+    const rawSourceArea = String(details.source_area || 'ALL').trim();
+    const activeSourceArea = rawSourceArea === 'ALL' ? 'ALL_NORMAL' : rawSourceArea;
+    const sourceAreaLabelMap: Record<string, string> = {
+      ALL_NORMAL: 'Semua Area (incl. Blok F)',
+      ALL_INCLUDING_PERBAIKAN: 'Semua Area + Perbaikan',
+      STUDIO: 'Studio (Blok F)',
+      SHOPEE: 'Shopee (Blok F)',
+      TIKTOK: 'TikTok (Blok F)',
+      IGLIVE: 'IG Live (Blok F)',
+      'Blok F': 'Blok F',
+      Perbaikan: 'Perbaikan',
+      Warehouse: 'Warehouse',
+      Kolian: 'Kolian',
+      Aksesoris: 'Aksesoris',
+      Transit: 'Transit',
+      Anomali: 'Anomali',
+    };
+    const readableAreaLabel = sourceAreaLabelMap[activeSourceArea] || activeSourceArea;
+    const isSpecificArea = activeSourceArea !== 'ALL_NORMAL';
+    const areaNotePrefix = isSpecificArea ? `Area ${readableAreaLabel} · ` : '';
 
     const draft: PengecekanSJDraft = {
       id: `PICK_CART_${Date.now()}`,
       no_sj: details.no_dokumen,
-      source: activeSourceArea ? `Gudang Pusat (${activeSourceArea})` : 'Gudang Pusat',
+      source: isSpecificArea ? `Gudang Pusat (${readableAreaLabel})` : 'Gudang Pusat',
       destination: details.destinasi || details.tujuan,
       tanggal_sj: new Date().toISOString().slice(0, 10),
       tipe_import: 'Pengiriman',
